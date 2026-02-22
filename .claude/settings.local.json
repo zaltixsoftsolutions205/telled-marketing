@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sc query:*)",
+      "Bash(npm run seed:*)",
+      "Bash(npx ts-node:*)",
+      "Bash(node_modules/.bin/ts-node src/utils/seed.ts)",
+      "Bash(node seed.js:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run dev:*)",
+      "Bash(python3 -c \" import sys, json lines = sys.stdin.read\\(\\).strip\\(\\).split\\(''\\\\n''\\) for line in lines[-20:]: try: obj = json.loads\\(line\\) role = obj.get\\(''role'', ''''\\) content = obj.get\\(''content'', ''''\\) if isinstance\\(content, list\\): for c in content: if isinstance\\(c, dict\\) and c.get\\(''type''\\) == ''text'': print\\(f''[{role}]: {c[\"\"text\"\"][:500]}''\\) elif isinstance\\(content, str\\): print\\(f''[{role}]: {content[:500]}''\\) except: pass \")",
+      "Bash(python3:*)",
+      "Bash(node:*)",
+      "Bash(npx vite build:*)"
+    ]
+  }
+}
