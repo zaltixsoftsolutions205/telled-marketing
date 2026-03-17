@@ -6,8 +6,11 @@ export interface IUser extends Document {
   email: string;
   password: string;
   role: 'admin' | 'sales' | 'engineer' | 'hr_finance';
+  department?: string;
+  phone?: string;
   baseSalary: number;
   isActive: boolean;
+  organizationId: mongoose.Types.ObjectId;
   refreshToken?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -16,18 +19,21 @@ export interface IUser extends Document {
 
 const UserSchema = new Schema<IUser>(
   {
-    name: { type: String, required: true, trim: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    password: { type: String, required: true, minlength: 6 },
-    role: { type: String, enum: ['admin', 'sales', 'engineer', 'hr_finance'], required: true },
-    baseSalary: { type: Number, default: 0, min: 0 },
-    isActive: { type: Boolean, default: true },
-    refreshToken: { type: String },
+    name:           { type: String, required: true, trim: true },
+    email:          { type: String, required: true, unique: true, lowercase: true, trim: true },
+    password:       { type: String, required: true, minlength: 6 },
+    role:           { type: String, enum: ['admin', 'sales', 'engineer', 'hr_finance'], required: true },
+    department:     { type: String, trim: true },
+    phone:          { type: String, trim: true },
+    baseSalary:     { type: Number, default: 0, min: 0 },
+    isActive:       { type: Boolean, default: true },
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
+    refreshToken:   { type: String },
   },
   { timestamps: true }
 );
 
-UserSchema.index({ role: 1, isActive: 1 });
+UserSchema.index({ organizationId: 1, role: 1, isActive: 1 });
 
 UserSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
@@ -40,7 +46,12 @@ UserSchema.methods.comparePassword = async function (candidate: string): Promise
 };
 
 UserSchema.set('toJSON', {
-  transform: (_doc, ret) => { delete ret.password; delete ret.refreshToken; return ret; },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  transform: (_doc: unknown, ret: Record<string, any>) => {
+    delete ret['password'];
+    delete ret['refreshToken'];
+    return ret;
+  },
 });
 
 export default mongoose.model<IUser>('User', UserSchema);

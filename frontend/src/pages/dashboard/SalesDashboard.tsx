@@ -221,9 +221,10 @@ import { formatCurrency, formatDate } from '@/utils/formatters';
 import StatusBadge from '@/components/common/StatusBadge';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { 
-  Users, FileText, ShoppingCart, Building2, AlertTriangle, Activity, 
-  TrendingUp, ArrowRight, FileBadge, Clock, CheckCircle2, XCircle 
+import {
+  Users, FileText, ShoppingCart, Building2, AlertTriangle, Activity,
+  TrendingUp, ArrowRight, FileBadge, Clock, CheckCircle2, XCircle,
+  Trophy, Zap, Target
 } from 'lucide-react';
 
 function StatCard({
@@ -535,6 +536,123 @@ export default function SalesDashboard() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Sales Intelligence: Funnel + Rates */}
+      {stats.funnel && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Target size={18} className="text-violet-600" />
+            <h2 className="text-base font-bold text-gray-900">Sales Funnel</h2>
+            <div className="ml-auto flex gap-4 text-xs">
+              {stats.conversionRate !== undefined && (
+                <span className="flex items-center gap-1 text-emerald-700 font-semibold">
+                  <TrendingUp size={12} /> {stats.conversionRate}% conversion
+                </span>
+              )}
+              {stats.drfApprovalRate !== undefined && (
+                <span className="flex items-center gap-1 text-blue-700 font-semibold">
+                  <CheckCircle2 size={12} /> {stats.drfApprovalRate}% DRF approval
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="card !p-4">
+            <div className="flex items-stretch gap-1">
+              {(stats.funnel as Array<{ stage: string; count: number; color: string }>).map((step, i, arr) => {
+                const maxCount = Math.max(...arr.map(s => s.count), 1);
+                const pct = Math.round((step.count / maxCount) * 100);
+                const colors: Record<string, string> = {
+                  'Leads': 'bg-violet-500',
+                  'DRFs': 'bg-blue-500',
+                  'Quotations': 'bg-amber-500',
+                  'POs': 'bg-orange-500',
+                  'Converted': 'bg-emerald-500',
+                };
+                const barColor = colors[step.stage] || 'bg-gray-400';
+                return (
+                  <div key={step.stage} className="flex-1 flex flex-col items-center gap-2">
+                    <p className="text-lg font-extrabold text-gray-900">{step.count}</p>
+                    <div className="w-full bg-gray-100 rounded-lg overflow-hidden" style={{ height: 80 }}>
+                      <div className={`w-full ${barColor} rounded-lg transition-all duration-500`} style={{ height: `${pct}%`, marginTop: `${100 - pct}%` }} />
+                    </div>
+                    <p className="text-[10px] font-semibold text-gray-500 text-center leading-tight">{step.stage}</p>
+                    {i < arr.length - 1 && (
+                      <span className="text-[10px] text-gray-400">{arr[i + 1].count > 0 ? Math.round((arr[i + 1].count / Math.max(step.count, 1)) * 100) : 0}%→</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sales Leaderboard */}
+      {stats.salesLeaderboard?.length > 0 && (
+        <div className="card !p-0 overflow-hidden">
+          <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-100 flex items-center gap-2">
+            <Trophy size={16} className="text-amber-500" />
+            <div>
+              <h2 className="text-sm sm:text-base font-bold text-gray-900">Sales Leaderboard</h2>
+              <p className="text-xs text-gray-400 mt-0.5 hidden sm:block">Top performers by revenue this period</p>
+            </div>
+            {stats.myRank && (
+              <span className="ml-auto text-xs font-semibold text-violet-700 bg-violet-50 px-2 py-1 rounded-lg">
+                My rank: #{stats.myRank}
+              </span>
+            )}
+          </div>
+          <div className="divide-y divide-gray-50">
+            {(stats.salesLeaderboard as Array<{ userId: string; name: string; revenue: number; deals: number }>)
+              .slice(0, 8)
+              .map((entry, i) => (
+                <div key={entry.userId} className={`flex items-center gap-3 px-4 py-3 ${i === 0 ? 'bg-amber-50/60' : ''}`}>
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                    i === 0 ? 'bg-amber-400 text-white' :
+                    i === 1 ? 'bg-gray-300 text-gray-700' :
+                    i === 2 ? 'bg-orange-300 text-white' :
+                    'bg-gray-100 text-gray-500'
+                  }`}>{i + 1}</span>
+                  <span className="flex-1 text-sm font-semibold text-gray-800">{entry.name}</span>
+                  <span className="text-xs text-gray-400">{entry.deals} deals</span>
+                  <span className="text-sm font-bold text-green-700 tabular-nums">
+                    {formatCurrency(entry.revenue)}
+                  </span>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* Smart Alerts */}
+      {stats.alerts?.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Zap size={16} className="text-amber-500" />
+            <h2 className="text-base font-bold text-gray-900">Smart Alerts</h2>
+          </div>
+          <div className="space-y-2">
+            {(stats.alerts as Array<{ type: string; message: string; severity: 'warning' | 'danger' | 'info' }>).map((alert, i) => {
+              const style = alert.severity === 'danger'
+                ? 'bg-red-50 border-red-200 text-red-800'
+                : alert.severity === 'warning'
+                ? 'bg-amber-50 border-amber-200 text-amber-800'
+                : 'bg-blue-50 border-blue-200 text-blue-800';
+              const icon = alert.severity === 'danger'
+                ? <XCircle size={15} className="text-red-500 flex-shrink-0" />
+                : alert.severity === 'warning'
+                ? <AlertTriangle size={15} className="text-amber-500 flex-shrink-0" />
+                : <Clock size={15} className="text-blue-500 flex-shrink-0" />;
+              return (
+                <div key={i} className={`flex items-center gap-3 border rounded-xl p-3 text-sm ${style}`}>
+                  {icon}
+                  <span>{alert.message}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

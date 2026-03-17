@@ -1,11 +1,14 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { Eye, EyeOff } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { authApi } from '@/api/auth';
+import { setCurrentOrgId } from '@/mock/store';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { setAuth } = useAuthStore();
@@ -17,6 +20,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const data = await authApi.login(email, password);
+      setCurrentOrgId(data.user.organizationId);
       setAuth(data.user, data.accessToken);
       navigate('/dashboard');
     } catch (err: unknown) {
@@ -57,14 +61,20 @@ export default function LoginPage() {
             </div>
             <div>
               <label className="label">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="input-field"
-                placeholder="••••••••"
-                required
-              />
+              <div className="relative">
+                <input
+                  type={showPwd ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="input-field pr-10"
+                  placeholder="••••••••"
+                  required
+                />
+                <button type="button" onClick={() => setShowPwd(v => !v)}
+                  className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
+                  {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
             </div>
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">
@@ -75,27 +85,10 @@ export default function LoginPage() {
               {loading ? 'Signing in…' : 'Sign In'}
             </button>
           </form>
-          <div className="mt-5 pt-4 border-t border-gray-100">
-            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2 text-center">Demo Credentials</p>
-            <div className="grid grid-cols-2 gap-1.5 text-xs">
-              {[
-                ['admin@telled.com', 'Admin@123', 'Admin'],
-                ['sales1@telled.com', 'Sales@123', 'Sales'],
-                ['engineer1@telled.com', 'Eng@123', 'Engineer'],
-                ['hr@telled.com', 'HR@123', 'HR/Finance'],
-              ].map(([email, pwd, role]) => (
-                <button
-                  key={email}
-                  type="button"
-                  onClick={() => { setEmail(email); setPassword(pwd); }}
-                  className="text-left px-2.5 py-2 bg-gray-50 hover:bg-violet-50 hover:border-violet-200 border border-gray-100 rounded-lg transition-colors"
-                >
-                  <span className="font-semibold text-violet-700">{role}</span>
-                  <span className="text-gray-400 block truncate">{email}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+          <p className="text-center text-sm text-gray-500 mt-5">
+            New organization?{' '}
+            <Link to="/signup" className="text-violet-600 hover:underline font-medium">Create account</Link>
+          </p>
         </div>
       </div>
     </div>

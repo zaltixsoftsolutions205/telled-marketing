@@ -1,12 +1,26 @@
 export type Role = 'admin' | 'sales' | 'engineer' | 'hr_finance';
+export type LeadStatus = 'New' | 'Contacted' | 'Qualified' | 'Not Qualified';
+export type QuotationStatus = 'Sent' | 'Accepted' | 'Rejected';
+
+export interface Organization {
+  _id: string;
+  name: string;
+  slug: string;
+  ownerId: string;
+  isActive: boolean;
+  createdAt: string;
+}
 
 export interface User {
   _id: string;
   name: string;
   email: string;
   role: Role;
+  department?: string;
   phone?: string;
+  baseSalary?: number;
   isActive: boolean;
+  organizationId: string;
   createdAt: string;
 }
 
@@ -35,6 +49,7 @@ export interface Lead {
   city?: string;
   state?: string;
   source?: string;
+  status: LeadStatus;
   stage: LeadStage;
   assignedTo?: User;
   notes?: string;
@@ -97,15 +112,19 @@ export interface Quotation {
   _id: string;
   leadId: Lead;
   quotationNumber: string;
+  version: number;
   items: QuotationItem[];
   subtotal: number;
   taxRate: number;
   taxAmount: number;
   total: number;
+  status: QuotationStatus;
   validUntil?: string;
   terms?: string;
   notes?: string;
   pdfPath?: string;
+  emailSent?: boolean;
+  emailSentAt?: string;
   createdBy: User;
   createdAt: string;
 }
@@ -115,9 +134,15 @@ export interface PurchaseOrder {
   leadId: Lead;
   poNumber: string;
   amount: number;
+  product?: string;
+  vendorName?: string;
+  vendorEmail?: string;
   documentPath?: string;
   receivedDate: string;
   notes?: string;
+  isSubmitted?: boolean;
+  vendorEmailSent?: boolean;
+  vendorEmailSentAt?: string;
   createdBy: User;
   createdAt: string;
 }

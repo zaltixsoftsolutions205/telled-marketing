@@ -59,7 +59,8 @@ export default function EngineerVisitsPage() {
   };
 
   const handleApprove = async (visit: EngineerVisit, status: 'Approved' | 'Rejected') => {
-    await engineerVisitsApi.approve(visit._id, status);
+    if (status === 'Approved') await engineerVisitsApi.approve(visit._id);
+    else await engineerVisitsApi.reject(visit._id);
     load();
   };
 

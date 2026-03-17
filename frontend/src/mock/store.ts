@@ -4,133 +4,75 @@
 export type ID = string;
 const uid = () => Math.random().toString(36).slice(2, 10);
 const now = () => new Date().toISOString();
-const daysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString();
-const daysFromNow = (n: number) => new Date(Date.now() + n * 86400000).toISOString();
+
+// ─── CURRENT ORG CONTEXT ─────────────────────────────────────────────────────
+// Set on login/signup; read by all mock queries to enforce org isolation
+let _currentOrgId: string | null = null;
+export const setCurrentOrgId = (id: string | null) => { _currentOrgId = id; };
+export const getCurrentOrgId  = () => _currentOrgId;
+
+// ─── ORGANIZATIONS ───────────────────────────────────────────────────────────
+export let ORGANIZATIONS: any[] = [];
 
 // ─── USERS ──────────────────────────────────────────────────────────────────
-export let USERS: any[] = [
-  { _id: 'u1', name: 'Admin User',  email: 'admin@telled.com',     role: 'admin',      isActive: true, phone: '9876543210', baseSalary: 0,     createdAt: daysAgo(180) },
-  { _id: 'u2', name: 'Ravi Kumar',  email: 'sales1@telled.com',    role: 'sales',      isActive: true, phone: '9876543211', baseSalary: 50000, createdAt: daysAgo(150) },
-  { _id: 'u3', name: 'Priya Singh', email: 'sales2@telled.com',    role: 'sales',      isActive: true, phone: '9876543212', baseSalary: 45000, createdAt: daysAgo(140) },
-  { _id: 'u4', name: 'Arjun Patel', email: 'engineer1@telled.com', role: 'engineer',   isActive: true, phone: '9876543213', baseSalary: 55000, createdAt: daysAgo(120) },
-  { _id: 'u5', name: 'Sneha Nair',  email: 'engineer2@telled.com', role: 'engineer',   isActive: true, phone: '9876543214', baseSalary: 55000, createdAt: daysAgo(100) },
-  { _id: 'u6', name: 'HR Manager',  email: 'hr@telled.com',        role: 'hr_finance', isActive: true, phone: '9876543215', baseSalary: 48000, createdAt: daysAgo(90)  },
-];
+export let USERS: any[] = [];
 
-const PASSWORDS: Record<string, string> = {
-  'admin@telled.com':     'Admin@123',
-  'sales1@telled.com':    'Sales@123',
-  'sales2@telled.com':    'Sales@123',
-  'engineer1@telled.com': 'Eng@123',
-  'engineer2@telled.com': 'Eng@123',
-  'hr@telled.com':        'HR@123',
-};
+let PASSWORDS: Record<string, string> = {};
 
 // ─── LEADS ──────────────────────────────────────────────────────────────────
-export let LEADS: any[] = [
-  { _id: 'l1',  companyName: 'TechCorp Solutions',  contactName: 'Rajesh Kumar',  contactPersonName: 'Arun Mehta',    oemName: 'Siemens',              email: 'rajesh@techcorp.com',  phone: '9111111111', city: 'Mumbai',    state: 'Maharashtra', source: 'Website',    stage: 'DRF Approved',   assignedTo: USERS[1], notes: 'High priority client',        isArchived: false, createdAt: daysAgo(60), updatedAt: daysAgo(5)  },
-  { _id: 'l2',  companyName: 'Global Industries',   contactName: 'Priya Sharma',  contactPersonName: 'Neha Kapoor',   oemName: 'ABB',                  email: 'priya@global.com',     phone: '9222222222', city: 'Delhi',     state: 'Delhi',       source: 'Referral',   stage: 'DRF Submitted',  assignedTo: USERS[1], notes: 'Referred by TechCorp',        isArchived: false, createdAt: daysAgo(45), updatedAt: daysAgo(10) },
-  { _id: 'l3',  companyName: 'Smart Manufacturing', contactName: 'Amit Patel',    contactPersonName: 'Suresh Patel',  oemName: 'Schneider Electric',   email: 'amit@smart.com',       phone: '9333333333', city: 'Ahmedabad', state: 'Gujarat',     source: 'Exhibition', stage: 'Quotation Sent', assignedTo: USERS[2], notes: '',                            isArchived: false, createdAt: daysAgo(40), updatedAt: daysAgo(8)  },
-  { _id: 'l4',  companyName: 'Future Systems',      contactName: 'Sunita Rao',    contactPersonName: 'Aditi Sharma',  oemName: 'Rockwell Automation',  email: 'sunita@future.com',    phone: '9444444444', city: 'Hyderabad', state: 'Telangana',   source: 'LinkedIn',   stage: 'PO Received',    assignedTo: USERS[2], notes: 'Close to conversion',         isArchived: false, createdAt: daysAgo(35), updatedAt: daysAgo(3)  },
-  { _id: 'l5',  companyName: 'Zenith Enterprises',  contactName: 'Kiran Mehta',   contactPersonName: 'Rahul Das',     oemName: 'Honeywell',            email: 'kiran@zenith.com',     phone: '9555555555', city: 'Bangalore', state: 'Karnataka',   source: 'Cold Call',  stage: 'New',            assignedTo: USERS[1], notes: '',                            isArchived: false, createdAt: daysAgo(20), updatedAt: daysAgo(1)  },
-  { _id: 'l6',  companyName: 'Alpha Automation',    contactName: 'Deepak Joshi',  contactPersonName: 'Pooja Nair',    oemName: 'Siemens',              email: 'deepak@alpha.com',     phone: '9666666666', city: 'Pune',      state: 'Maharashtra', source: 'Email',      stage: 'Negotiation',    assignedTo: USERS[1], notes: 'Needs custom pricing',        isArchived: false, createdAt: daysAgo(30), updatedAt: daysAgo(2)  },
-  { _id: 'l7',  companyName: 'BrightTech Pvt Ltd',  contactName: 'Ananya Iyer',   contactPersonName: 'Kartik Reddy',  oemName: 'ABB',                  email: 'ananya@bright.com',    phone: '9777777777', city: 'Chennai',   state: 'Tamil Nadu',  source: 'Website',    stage: 'Technical Done', assignedTo: USERS[2], notes: '',                            isArchived: false, createdAt: daysAgo(25), updatedAt: daysAgo(4)  },
-  { _id: 'l8',  companyName: 'Horizon Infra',       contactName: 'Sanjay Gupta',  contactPersonName: 'Meghna Joshi',  oemName: 'Schneider Electric',   email: 'sanjay@horizon.com',   phone: '9888888888', city: 'Kolkata',   state: 'West Bengal', source: 'Referral',   stage: 'Converted',      assignedTo: USERS[1], notes: 'Converted to account',        isArchived: false, createdAt: daysAgo(90), updatedAt: daysAgo(30) },
-  { _id: 'l9',  companyName: 'Pioneer Solutions',   contactName: 'Meena Reddy',   contactPersonName: 'Rohit Kumar',   oemName: 'Rockwell Automation',  email: 'meena@pioneer.com',    phone: '9999999999', city: 'Jaipur',    state: 'Rajasthan',   source: 'Exhibition', stage: 'DRF Submitted',  assignedTo: USERS[2], notes: 'DRF rejected, re-submitting', isArchived: false, createdAt: daysAgo(50), updatedAt: daysAgo(5)  },
-  { _id: 'l10', companyName: 'Vertex Industries',   contactName: 'Rahul Bose',    contactPersonName: 'Swati Verma',   oemName: 'Mitsubishi Electric',  email: 'rahul@vertex.com',     phone: '9101010101', city: 'Surat',     state: 'Gujarat',     source: 'Cold Call',  stage: 'New',            assignedTo: USERS[1], notes: '',                            isArchived: false, createdAt: daysAgo(10), updatedAt: daysAgo(1)  },
-  { _id: 'l11', companyName: 'Delta Corp',          contactName: 'Neha Desai',    contactPersonName: 'Ankit Tiwari',  oemName: 'Siemens',              email: 'neha@delta.com',       phone: '9112233445', city: 'Nagpur',    state: 'Maharashtra', source: 'LinkedIn',   stage: 'Lost',           assignedTo: USERS[2], notes: 'Went with competitor',        isArchived: false, createdAt: daysAgo(70), updatedAt: daysAgo(40) },
-  { _id: 'l12', companyName: 'Omega Technologies',  contactName: 'Vijay Nair',    contactPersonName: 'Deepa Pillai',  oemName: 'ABB',                  email: 'vijay@omega.com',      phone: '9998887776', city: 'Kochi',     state: 'Kerala',      source: 'Website',    stage: 'DRF Approved',   assignedTo: USERS[1], notes: '',                            isArchived: false, createdAt: daysAgo(15), updatedAt: daysAgo(2)  },
-];
+export let LEADS: any[] = [];
 
 // ─── DRFs (Document Request Forms) ──────────────────────────────────────────
-export let DRFs: any[] = [
-  { _id: 'drf1', leadId: { _id: 'l1',  companyName: 'TechCorp Solutions',  contactName: 'Rajesh Kumar', contactPersonName: 'Arun Mehta',   oemName: 'Siemens'             }, drfNumber: 'DRF-2026-001', title: 'Siemens DRF for TechCorp Solutions',  version: 1, status: 'Approved', sentDate: daysAgo(55), approvedDate: daysAgo(50), expiryDate: daysFromNow(40), extensionCount: 0, extensionHistory: [], notes: 'First submission',                 createdBy: USERS[1], approvedBy: USERS[0], createdAt: daysAgo(55) },
-  { _id: 'drf2', leadId: { _id: 'l2',  companyName: 'Global Industries',   contactName: 'Priya Sharma', contactPersonName: 'Neha Kapoor',  oemName: 'ABB'                 }, drfNumber: 'DRF-2026-002', title: 'ABB DRF for Global Industries',       version: 1, status: 'Pending',  sentDate: daysAgo(10), expiryDate: null,             extensionCount: 0, extensionHistory: [], notes: '',                               createdBy: USERS[1], approvedBy: null,     createdAt: daysAgo(10) },
-  { _id: 'drf3', leadId: { _id: 'l9',  companyName: 'Pioneer Solutions',   contactName: 'Meena Reddy',  contactPersonName: 'Rohit Kumar',  oemName: 'Rockwell Automation' }, drfNumber: 'DRF-2026-003', title: 'Rockwell Automation DRF for Pioneer Solutions', version: 1, status: 'Rejected', sentDate: daysAgo(48), rejectedDate: daysAgo(40), rejectionReason: 'Incomplete documentation', extensionCount: 0, extensionHistory: [], notes: '', createdBy: USERS[2], approvedBy: null, createdAt: daysAgo(48) },
-  { _id: 'drf4', leadId: { _id: 'l9',  companyName: 'Pioneer Solutions',   contactName: 'Meena Reddy',  contactPersonName: 'Rohit Kumar',  oemName: 'Rockwell Automation' }, drfNumber: 'DRF-2026-004', title: 'Rockwell Automation DRF for Pioneer Solutions', version: 2, status: 'Pending',  sentDate: daysAgo(5),  expiryDate: null,             extensionCount: 0, extensionHistory: [], notes: 'Re-submission with complete docs', createdBy: USERS[2], approvedBy: null, createdAt: daysAgo(5) },
-  { _id: 'drf5', leadId: { _id: 'l12', companyName: 'Omega Technologies',  contactName: 'Vijay Nair',   contactPersonName: 'Deepa Pillai', oemName: 'ABB'                 }, drfNumber: 'DRF-2026-005', title: 'ABB DRF for Omega Technologies',      version: 1, status: 'Approved', sentDate: daysAgo(12), approvedDate: daysAgo(8), expiryDate: daysFromNow(22), extensionCount: 1, extensionHistory: [{ extendedAt: daysAgo(3), previousExpiry: daysFromNow(10), newExpiry: daysFromNow(22), extendedBy: USERS[0], reason: 'Client request' }], notes: '', createdBy: USERS[1], approvedBy: USERS[0], createdAt: daysAgo(12) },
-];
-let drfSeq = 5;
+export let DRFs: any[] = [];
+let drfSeq = 0;
 
 // ─── ACCOUNTS ────────────────────────────────────────────────────────────────
-export let ACCOUNTS: any[] = [
-  { _id: 'a1', leadId: { _id: 'l8', companyName: 'Horizon Infra',       contactPersonName: 'Meghna Joshi'  }, accountName: 'Horizon Infra Account', assignedEngineer: USERS[3], assignedSales: USERS[1], status: 'Active',   licenseVersion: 'v2.1', licenseDate: daysAgo(15),  licenseExpiryDate: daysFromNow(350), notes: 'First account',        createdAt: daysAgo(28) },
-  { _id: 'a2', leadId: { _id: 'l4', companyName: 'Future Systems',      contactPersonName: 'Aditi Sharma'  }, accountName: 'Future Systems Ltd',   assignedEngineer: USERS[4], assignedSales: USERS[2], status: 'Active',   licenseVersion: 'v1.5', licenseDate: daysAgo(5),   licenseExpiryDate: daysFromNow(360), notes: '',                     createdAt: daysAgo(10) },
-  { _id: 'a3', leadId: { _id: 'l3', companyName: 'Smart Manufacturing', contactPersonName: 'Suresh Patel'  }, accountName: 'Smart Mfg Corp',       assignedEngineer: USERS[3], assignedSales: USERS[2], status: 'Inactive', licenseVersion: 'v1.0', licenseDate: daysAgo(10),  licenseExpiryDate: daysFromNow(355), notes: 'Temporarily inactive', createdAt: daysAgo(15) },
-];
+export let ACCOUNTS: any[] = [];
 
 // ─── QUOTATIONS ──────────────────────────────────────────────────────────────
-export let QUOTATIONS: any[] = [
-  { _id: 'q1', leadId: { _id: 'l3', companyName: 'Smart Manufacturing' }, quotationNumber: 'QT-2026-001', items: [{ description: 'Industrial Controller Unit', quantity: 2, unitPrice: 85000, total: 170000 }, { description: 'Installation & Setup', quantity: 1, unitPrice: 15000, total: 15000 }], subtotal: 185000, taxRate: 18, taxAmount: 33300, total: 218300, validUntil: daysFromNow(30), terms: 'Payment within 30 days', notes: '', createdBy: USERS[1], createdAt: daysAgo(8) },
-  { _id: 'q2', leadId: { _id: 'l1', companyName: 'TechCorp Solutions'  }, quotationNumber: 'QT-2026-002', items: [{ description: 'SCADA Software License', quantity: 5, unitPrice: 45000, total: 225000 }, { description: 'Annual Support', quantity: 1, unitPrice: 30000, total: 30000 }], subtotal: 255000, taxRate: 18, taxAmount: 45900, total: 300900, validUntil: daysFromNow(20), terms: '', notes: 'Special pricing', createdBy: USERS[2], createdAt: daysAgo(5) },
-  { _id: 'q3', leadId: { _id: 'l6', companyName: 'Alpha Automation'    }, quotationNumber: 'QT-2026-003', items: [{ description: 'PLC Setup', quantity: 3, unitPrice: 60000, total: 180000 }], subtotal: 180000, taxRate: 18, taxAmount: 32400, total: 212400, validUntil: daysFromNow(15), terms: '', notes: '', createdBy: USERS[1], createdAt: daysAgo(2) },
-];
+export let QUOTATIONS: any[] = [];
 
 // ─── PURCHASE ORDERS ─────────────────────────────────────────────────────────
-export let PURCHASE_ORDERS: any[] = [
-  { _id: 'po1', leadId: { _id: 'l4', companyName: 'Future Systems'      }, poNumber: 'PO-2026-001', amount: 218300, receivedDate: daysAgo(8),  notes: 'PO received via email', createdBy: USERS[1], createdAt: daysAgo(8)  },
-  { _id: 'po2', leadId: { _id: 'l8', companyName: 'Horizon Infra'       }, poNumber: 'PO-2026-002', amount: 300900, receivedDate: daysAgo(25), notes: '',                      createdBy: USERS[2], createdAt: daysAgo(25) },
-  { _id: 'po3', leadId: { _id: 'l3', companyName: 'Smart Manufacturing' }, poNumber: 'PO-2026-003', amount: 185000, receivedDate: daysAgo(12), notes: 'Partial PO',            createdBy: USERS[1], createdAt: daysAgo(12) },
-];
+export let PURCHASE_ORDERS: any[] = [];
 
 // ─── INSTALLATIONS ───────────────────────────────────────────────────────────
-export let INSTALLATIONS: any[] = [
-  { _id: 'i1', accountId: { _id: 'a1', accountName: 'Horizon Infra Account' }, scheduledDate: daysAgo(20), completedDate: daysAgo(18), engineer: USERS[3], siteAddress: '14th Floor, Horizon Tower, Kolkata', status: 'Completed',   licenseVersion: 'v2.1', notes: 'Installation completed successfully', createdAt: daysAgo(22) },
-  { _id: 'i2', accountId: { _id: 'a2', accountName: 'Future Systems Ltd'    }, scheduledDate: daysFromNow(3), completedDate: null,     engineer: USERS[4], siteAddress: 'Plot 42, HITEC City, Hyderabad',     status: 'Scheduled',   licenseVersion: '',     notes: 'Confirmed with client',               createdAt: daysAgo(5)  },
-  { _id: 'i3', accountId: { _id: 'a2', accountName: 'Future Systems Ltd'    }, scheduledDate: daysAgo(8),  completedDate: null,        engineer: USERS[3], siteAddress: 'Unit 7, Industrial Area, Hyderabad',  status: 'In Progress', licenseVersion: 'v1.5', notes: 'Phase 1 ongoing',                     createdAt: daysAgo(10) },
-  { _id: 'i4', accountId: { _id: 'a3', accountName: 'Smart Mfg Corp'        }, scheduledDate: daysAgo(5),  completedDate: null,        engineer: USERS[4], siteAddress: 'GIDC Estate, Ahmedabad',               status: 'Cancelled',   licenseVersion: '',     notes: 'Client postponed',                    createdAt: daysAgo(6)  },
-];
+export let INSTALLATIONS: any[] = [];
 
 // ─── SUPPORT TICKETS ─────────────────────────────────────────────────────────
-export let SUPPORT_TICKETS: any[] = [
-  { _id: 't1', accountId: { _id: 'a1', accountName: 'Horizon Infra Account' }, ticketId: 'TKT-0001', subject: 'Controller unit not responding',  description: 'The main controller unit stopped responding after power outage.', priority: 'Critical', status: 'Open',        assignedTo: USERS[3], internalNotes: [{ note: 'Checked remotely, seems hardware issue', addedBy: USERS[3], addedAt: daysAgo(1) }], createdBy: USERS[1], createdAt: daysAgo(3) },
-  { _id: 't2', accountId: { _id: 'a2', accountName: 'Future Systems Ltd'    }, ticketId: 'TKT-0002', subject: 'Software license renewal request', description: 'License expires in 2 weeks, need renewal process.',                priority: 'Medium',   status: 'In Progress', assignedTo: USERS[4], internalNotes: [], createdBy: USERS[2], createdAt: daysAgo(7) },
-  { _id: 't3', accountId: { _id: 'a1', accountName: 'Horizon Infra Account' }, ticketId: 'TKT-0003', subject: 'Training request for operators',   description: 'Client needs training for 5 new operators.',                      priority: 'Low',      status: 'Resolved',    assignedTo: USERS[3], internalNotes: [{ note: 'Training scheduled for next week', addedBy: USERS[3], addedAt: daysAgo(2) }], createdBy: USERS[1], createdAt: daysAgo(12) },
-  { _id: 't4', accountId: { _id: 'a2', accountName: 'Future Systems Ltd'    }, ticketId: 'TKT-0004', subject: 'Network connectivity issue',       description: 'Intermittent disconnections from central server.',                priority: 'High',     status: 'Open',        assignedTo: USERS[4], internalNotes: [], createdBy: USERS[2], createdAt: daysAgo(1) },
-  { _id: 't5', accountId: { _id: 'a3', accountName: 'Smart Mfg Corp'        }, ticketId: 'TKT-0005', subject: 'Annual maintenance check',         description: 'Scheduled annual preventive maintenance.',                        priority: 'Low',      status: 'Closed',      assignedTo: USERS[3], internalNotes: [], createdBy: USERS[1], createdAt: daysAgo(30) },
-];
+export let SUPPORT_TICKETS: any[] = [];
 
 // ─── INVOICES ────────────────────────────────────────────────────────────────
-export let INVOICES: any[] = [
-  { _id: 'inv1', accountId: { _id: 'a1', accountName: 'Horizon Infra Account' }, invoiceNumber: 'INV-2026-001', amount: 300900, paidAmount: 300900, dueDate: daysAgo(5),      status: 'Paid',           notes: '', createdBy: USERS[0], createdAt: daysAgo(25) },
-  { _id: 'inv2', accountId: { _id: 'a2', accountName: 'Future Systems Ltd'    }, invoiceNumber: 'INV-2026-002', amount: 218300, paidAmount: 100000, dueDate: daysFromNow(10), status: 'Partially Paid', notes: 'Advance received', createdBy: USERS[0], createdAt: daysAgo(10) },
-  { _id: 'inv3', accountId: { _id: 'a2', accountName: 'Future Systems Ltd'    }, invoiceNumber: 'INV-2026-003', amount: 50000,  paidAmount: 0,       dueDate: daysAgo(3),      status: 'Overdue',        notes: 'Follow up needed', createdBy: USERS[0], createdAt: daysAgo(15) },
-  { _id: 'inv4', accountId: { _id: 'a3', accountName: 'Smart Mfg Corp'        }, invoiceNumber: 'INV-2026-004', amount: 185000, paidAmount: 0,       dueDate: daysFromNow(20), status: 'Unpaid',         notes: '', createdBy: USERS[0], createdAt: daysAgo(3) },
-];
+export let INVOICES: any[] = [];
 
 // ─── PAYMENTS ────────────────────────────────────────────────────────────────
-export let PAYMENTS: any[] = [
-  { _id: 'pay1', invoiceId: { _id: 'inv1', invoiceNumber: 'INV-2026-001' }, amount: 300900, paymentDate: daysAgo(4),  mode: 'Bank Transfer', reference: 'UTR4521890123', notes: '', recordedBy: USERS[0], createdAt: daysAgo(4) },
-  { _id: 'pay2', invoiceId: { _id: 'inv2', invoiceNumber: 'INV-2026-002' }, amount: 100000, paymentDate: daysAgo(8),  mode: 'UPI',           reference: 'UPI-20260210',  notes: 'Advance payment', recordedBy: USERS[5], createdAt: daysAgo(8) },
-];
+export let PAYMENTS: any[] = [];
 
 // ─── ENGINEER VISITS ─────────────────────────────────────────────────────────
-export let ENGINEER_VISITS: any[] = [
-  { _id: 'ev1', engineerId: USERS[3], accountId: { _id: 'a1', accountName: 'Horizon Infra Account' }, visitDate: daysAgo(20), visitCharges: 3000, travelAllowance: 800,  additionalExpense: 200, totalAmount: 4000, purpose: 'Installation & commissioning', hrStatus: 'Approved', approvedBy: USERS[5], notes: '', createdAt: daysAgo(20) },
-  { _id: 'ev2', engineerId: USERS[4], accountId: { _id: 'a2', accountName: 'Future Systems Ltd'    }, visitDate: daysAgo(8),  visitCharges: 2500, travelAllowance: 1200, additionalExpense: 300, totalAmount: 4000, purpose: 'Site survey',                  hrStatus: 'Approved', approvedBy: USERS[5], notes: '', createdAt: daysAgo(8) },
-  { _id: 'ev3', engineerId: USERS[3], accountId: { _id: 'a2', accountName: 'Future Systems Ltd'    }, visitDate: daysAgo(3),  visitCharges: 2000, travelAllowance: 600,  additionalExpense: 0,   totalAmount: 2600, purpose: 'Troubleshooting',              hrStatus: 'Pending',  approvedBy: null, notes: '', createdAt: daysAgo(3) },
-  { _id: 'ev4', engineerId: USERS[4], accountId: null,                                                visitDate: daysAgo(1),  visitCharges: 1500, travelAllowance: 400,  additionalExpense: 100, totalAmount: 2000, purpose: 'Client demo visit',            hrStatus: 'Pending',  approvedBy: null, notes: 'Pre-sales support', createdAt: daysAgo(1) },
-  { _id: 'ev5', engineerId: USERS[3], accountId: { _id: 'a3', accountName: 'Smart Mfg Corp'        }, visitDate: daysAgo(15), visitCharges: 3500, travelAllowance: 1500, additionalExpense: 500, totalAmount: 5500, purpose: 'Maintenance',                  hrStatus: 'Approved', approvedBy: USERS[5], notes: '', createdAt: daysAgo(15) },
-  { _id: 'ev6', engineerId: USERS[4], accountId: { _id: 'a1', accountName: 'Horizon Infra Account' }, visitDate: daysAgo(5),  visitCharges: 2800, travelAllowance: 700,  additionalExpense: 0,   totalAmount: 3500, purpose: 'Support visit',                hrStatus: 'Rejected', approvedBy: USERS[5], notes: 'Out of scope', createdAt: daysAgo(5) },
-];
+export let ENGINEER_VISITS: any[] = [];
 
 // ─── SALARIES ────────────────────────────────────────────────────────────────
-export let SALARIES: any[] = [
-  { _id: 'sal1', employeeId: USERS[3], month: 1, year: 2026, baseSalary: 55000, visitChargesTotal: 13500, incentives: 5000, deductions: 2000, finalSalary: 71500, status: 'Paid',       paidDate: daysAgo(10), notes: '', createdAt: daysAgo(15) },
-  { _id: 'sal2', employeeId: USERS[4], month: 1, year: 2026, baseSalary: 55000, visitChargesTotal: 7500,  incentives: 2000, deductions: 1000, finalSalary: 63500, status: 'Paid',       paidDate: daysAgo(10), notes: '', createdAt: daysAgo(15) },
-  { _id: 'sal3', employeeId: USERS[3], month: 2, year: 2026, baseSalary: 55000, visitChargesTotal: 6600,  incentives: 0,    deductions: 0,    finalSalary: 61600, status: 'Calculated', paidDate: null,         notes: '', createdAt: daysAgo(2)  },
-];
+export let SALARIES: any[] = [];
 
 // ─── TRAININGS ───────────────────────────────────────────────────────────────
-export let TRAININGS: any[] = [
-  { _id: 'tr1', accountId: { _id: 'a1', accountName: 'Horizon Infra Account' }, customerName: 'Horizon Infra Account', status: 'Completed', mode: 'Online',  trainingDate: daysAgo(10), trainedBy: USERS[3], notes: 'Covered SCADA basics and HMI operation', createdAt: daysAgo(10) },
-  { _id: 'tr2', accountId: { _id: 'a2', accountName: 'Future Systems Ltd'    }, customerName: 'Future Systems Ltd',   status: 'Pending',   mode: 'Offline', trainingDate: daysFromNow(2), trainedBy: USERS[4], notes: 'Field training at site', createdAt: daysAgo(3) },
-  { _id: 'tr3', accountId: { _id: 'a1', accountName: 'Horizon Infra Account' }, customerName: 'Horizon Infra Account', status: 'Completed', mode: 'Hybrid',  trainingDate: daysAgo(5),  trainedBy: USERS[3], notes: 'Advanced PLC programming workshop', createdAt: daysAgo(5) },
-  { _id: 'tr4', accountId: { _id: 'a3', accountName: 'Smart Mfg Corp'        }, customerName: 'Smart Mfg Corp',       status: 'Pending',   mode: 'Online',  trainingDate: daysFromNow(5), trainedBy: USERS[3], notes: 'Introductory session', createdAt: daysAgo(1) },
-];
+export let TRAININGS: any[] = [];
 
 // ─── CRUD HELPERS ────────────────────────────────────────────────────────────
 const delay = (ms = 300) => new Promise(r => setTimeout(r, ms));
+
+// Filter helpers scoped to the current org
+const orgUsers        = () => USERS.filter((u: any) => u.organizationId === _currentOrgId);
+const orgLeads        = () => LEADS.filter((l: any) => l.organizationId === _currentOrgId);
+const orgDRFs         = () => DRFs.filter((d: any) => d.organizationId === _currentOrgId);
+const orgAccounts     = () => ACCOUNTS.filter((a: any) => a.organizationId === _currentOrgId);
+const orgQuotations   = () => QUOTATIONS.filter((q: any) => q.organizationId === _currentOrgId);
+const orgPOs          = () => PURCHASE_ORDERS.filter((p: any) => p.organizationId === _currentOrgId);
+const orgInstalls     = () => INSTALLATIONS.filter((i: any) => i.organizationId === _currentOrgId);
+const orgTickets      = () => SUPPORT_TICKETS.filter((t: any) => t.organizationId === _currentOrgId);
+const orgInvoices     = () => INVOICES.filter((i: any) => i.organizationId === _currentOrgId);
+const orgPayments     = () => PAYMENTS.filter((p: any) => p.organizationId === _currentOrgId);
+const orgVisits       = () => ENGINEER_VISITS.filter((v: any) => v.organizationId === _currentOrgId);
+const orgSalaries     = () => SALARIES.filter((s: any) => s.organizationId === _currentOrgId);
+const orgTrainings    = () => TRAININGS.filter((t: any) => t.organizationId === _currentOrgId);
 
 export const mockPaginate = <T>(items: T[], page = 1, limit = 15) => {
   const total = items.length;
@@ -143,107 +85,228 @@ export const mockAuth = {
   login: async (email: string, password: string) => {
     await delay(400);
     const user = USERS.find((u: any) => u.email === email.toLowerCase());
-    if (!user || PASSWORDS[email.toLowerCase()] !== password) throw { response: { data: { message: 'Invalid email or password' } } };
+    if (!user || !user.isActive) throw { response: { data: { message: 'Invalid email or password' } } };
+    if (PASSWORDS[email.toLowerCase()] !== password) throw { response: { data: { message: 'Invalid email or password' } } };
+    _currentOrgId = user.organizationId;
     return { user, accessToken: 'mock-token-' + user._id };
   },
-  logout: async () => { await delay(100); },
+  logout: async () => { await delay(100); _currentOrgId = null; },
   getMe: async (userId: string) => { await delay(100); return USERS.find((u: any) => u._id === userId)!; },
+
+  // Admin signs up and creates a new organization
+  signup: async (orgName: string, adminName: string, email: string, password: string) => {
+    await delay(500);
+    const lowerEmail = email.toLowerCase();
+    if (USERS.find((u: any) => u.email === lowerEmail)) {
+      throw { response: { data: { message: 'Email already registered' } } };
+    }
+    const orgId  = 'org' + uid();
+    const userId = 'u'   + uid();
+    const slug   = orgName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + uid().slice(0, 4);
+
+    const org: any = { _id: orgId, name: orgName, slug, ownerId: userId, isActive: true, createdAt: now() };
+    const user: any = {
+      _id: userId, name: adminName, email: lowerEmail, role: 'admin',
+      department: 'Management', isActive: true, phone: '',
+      baseSalary: 0, organizationId: orgId, createdAt: now(),
+    };
+    ORGANIZATIONS = [...ORGANIZATIONS, org];
+    USERS         = [...USERS, user];
+    PASSWORDS[lowerEmail] = password;
+
+    _currentOrgId = orgId;
+    return {
+      user,
+      organization: org,
+      accessToken: 'mock-token-' + userId,
+    };
+  },
 };
 
 // ─── LEADS MOCK ──────────────────────────────────────────────────────────────
 export const mockLeads = {
   getAll: async (params: Record<string, unknown> = {}) => {
     await delay();
-    let items = LEADS.filter((l: any) => !l.isArchived);
-    if (params.search) items = items.filter((l: any) => l.companyName.toLowerCase().includes((params.search as string).toLowerCase()) || l.contactName.toLowerCase().includes((params.search as string).toLowerCase()));
-    if (params.stage) items = items.filter((l: any) => l.stage === params.stage);
+    let items = orgLeads().filter((l: any) => !l.isArchived);
+    if (params.search)     items = items.filter((l: any) => l.companyName.toLowerCase().includes((params.search as string).toLowerCase()) || (l.contactPersonName || l.contactName || '').toLowerCase().includes((params.search as string).toLowerCase()));
+    if (params.stage)      items = items.filter((l: any) => l.stage === params.stage);
+    if (params.status)     items = items.filter((l: any) => l.status === params.status);
     if (params.assignedTo) items = items.filter((l: any) => l.assignedTo?._id === params.assignedTo);
     return mockPaginate(items, Number(params.page) || 1, Number(params.limit) || 15);
   },
-  getById: async (id: string) => { await delay(); return LEADS.find((l: any) => l._id === id) || null; },
+  getById: async (id: string) => { await delay(); return orgLeads().find((l: any) => l._id === id) || null; },
   create: async (data: Record<string, unknown>) => {
     await delay(400);
-    const lead = { _id: 'l' + uid(), ...data, assignedTo: data.assignedTo ? USERS.find((u: any) => u._id === data.assignedTo) || USERS[1] : USERS[1], stage: 'New', isArchived: false, createdAt: now(), updatedAt: now() };
+    const assignedUser = data.assignedTo
+      ? orgUsers().find((u: any) => u._id === data.assignedTo) || orgUsers().find((u: any) => u.role === 'sales')
+      : orgUsers().find((u: any) => u.role === 'sales');
+    const lead = {
+      _id: 'l' + uid(), organizationId: _currentOrgId,
+      status: 'New', stage: 'New', isArchived: false,
+      ...data,
+      assignedTo: assignedUser,
+      createdAt: now(), updatedAt: now(),
+    };
     LEADS = [lead, ...LEADS];
     return lead;
   },
   update: async (id: string, data: Record<string, unknown>) => {
     await delay(300);
-    LEADS = LEADS.map((l: any) => l._id === id ? { ...l, ...data, updatedAt: now() } : l);
-    return LEADS.find((l: any) => l._id === id)!;
+    const old = orgLeads().find((l: any) => l._id === id);
+    LEADS = LEADS.map((l: any) => l._id === id && l.organizationId === _currentOrgId ? { ...l, ...data, updatedAt: now() } : l);
+    const updated = orgLeads().find((l: any) => l._id === id)!;
+    // Auto-create DRF when status changes to Qualified
+    if (data.status === 'Qualified' && old?.status !== 'Qualified') {
+      const activeDRF = orgDRFs().find((d: any) => d.leadId._id === id && ['Pending', 'Approved'].includes(d.status));
+      if (!activeDRF) {
+        await mockDRF.create({ leadId: id, notes: 'Auto-created on lead qualification', createdBy: updated.assignedTo?._id, _autoCreated: true });
+      }
+    }
+    return updated;
   },
-  archive: async (id: string) => { await delay(); LEADS = LEADS.map((l: any) => l._id === id ? { ...l, isArchived: true } : l); },
+  archive: async (id: string) => { await delay(); LEADS = LEADS.map((l: any) => l._id === id && l.organizationId === _currentOrgId ? { ...l, isArchived: true } : l); },
+  importLeads: async (rows: Array<Record<string, string>>) => {
+    await delay(500);
+    const imported: any[] = [];
+    const defaultSales = orgUsers().find((u: any) => u.role === 'sales');
+    for (const row of rows) {
+      if (!row.companyName || !row.contactPersonName) continue;
+      const lead = {
+        _id: 'l' + uid(), organizationId: _currentOrgId,
+        companyName: row.companyName.trim(),
+        contactPersonName: row.contactPersonName.trim(),
+        contactName: row.contactPersonName.trim(),
+        email: row.email?.trim() || '',
+        phone: row.phone?.trim() || '',
+        oemName: row.oemName?.trim() || '',
+        source: row.source?.trim() || 'Import',
+        city: row.city?.trim() || '',
+        state: row.state?.trim() || '',
+        notes: row.notes?.trim() || '',
+        status: 'New', stage: 'New', isArchived: false,
+        assignedTo: defaultSales,
+        createdAt: now(), updatedAt: now(),
+      };
+      LEADS = [lead, ...LEADS];
+      imported.push(lead);
+    }
+    return { imported: imported.length };
+  },
 };
 
 // ─── DRF MOCK ────────────────────────────────────────────────────────────────
 export const mockDRF = {
   getAll: async (params: Record<string, unknown> = {}) => {
     await delay();
-    let items = [...DRFs];
+    let items = [...orgDRFs()];
     if (params.status)      items = items.filter((d: any) => d.status === params.status);
     if (params.leadId)      items = items.filter((d: any) => d.leadId._id === params.leadId);
-    if (params.salesPerson) items = items.filter((d: any) => { const l = LEADS.find((x: any) => x._id === d.leadId._id); return l?.assignedTo?._id === params.salesPerson; });
+    if (params.salesPerson) items = items.filter((d: any) => { const l = orgLeads().find((x: any) => x._id === d.leadId._id); return l?.assignedTo?._id === params.salesPerson; });
     if (params.oemName)     items = items.filter((d: any) => d.leadId.oemName?.toLowerCase().includes((params.oemName as string).toLowerCase()));
     if (params.multiVersion === 'true') items = items.filter((d: any) => d.version >= 2);
     if (params.from)        items = items.filter((d: any) => new Date(d.sentDate) >= new Date(params.from as string));
     if (params.to)          items = items.filter((d: any) => new Date(d.sentDate) <= new Date(params.to as string));
     return mockPaginate(items, Number(params.page) || 1, Number(params.limit) || 15);
   },
-  getByLead: async (leadId: string) => { await delay(); return DRFs.filter((d: any) => d.leadId._id === leadId); },
+  getByLead: async (leadId: string) => { await delay(); return orgDRFs().filter((d: any) => d.leadId._id === leadId); },
   create: async (data: Record<string, unknown>) => {
     await delay(400);
-    const lead = LEADS.find((l: any) => l._id === data.leadId);
+    const lead = orgLeads().find((l: any) => l._id === data.leadId);
     if (!lead) throw new Error('Lead not found');
-    const prevForLead = DRFs.filter((d: any) => d.leadId._id === data.leadId);
+
+    // Business Rule: ONE active DRF per company per org
+    if (!data._autoCreated && !data.forceCreate) {
+      const activeForCompany = orgDRFs().find((d: any) =>
+        d.leadId.companyName.toLowerCase() === lead.companyName.toLowerCase() &&
+        ['Pending', 'Approved'].includes(d.status) &&
+        d.leadId._id !== data.leadId
+      );
+      if (activeForCompany) {
+        throw { response: { data: { message: `An active DRF already exists for "${lead.companyName}". Owner: ${activeForCompany.createdBy?.name || 'Unknown'}`, existingDRF: activeForCompany } } };
+      }
+
+      // Version control: only same sales user or admin can create new version
+      const prevForLead = orgDRFs().filter((d: any) => d.leadId._id === data.leadId);
+      if (prevForLead.length > 0) {
+        const existingOwner = prevForLead[prevForLead.length - 1].createdBy;
+        const requestingUser = orgUsers().find((u: any) => u._id === data.createdBy);
+        if (requestingUser?.role !== 'admin' && existingOwner?._id !== data.createdBy) {
+          throw { response: { data: { message: `Only ${existingOwner?.name || 'the original owner'} or an admin can create a new version of this DRF` } } };
+        }
+      }
+    }
+
+    const prevForLead = orgDRFs().filter((d: any) => d.leadId._id === data.leadId);
     const version = prevForLead.length + 1;
     drfSeq++;
     const year = new Date().getFullYear();
     const drfNumber = `DRF-${year}-${String(drfSeq).padStart(3, '0')}`;
     const title = `${lead.oemName || 'OEM'} DRF for ${lead.companyName}`;
-    const createdByUser = data.createdBy ? USERS.find((u: any) => u._id === data.createdBy) || USERS[1] : USERS[1];
-    const drf = { _id: 'drf' + uid(), leadId: { _id: lead._id, companyName: lead.companyName, contactName: lead.contactName, contactPersonName: lead.contactPersonName, oemName: lead.oemName }, drfNumber, title, version, status: 'Pending', sentDate: now(), extensionCount: 0, extensionHistory: [], notes: String(data.notes || ''), createdBy: createdByUser, approvedBy: null, createdAt: now() };
+    const createdByUser = data.createdBy
+      ? orgUsers().find((u: any) => u._id === data.createdBy) || orgUsers().find((u: any) => u.role === 'sales')
+      : orgUsers().find((u: any) => u.role === 'sales');
+    const drf = {
+      _id: 'drf' + uid(), organizationId: _currentOrgId,
+      leadId: { _id: lead._id, companyName: lead.companyName, contactName: lead.contactName, contactPersonName: lead.contactPersonName, oemName: lead.oemName },
+      drfNumber, title, version, status: 'Pending', sentDate: now(),
+      extensionCount: 0, extensionHistory: [],
+      notes: String(data.notes || ''), createdBy: createdByUser, approvedBy: null, createdAt: now(),
+    };
     DRFs = [...DRFs, drf];
     LEADS = LEADS.map((l: any) => l._id === data.leadId ? { ...l, stage: 'DRF Submitted', updatedAt: now() } : l);
     return drf;
   },
   approve: async (id: string, data: { expiryDate: string; notes?: string }) => {
     await delay(400);
-    DRFs = DRFs.map((d: any) => d._id === id ? { ...d, status: 'Approved', approvedDate: now(), expiryDate: data.expiryDate, approvedBy: USERS[0], notes: data.notes || d.notes } : d);
-    const drf = DRFs.find((d: any) => d._id === id)!;
+    const admin = orgUsers().find((u: any) => u.role === 'admin');
+    DRFs = DRFs.map((d: any) => d._id === id ? { ...d, status: 'Approved', approvedDate: now(), expiryDate: data.expiryDate, approvedBy: admin, notes: data.notes || d.notes } : d);
+    const drf = orgDRFs().find((d: any) => d._id === id)!;
     LEADS = LEADS.map((l: any) => l._id === drf.leadId._id ? { ...l, stage: 'DRF Approved', updatedAt: now() } : l);
     return drf;
   },
   reject: async (id: string, data: { rejectionReason: string }) => {
     await delay(400);
     DRFs = DRFs.map((d: any) => d._id === id ? { ...d, status: 'Rejected', rejectedDate: now(), rejectionReason: data.rejectionReason } : d);
-    const drf = DRFs.find((d: any) => d._id === id)!;
+    const drf = orgDRFs().find((d: any) => d._id === id)!;
     LEADS = LEADS.map((l: any) => l._id === drf.leadId._id ? { ...l, stage: 'DRF Rejected', updatedAt: now() } : l);
     return drf;
   },
   extend: async (id: string, data: { newExpiry: string; reason: string }) => {
     await delay(300);
-    DRFs = DRFs.map((d: any) => d._id === id ? { ...d, expiryDate: data.newExpiry, extensionCount: d.extensionCount + 1, extensionHistory: [...d.extensionHistory, { extendedAt: now(), previousExpiry: d.expiryDate || '', newExpiry: data.newExpiry, extendedBy: USERS[0], reason: data.reason }] } : d);
-    return DRFs.find((d: any) => d._id === id)!;
+    const admin = orgUsers().find((u: any) => u.role === 'admin');
+    DRFs = DRFs.map((d: any) => d._id === id ? { ...d, expiryDate: data.newExpiry, extensionCount: d.extensionCount + 1, extensionHistory: [...d.extensionHistory, { extendedAt: now(), previousExpiry: d.expiryDate || '', newExpiry: data.newExpiry, extendedBy: admin, reason: data.reason }] } : d);
+    return orgDRFs().find((d: any) => d._id === id)!;
+  },
+  reassign: async (drfId: string, newOwnerId: string) => {
+    await delay(400);
+    const drf = orgDRFs().find((d: any) => d._id === drfId);
+    if (!drf) throw new Error('DRF not found');
+    const newOwner = orgUsers().find((u: any) => u._id === newOwnerId && u.role === 'sales' && u.isActive);
+    if (!newOwner) throw new Error('Target user must be an active sales member');
+    LEADS = LEADS.map((l: any) => l._id === drf.leadId._id ? { ...l, assignedTo: newOwner, updatedAt: now() } : l);
+    DRFs  = DRFs.map((d: any) => d._id === drfId ? { ...d, createdBy: newOwner } : d);
+    return { drfId, newOwner };
   },
   getAnalytics: async () => {
     await delay(300);
-    const total = DRFs.length;
-    const approved = DRFs.filter((d: any) => d.status === 'Approved').length;
-    const rejected = DRFs.filter((d: any) => d.status === 'Rejected').length;
-    const pending  = DRFs.filter((d: any) => d.status === 'Pending').length;
-    const expiringSoon = DRFs.filter((d: any) => d.status === 'Approved' && d.expiryDate && new Date(d.expiryDate).getTime() - Date.now() < 30 * 86400000).length;
-    const drfBySalesPerson = USERS.filter((u: any) => u.role === 'sales').map((sp: any) => {
-      const myLeadIds = LEADS.filter((l: any) => l.assignedTo?._id === sp._id).map((l: any) => l._id);
-      const myDRFs = DRFs.filter((d: any) => myLeadIds.includes(d.leadId._id));
+    const items    = orgDRFs();
+    const total    = items.length;
+    const approved = items.filter((d: any) => d.status === 'Approved').length;
+    const rejected = items.filter((d: any) => d.status === 'Rejected').length;
+    const pending  = items.filter((d: any) => d.status === 'Pending').length;
+    const expiringSoon = items.filter((d: any) => d.status === 'Approved' && d.expiryDate && new Date(d.expiryDate).getTime() - Date.now() < 30 * 86400000).length;
+    const drfBySalesPerson = orgUsers().filter((u: any) => u.role === 'sales').map((sp: any) => {
+      const myLeadIds = orgLeads().filter((l: any) => l.assignedTo?._id === sp._id).map((l: any) => l._id);
+      const myDRFs    = items.filter((d: any) => myLeadIds.includes(d.leadId._id));
       return { name: sp.name, total: myDRFs.length, approved: myDRFs.filter((d: any) => d.status === 'Approved').length, rejected: myDRFs.filter((d: any) => d.status === 'Rejected').length };
     });
     const reasonMap: Record<string, number> = {};
-    DRFs.filter((d: any) => d.status === 'Rejected' && d.rejectionReason).forEach((d: any) => { reasonMap[d.rejectionReason] = (reasonMap[d.rejectionReason] || 0) + 1; });
+    items.filter((d: any) => d.status === 'Rejected' && d.rejectionReason).forEach((d: any) => { reasonMap[d.rejectionReason] = (reasonMap[d.rejectionReason] || 0) + 1; });
     const rejectionReasons = Object.entries(reasonMap).map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count);
-    const expiringList = DRFs.filter((d: any) => d.status === 'Approved' && d.expiryDate && new Date(d.expiryDate).getTime() - Date.now() < 30 * 86400000)
-      .map((d: any) => ({ ...d, leadData: LEADS.find((l: any) => l._id === d.leadId._id) }))
+    const expiringList = items.filter((d: any) => d.status === 'Approved' && d.expiryDate && new Date(d.expiryDate).getTime() - Date.now() < 30 * 86400000)
       .sort((a: any, b: any) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
-    return { total, approved, rejected, pending, expiringSoon, approvalRate: total > 0 ? Math.round((approved / total) * 100) : 0, rejectionRate: total > 0 ? Math.round((rejected / total) * 100) : 0, drfBySalesPerson, rejectionReasons, expiringList };
+    const totalThisMonth = items.filter((d: any) => { const m = new Date(d.createdAt); const n = new Date(); return m.getMonth() === n.getMonth() && m.getFullYear() === n.getFullYear(); }).length;
+    return { total, approved, rejected, pending, expiringSoon, totalThisMonth, approvalRate: total > 0 ? Math.round((approved / total) * 100) : 0, rejectionRate: total > 0 ? Math.round((rejected / total) * 100) : 0, drfBySalesPerson, rejectionReasons, expiringList };
   },
 };
 
@@ -251,30 +314,30 @@ export const mockDRF = {
 export const mockAccounts = {
   getAll: async (params: Record<string, unknown> = {}) => {
     await delay();
-    let items = [...ACCOUNTS];
+    let items = [...orgAccounts()];
     if (params.search) items = items.filter((a: any) => a.accountName.toLowerCase().includes((params.search as string).toLowerCase()));
     return mockPaginate(items, Number(params.page) || 1, Number(params.limit) || 15);
   },
-  getById: async (id: string) => { await delay(); return ACCOUNTS.find((a: any) => a._id === id) || null; },
+  getById: async (id: string) => { await delay(); return orgAccounts().find((a: any) => a._id === id) || null; },
   convert: async (data: { leadId: string; accountName: string; notes?: string }) => {
     await delay(400);
-    const lead = LEADS.find((l: any) => l._id === data.leadId);
+    const lead = orgLeads().find((l: any) => l._id === data.leadId);
     if (!lead) throw new Error('Lead not found');
-    const account = { _id: 'a' + uid(), leadId: { _id: lead._id, companyName: lead.companyName, contactPersonName: lead.contactPersonName }, accountName: data.accountName, assignedEngineer: null, assignedSales: lead.assignedTo, status: 'Active', licenseVersion: '', licenseDate: null, licenseExpiryDate: null, notes: data.notes || '', createdAt: now() };
+    const account = { _id: 'a' + uid(), organizationId: _currentOrgId, leadId: { _id: lead._id, companyName: lead.companyName, contactPersonName: lead.contactPersonName }, accountName: data.accountName, assignedEngineer: null, assignedSales: lead.assignedTo, status: 'Active', licenseVersion: '', licenseDate: null, licenseExpiryDate: null, notes: data.notes || '', createdAt: now() };
     ACCOUNTS = [...ACCOUNTS, account];
     LEADS = LEADS.map((l: any) => l._id === data.leadId ? { ...l, stage: 'Converted' } : l);
     return account;
   },
   update: async (id: string, data: Record<string, unknown>) => {
     await delay(300);
-    ACCOUNTS = ACCOUNTS.map((a: any) => a._id === id ? { ...a, ...data } : a);
-    return ACCOUNTS.find((a: any) => a._id === id)!;
+    ACCOUNTS = ACCOUNTS.map((a: any) => a._id === id && a.organizationId === _currentOrgId ? { ...a, ...data } : a);
+    return orgAccounts().find((a: any) => a._id === id)!;
   },
   assignEngineer: async (id: string, engineerId: string) => {
     await delay(300);
-    const engineer = USERS.find((u: any) => u._id === engineerId);
-    ACCOUNTS = ACCOUNTS.map((a: any) => a._id === id ? { ...a, assignedEngineer: engineer } : a);
-    return ACCOUNTS.find((a: any) => a._id === id)!;
+    const engineer = orgUsers().find((u: any) => u._id === engineerId);
+    ACCOUNTS = ACCOUNTS.map((a: any) => a._id === id && a.organizationId === _currentOrgId ? { ...a, assignedEngineer: engineer } : a);
+    return orgAccounts().find((a: any) => a._id === id)!;
   },
 };
 
@@ -282,35 +345,140 @@ export const mockAccounts = {
 export const mockQuotations = {
   getAll: async (params: Record<string, unknown> = {}) => {
     await delay();
-    return mockPaginate(QUOTATIONS, Number(params.page) || 1, Number(params.limit) || 15);
+    let items = [...orgQuotations()];
+    if (params.status) items = items.filter((q: any) => q.status === params.status);
+    if (params.leadId) items = items.filter((q: any) => q.leadId._id === params.leadId);
+    return mockPaginate(items, Number(params.page) || 1, Number(params.limit) || 15);
   },
-  getByLead: async (leadId: string) => { await delay(); return QUOTATIONS.filter((q: any) => q.leadId._id === leadId); },
-  getById: async (id: string) => { await delay(); return QUOTATIONS.find((q: any) => q._id === id); },
+  getByLead: async (leadId: string) => { await delay(); return orgQuotations().filter((q: any) => q.leadId._id === leadId); },
+  getById: async (id: string) => { await delay(); return orgQuotations().find((q: any) => q._id === id); },
   create: async (data: Record<string, unknown>) => {
     await delay(400);
-    const lead = LEADS.find((l: any) => l._id === data.leadId);
+    const lead = orgLeads().find((l: any) => l._id === data.leadId);
+    if (!lead) throw new Error('Lead not found');
+    // Require approved DRF
+    const approvedDRF = orgDRFs().find((d: any) => d.leadId._id === data.leadId && d.status === 'Approved');
+    if (!approvedDRF) {
+      throw { response: { data: { message: 'A Quotation can only be created after the DRF is Approved' } } };
+    }
+    const prevQuotes = orgQuotations().filter((q: any) => q.leadId._id === data.leadId);
+    const version = prevQuotes.length + 1;
     const items = (data.items as Array<{total:number}>) || [];
-    const subtotal = items.reduce((s, i) => s + i.total, 0);
-    const taxRate = Number(data.taxRate) || 18;
+    const subtotal  = items.reduce((s, i) => s + i.total, 0);
+    const taxRate   = Number(data.taxRate) || 18;
     const taxAmount = subtotal * taxRate / 100;
-    const q = { _id: 'q' + uid(), leadId: { _id: lead?._id, companyName: lead?.companyName }, quotationNumber: 'QT-2026-00' + (QUOTATIONS.length + 1), items, subtotal, taxRate, taxAmount, total: subtotal + taxAmount, validUntil: data.validUntil, terms: data.terms, notes: data.notes, createdBy: USERS[1], createdAt: now() };
+    const createdBy = data.createdBy
+      ? orgUsers().find((u: any) => u._id === data.createdBy) || orgUsers().find((u: any) => u.role === 'sales')
+      : orgUsers().find((u: any) => u.role === 'sales') || orgUsers()[0];
+    const q = {
+      _id: 'q' + uid(), organizationId: _currentOrgId,
+      leadId: { _id: lead._id, companyName: lead.companyName },
+      quotationNumber: `QT-${new Date().getFullYear()}-${String(orgQuotations().length + 1).padStart(3, '0')}`,
+      version, status: 'Sent', items, subtotal, taxRate, taxAmount,
+      total: subtotal + taxAmount,
+      validUntil: data.validUntil, terms: data.terms, notes: data.notes,
+      emailSent: false, pdfPath: null, createdBy, createdAt: now(),
+    };
     QUOTATIONS = [...QUOTATIONS, q];
-    LEADS = LEADS.map((l: any) => l._id === data.leadId ? { ...l, stage: 'Quotation Sent' } : l);
+    LEADS = LEADS.map((l: any) => l._id === data.leadId ? { ...l, stage: 'Quotation Sent', updatedAt: now() } : l);
     return q;
+  },
+  update: async (id: string, data: Record<string, unknown>) => {
+    await delay(300);
+    QUOTATIONS = QUOTATIONS.map((q: any) => q._id === id && q.organizationId === _currentOrgId ? { ...q, ...data } : q);
+    return orgQuotations().find((q: any) => q._id === id)!;
+  },
+  accept: async (id: string) => {
+    await delay(300);
+    QUOTATIONS = QUOTATIONS.map((q: any) => q._id === id && q.organizationId === _currentOrgId ? { ...q, status: 'Accepted' } : q);
+    const q = orgQuotations().find((q: any) => q._id === id)!;
+    LEADS = LEADS.map((l: any) => l._id === q.leadId._id ? { ...l, stage: 'Negotiation', updatedAt: now() } : l);
+    return q;
+  },
+  reject: async (id: string) => {
+    await delay(300);
+    QUOTATIONS = QUOTATIONS.map((q: any) => q._id === id && q.organizationId === _currentOrgId ? { ...q, status: 'Rejected' } : q);
+    return orgQuotations().find((q: any) => q._id === id)!;
+  },
+  sendEmail: async (id: string) => {
+    await delay(600);
+    QUOTATIONS = QUOTATIONS.map((q: any) => q._id === id && q.organizationId === _currentOrgId ? { ...q, emailSent: true, emailSentAt: now() } : q);
+    return orgQuotations().find((q: any) => q._id === id)!;
+  },
+  generatePDF: async (id: string) => {
+    await delay(800);
+    const q = orgQuotations().find((qt: any) => qt._id === id)!;
+    const pdfPath = `quotation_${(q.quotationNumber as string).replace(/-/g, '_')}.pdf`;
+    QUOTATIONS = QUOTATIONS.map((qt: any) => qt._id === id && qt.organizationId === _currentOrgId ? { ...qt, pdfPath } : qt);
+    return orgQuotations().find((qt: any) => qt._id === id)!;
   },
 };
 
 // ─── PURCHASE ORDERS MOCK ────────────────────────────────────────────────────
 export const mockPurchases = {
-  getAll: async (params: Record<string, unknown> = {}) => { await delay(); return mockPaginate(PURCHASE_ORDERS, Number(params.page) || 1, 15); },
-  getById: async (id: string) => { await delay(); return PURCHASE_ORDERS.find((p: any) => p._id === id); },
+  getAll: async (params: Record<string, unknown> = {}) => {
+    await delay();
+    let items = [...orgPOs()];
+    if (params.leadId) items = items.filter((p: any) => p.leadId._id === params.leadId);
+    return mockPaginate(items, Number(params.page) || 1, Number(params.limit) || 15);
+  },
+  getByLead: async (leadId: string) => { await delay(); return orgPOs().filter((p: any) => p.leadId._id === leadId); },
+  getById: async (id: string) => { await delay(); return orgPOs().find((p: any) => p._id === id); },
   create: async (data: Record<string, unknown>) => {
     await delay(400);
-    const lead = LEADS.find((l: any) => l._id === data.leadId);
-    const po = { _id: 'po' + uid(), leadId: { _id: lead?._id, companyName: lead?.companyName }, poNumber: 'PO-2026-00' + (PURCHASE_ORDERS.length + 1), amount: Number(data.amount), receivedDate: data.receivedDate, notes: String(data.notes || ''), createdBy: USERS[1], createdAt: now() };
+    const lead = orgLeads().find((l: any) => l._id === data.leadId);
+    const createdBy = data.createdBy
+      ? orgUsers().find((u: any) => u._id === data.createdBy) || orgUsers().find((u: any) => u.role === 'sales')
+      : orgUsers().find((u: any) => u.role === 'sales') || orgUsers()[0];
+    const po = {
+      _id: 'po' + uid(), organizationId: _currentOrgId,
+      leadId: { _id: lead?._id, companyName: lead?.companyName },
+      poNumber: `PO-${new Date().getFullYear()}-${String(orgPOs().length + 1).padStart(3, '0')}`,
+      amount: Number(data.amount),
+      product: String(data.product || ''),
+      vendorName: String(data.vendorName || ''),
+      vendorEmail: String(data.vendorEmail || ''),
+      documentPath: data.documentPath || null,
+      receivedDate: data.receivedDate,
+      notes: String(data.notes || ''),
+      isSubmitted: false, vendorEmailSent: false,
+      createdBy, createdAt: now(),
+    };
     PURCHASE_ORDERS = [...PURCHASE_ORDERS, po];
-    LEADS = LEADS.map((l: any) => l._id === data.leadId ? { ...l, stage: 'PO Received' } : l);
+    LEADS = LEADS.map((l: any) => l._id === data.leadId ? { ...l, stage: 'PO Received', updatedAt: now() } : l);
     return po;
+  },
+  update: async (id: string, data: Record<string, unknown>) => {
+    await delay(300);
+    PURCHASE_ORDERS = PURCHASE_ORDERS.map((p: any) => p._id === id && p.organizationId === _currentOrgId ? { ...p, ...data } : p);
+    return orgPOs().find((p: any) => p._id === id)!;
+  },
+  sendToVendor: async (id: string) => {
+    await delay(600);
+    const po = orgPOs().find((p: any) => p._id === id);
+    if (!po?.vendorEmail) throw { response: { data: { message: 'No vendor email address set on this PO' } } };
+    PURCHASE_ORDERS = PURCHASE_ORDERS.map((p: any) => p._id === id && p.organizationId === _currentOrgId
+      ? { ...p, isSubmitted: true, vendorEmailSent: true, vendorEmailSentAt: now() } : p);
+    return orgPOs().find((p: any) => p._id === id)!;
+  },
+  convertToAccount: async (poId: string, data: { accountName?: string; notes?: string }) => {
+    await delay(500);
+    const po = orgPOs().find((p: any) => p._id === poId);
+    if (!po) throw new Error('PO not found');
+    const lead = orgLeads().find((l: any) => l._id === po.leadId._id);
+    if (!lead) throw new Error('Lead not found');
+    const existing = orgAccounts().find((a: any) => a.leadId?._id === lead._id);
+    if (existing) throw { response: { data: { message: 'An account already exists for this lead' } } };
+    const account = {
+      _id: 'a' + uid(), organizationId: _currentOrgId,
+      leadId: { _id: lead._id, companyName: lead.companyName, contactPersonName: lead.contactPersonName },
+      accountName: data.accountName || lead.companyName,
+      assignedEngineer: null, assignedSales: lead.assignedTo,
+      status: 'Active', notes: data.notes || '', createdAt: now(),
+    };
+    ACCOUNTS = [...ACCOUNTS, account];
+    LEADS = LEADS.map((l: any) => l._id === lead._id ? { ...l, stage: 'Converted', updatedAt: now() } : l);
+    return account;
   },
 };
 
@@ -318,56 +486,58 @@ export const mockPurchases = {
 export const mockInstallations = {
   getAll: async (params: Record<string, unknown> = {}) => {
     await delay();
-    let items = [...INSTALLATIONS];
+    let items = [...orgInstalls()];
     if (params.status) items = items.filter((i: any) => i.status === params.status);
     return mockPaginate(items, Number(params.page) || 1, 15);
   },
-  getByAccount: async (accountId: string) => { await delay(); return INSTALLATIONS.filter((i: any) => i.accountId?._id === accountId); },
-  getById: async (id: string) => { await delay(); return INSTALLATIONS.find((i: any) => i._id === id); },
+  getByAccount: async (accountId: string) => { await delay(); return orgInstalls().filter((i: any) => i.accountId?._id === accountId); },
+  getById: async (id: string) => { await delay(); return orgInstalls().find((i: any) => i._id === id); },
   create: async (data: Record<string, unknown>) => {
     await delay(400);
-    const account = ACCOUNTS.find((a: any) => a._id === data.accountId);
-    const engineer = USERS.find((u: any) => u._id === data.engineer);
-    const inst = { _id: 'i' + uid(), accountId: { _id: account?._id, accountName: account?.accountName }, scheduledDate: data.scheduledDate, completedDate: null, engineer, siteAddress: data.siteAddress, status: 'Scheduled', licenseVersion: String(data.licenseVersion || ''), notes: String(data.notes || ''), createdAt: now() };
+    const account  = orgAccounts().find((a: any) => a._id === data.accountId);
+    const engineer = orgUsers().find((u: any) => u._id === data.engineer);
+    const inst = { _id: 'i' + uid(), organizationId: _currentOrgId, accountId: { _id: account?._id, accountName: account?.accountName }, scheduledDate: data.scheduledDate, completedDate: null, engineer, siteAddress: data.siteAddress, status: 'Scheduled', licenseVersion: String(data.licenseVersion || ''), notes: String(data.notes || ''), createdAt: now() };
     INSTALLATIONS = [...INSTALLATIONS, inst];
     return inst;
   },
   update: async (id: string, data: Record<string, unknown>) => {
     await delay(300);
-    INSTALLATIONS = INSTALLATIONS.map((i: any) => i._id === id ? { ...i, ...data, completedDate: data.status === 'Completed' ? now() : i.completedDate } : i);
-    return INSTALLATIONS.find((i: any) => i._id === id)!;
+    INSTALLATIONS = INSTALLATIONS.map((i: any) => i._id === id && i.organizationId === _currentOrgId ? { ...i, ...data, completedDate: data.status === 'Completed' ? now() : i.completedDate } : i);
+    return orgInstalls().find((i: any) => i._id === id)!;
   },
 };
 
 // ─── SUPPORT MOCK ────────────────────────────────────────────────────────────
-let ticketCounter = 6;
+let ticketCounter = 1;
 export const mockSupport = {
   getAll: async (params: Record<string, unknown> = {}) => {
     await delay();
-    let items = [...SUPPORT_TICKETS];
+    let items = [...orgTickets()];
     if (params.status) items = items.filter((t: any) => t.status === params.status);
     if (params.search) items = items.filter((t: any) => t.subject.toLowerCase().includes((params.search as string).toLowerCase()));
     return mockPaginate(items, Number(params.page) || 1, 15);
   },
-  getByAccount: async (accountId: string) => { await delay(); return SUPPORT_TICKETS.filter((t: any) => t.accountId._id === accountId); },
-  getById: async (id: string) => { await delay(); return SUPPORT_TICKETS.find((t: any) => t._id === id); },
+  getByAccount: async (accountId: string) => { await delay(); return orgTickets().filter((t: any) => t.accountId._id === accountId); },
+  getById: async (id: string) => { await delay(); return orgTickets().find((t: any) => t._id === id); },
   create: async (data: Record<string, unknown>) => {
     await delay(400);
-    const account = ACCOUNTS.find((a: any) => a._id === data.accountId);
-    const ticket = { _id: 't' + uid(), accountId: { _id: account?._id, accountName: account?.accountName }, ticketId: 'TKT-000' + ticketCounter++, subject: data.subject, description: data.description, priority: data.priority || 'Medium', status: 'Open', assignedTo: null, internalNotes: [], createdBy: USERS[1], createdAt: now() };
+    const account   = orgAccounts().find((a: any) => a._id === data.accountId);
+    const createdBy = orgUsers().find((u: any) => u.role === 'sales') || orgUsers()[0];
+    const ticket = { _id: 't' + uid(), organizationId: _currentOrgId, accountId: { _id: account?._id, accountName: account?.accountName }, ticketId: 'TKT-000' + ticketCounter++, subject: data.subject, description: data.description, priority: data.priority || 'Medium', status: 'Open', assignedTo: null, internalNotes: [], createdBy, createdAt: now() };
     SUPPORT_TICKETS = [...SUPPORT_TICKETS, ticket];
     return ticket;
   },
   update: async (id: string, data: Record<string, unknown>) => {
     await delay(300);
-    SUPPORT_TICKETS = SUPPORT_TICKETS.map((t: any) => t._id === id ? { ...t, ...data } : t);
-    return SUPPORT_TICKETS.find((t: any) => t._id === id)!;
+    SUPPORT_TICKETS = SUPPORT_TICKETS.map((t: any) => t._id === id && t.organizationId === _currentOrgId ? { ...t, ...data } : t);
+    return orgTickets().find((t: any) => t._id === id)!;
   },
   addNote: async (id: string, note: string) => {
     await delay(300);
-    const newNote = { note, addedBy: USERS[0], addedAt: now() };
-    SUPPORT_TICKETS = SUPPORT_TICKETS.map((t: any) => t._id === id ? { ...t, internalNotes: [...t.internalNotes, newNote] } : t);
-    return SUPPORT_TICKETS.find((t: any) => t._id === id)!;
+    const admin = orgUsers().find((u: any) => u.role === 'admin') || orgUsers()[0];
+    const newNote = { note, addedBy: admin, addedAt: now() };
+    SUPPORT_TICKETS = SUPPORT_TICKETS.map((t: any) => t._id === id && t.organizationId === _currentOrgId ? { ...t, internalNotes: [...t.internalNotes, newNote] } : t);
+    return orgTickets().find((t: any) => t._id === id)!;
   },
 };
 
@@ -375,225 +545,319 @@ export const mockSupport = {
 export const mockInvoices = {
   getAll: async (params: Record<string, unknown> = {}) => {
     await delay();
-    let items = [...INVOICES];
+    let items = [...orgInvoices()];
     if (params.status) items = items.filter((i: any) => i.status === params.status);
     return mockPaginate(items, Number(params.page) || 1, 15);
   },
-  getByAccount: async (accountId: string) => { await delay(); return INVOICES.filter((i: any) => i.accountId._id === accountId); },
-  getById: async (id: string) => { await delay(); return INVOICES.find((i: any) => i._id === id); },
+  getByAccount: async (accountId: string) => { await delay(); return orgInvoices().filter((i: any) => i.accountId._id === accountId); },
+  getById: async (id: string) => { await delay(); return orgInvoices().find((i: any) => i._id === id); },
   getStats: async () => {
     await delay();
+    const items = orgInvoices();
     return {
-      totalRevenue: INVOICES.filter((i: any) => i.status === 'Paid').reduce((s: number, i: any) => s + i.amount, 0),
-      pending: INVOICES.filter((i: any) => i.status === 'Unpaid' || i.status === 'Partially Paid').length,
-      overdue: INVOICES.filter((i: any) => i.status === 'Overdue').length,
+      totalRevenue: items.filter((i: any) => i.status === 'Paid').reduce((s: number, i: any) => s + i.amount, 0),
+      pending:      items.filter((i: any) => i.status === 'Unpaid' || i.status === 'Partially Paid').length,
+      overdue:      items.filter((i: any) => i.status === 'Overdue').length,
     };
   },
   create: async (data: Record<string, unknown>) => {
     await delay(400);
-    const account = ACCOUNTS.find((a: any) => a._id === data.accountId);
-    const inv = { _id: 'inv' + uid(), accountId: { _id: account?._id, accountName: account?.accountName }, invoiceNumber: 'INV-2026-00' + (INVOICES.length + 1), amount: Number(data.amount), paidAmount: 0, dueDate: data.dueDate, status: 'Unpaid', notes: String(data.notes || ''), createdBy: USERS[0], createdAt: now() };
+    const account   = orgAccounts().find((a: any) => a._id === data.accountId);
+    const createdBy = orgUsers().find((u: any) => u.role === 'admin') || orgUsers()[0];
+    const inv = { _id: 'inv' + uid(), organizationId: _currentOrgId, accountId: { _id: account?._id, accountName: account?.accountName }, invoiceNumber: 'INV-2026-00' + (orgInvoices().length + 1), amount: Number(data.amount), paidAmount: 0, dueDate: data.dueDate, status: 'Unpaid', notes: String(data.notes || ''), createdBy, createdAt: now() };
     INVOICES = [...INVOICES, inv];
     return inv;
   },
   recordPayment: async (id: string, data: Record<string, unknown>) => {
     await delay(400);
-    const inv = INVOICES.find((i: any) => i._id === id)!;
+    const inv    = orgInvoices().find((i: any) => i._id === id)!;
     const newPaid = inv.paidAmount + Number(data.amount);
-    const status = newPaid >= inv.amount ? 'Paid' : 'Partially Paid';
+    const status  = newPaid >= inv.amount ? 'Paid' : 'Partially Paid';
     INVOICES = INVOICES.map((i: any) => i._id === id ? { ...i, paidAmount: newPaid, status } : i);
-    const payment = { _id: 'pay' + uid(), invoiceId: { _id: inv._id, invoiceNumber: inv.invoiceNumber }, amount: Number(data.amount), paymentDate: data.paymentDate, mode: data.mode, reference: data.reference || '', notes: String(data.notes || ''), recordedBy: USERS[0], createdAt: now() };
+    const recorder = orgUsers().find((u: any) => u.role === 'admin') || orgUsers()[0];
+    const payment = { _id: 'pay' + uid(), organizationId: _currentOrgId, invoiceId: { _id: inv._id, invoiceNumber: inv.invoiceNumber }, amount: Number(data.amount), paymentDate: data.paymentDate, mode: data.mode, reference: data.reference || '', notes: String(data.notes || ''), recordedBy: recorder, createdAt: now() };
     PAYMENTS = [...PAYMENTS, payment];
-    return INVOICES.find((i: any) => i._id === id)!;
+    return orgInvoices().find((i: any) => i._id === id)!;
   },
-  getPayments: async (id: string) => { await delay(); return PAYMENTS.filter((p: any) => p.invoiceId._id === id); },
+  getPayments: async (id: string) => { await delay(); return orgPayments().filter((p: any) => p.invoiceId._id === id); },
 };
 
 // ─── ENGINEER VISITS MOCK ────────────────────────────────────────────────────
 export const mockEngineerVisits = {
   getAll: async (params: Record<string, unknown> = {}) => {
     await delay();
-    let items = [...ENGINEER_VISITS];
+    let items = [...orgVisits()];
     if (params.hrStatus) items = items.filter((v: any) => v.hrStatus === params.hrStatus);
     return mockPaginate(items, Number(params.page) || 1, 15);
   },
-  getById: async (id: string) => { await delay(); return ENGINEER_VISITS.find((v: any) => v._id === id); },
+  getMyVisits: async (engineerId: string) => { await delay(); return orgVisits().filter((v: any) => v.engineerId._id === engineerId); },
   create: async (data: Record<string, unknown>) => {
     await delay(400);
-    const account = data.accountId ? ACCOUNTS.find((a: any) => a._id === data.accountId) : null;
-    const visit = { _id: 'ev' + uid(), engineerId: USERS[3], accountId: account ? { _id: account._id, accountName: account.accountName } : null, visitDate: data.visitDate, visitCharges: Number(data.visitCharges) || 0, travelAllowance: Number(data.travelAllowance) || 0, additionalExpense: Number(data.additionalExpense) || 0, totalAmount: (Number(data.visitCharges) || 0) + (Number(data.travelAllowance) || 0) + (Number(data.additionalExpense) || 0), purpose: data.purpose, hrStatus: 'Pending', approvedBy: null, notes: String(data.notes || ''), createdAt: now() };
+    const engineer = orgUsers().find((u: any) => u._id === data.engineerId);
+    const account  = data.accountId ? orgAccounts().find((a: any) => a._id === data.accountId) : null;
+    const total    = Number(data.visitCharges) + Number(data.travelAllowance) + Number(data.additionalExpense);
+    const visit    = { _id: 'ev' + uid(), organizationId: _currentOrgId, engineerId: engineer, accountId: account ? { _id: account._id, accountName: account.accountName } : null, visitDate: data.visitDate, visitCharges: Number(data.visitCharges), travelAllowance: Number(data.travelAllowance), additionalExpense: Number(data.additionalExpense), totalAmount: total, purpose: data.purpose, hrStatus: 'Pending', approvedBy: null, notes: String(data.notes || ''), createdAt: now() };
     ENGINEER_VISITS = [...ENGINEER_VISITS, visit];
     return visit;
   },
-  approve: async (id: string, status: 'Approved' | 'Rejected') => {
+  approve: async (id: string) => {
     await delay(300);
-    ENGINEER_VISITS = ENGINEER_VISITS.map((v: any) => v._id === id ? { ...v, hrStatus: status, approvedBy: USERS[5] } : v);
-    return ENGINEER_VISITS.find((v: any) => v._id === id)!;
+    const approver = orgUsers().find((u: any) => u.role === 'hr_finance') || orgUsers()[0];
+    ENGINEER_VISITS = ENGINEER_VISITS.map((v: any) => v._id === id && v.organizationId === _currentOrgId ? { ...v, hrStatus: 'Approved', approvedBy: approver, approvedAt: now() } : v);
+    return orgVisits().find((v: any) => v._id === id)!;
+  },
+  reject: async (id: string) => {
+    await delay(300);
+    const approver = orgUsers().find((u: any) => u.role === 'hr_finance') || orgUsers()[0];
+    ENGINEER_VISITS = ENGINEER_VISITS.map((v: any) => v._id === id && v.organizationId === _currentOrgId ? { ...v, hrStatus: 'Rejected', approvedBy: approver, approvedAt: now() } : v);
+    return orgVisits().find((v: any) => v._id === id)!;
   },
 };
 
-// ─── SALARIES MOCK ───────────────────────────────────────────────────────────
+// ─── SALARIES MOCK ────────────────────────────────────────────────────────────
 export const mockSalaries = {
-  getAll: async (params: Record<string, unknown> = {}) => { await delay(); return mockPaginate(SALARIES, Number(params.page) || 1, 15); },
-  calculate: async (data: { employeeId: string; month: number; year: number; baseSalary: number; incentives?: number; deductions?: number }) => {
-    await delay(500);
-    const employee = USERS.find((u: any) => u._id === data.employeeId);
-    if (!employee) throw new Error('Employee not found');
-    const exists = SALARIES.find((s: any) => s.employeeId._id === data.employeeId && s.month === data.month && s.year === data.year);
-    if (exists) throw { response: { data: { message: 'Salary already calculated for this period' } } };
-    const visitChargesTotal = ENGINEER_VISITS.filter((v: any) => v.engineerId._id === data.employeeId && v.hrStatus === 'Approved').reduce((s: number, v: any) => s + v.visitCharges, 0);
-    const sal = { _id: 'sal' + uid(), employeeId: employee, month: data.month, year: data.year, baseSalary: data.baseSalary, visitChargesTotal, incentives: data.incentives || 0, deductions: data.deductions || 0, finalSalary: data.baseSalary + visitChargesTotal + (data.incentives || 0) - (data.deductions || 0), status: 'Calculated', paidDate: null, notes: '', createdAt: now() };
-    SALARIES = [...SALARIES, sal];
-    return sal;
+  getAll: async (params: Record<string, unknown> = {}) => {
+    await delay();
+    return mockPaginate(orgSalaries(), Number(params.page) || 1, 15);
+  },
+  calculate: async (data: Record<string, unknown>) => {
+    await delay(400);
+    const employee  = orgUsers().find((u: any) => u._id === data.employeeId);
+    const visits    = orgVisits().filter((v: any) => v.engineerId._id === data.employeeId && v.hrStatus === 'Approved' && new Date(v.visitDate).getMonth() + 1 === Number(data.month) && new Date(v.visitDate).getFullYear() === Number(data.year));
+    const visitTotal = visits.reduce((s: number, v: any) => s + v.totalAmount, 0);
+    const salary = { _id: 'sal' + uid(), organizationId: _currentOrgId, employeeId: employee, month: Number(data.month), year: Number(data.year), baseSalary: employee?.baseSalary || 0, visitChargesTotal: visitTotal, incentives: Number(data.incentives) || 0, deductions: Number(data.deductions) || 0, finalSalary: (employee?.baseSalary || 0) + visitTotal + (Number(data.incentives) || 0) - (Number(data.deductions) || 0), status: 'Calculated', paidDate: null, notes: String(data.notes || ''), createdAt: now() };
+    SALARIES = [...SALARIES, salary];
+    return salary;
   },
   markPaid: async (id: string) => {
     await delay(300);
-    SALARIES = SALARIES.map((s: any) => s._id === id ? { ...s, status: 'Paid', paidDate: now() } : s);
-    return SALARIES.find((s: any) => s._id === id)!;
+    SALARIES = SALARIES.map((s: any) => s._id === id && s.organizationId === _currentOrgId ? { ...s, status: 'Paid', paidDate: now() } : s);
+    return orgSalaries().find((s: any) => s._id === id)!;
   },
 };
 
-// ─── USERS MOCK ──────────────────────────────────────────────────────────────
+// ─── USERS MOCK ───────────────────────────────────────────────────────────────
 export const mockUsers = {
   getAll: async (params: Record<string, unknown> = {}) => {
     await delay();
-    let items = [...USERS];
-    if (params.role) items = items.filter((u: any) => u.role === params.role);
+    let items = [...orgUsers()];
+    if (params.role)   items = items.filter((u: any) => u.role === params.role);
     if (params.search) items = items.filter((u: any) => u.name.toLowerCase().includes((params.search as string).toLowerCase()) || u.email.toLowerCase().includes((params.search as string).toLowerCase()));
-    return mockPaginate(items, Number(params.page) || 1, 15);
+    if (params.isActive !== undefined) items = items.filter((u: any) => u.isActive === (params.isActive === 'true' || params.isActive === true));
+    return mockPaginate(items, Number(params.page) || 1, Number(params.limit) || 15);
   },
-  getById: async (id: string) => { await delay(); return USERS.find((u: any) => u._id === id); },
+  getById: async (id: string) => { await delay(); return orgUsers().find((u: any) => u._id === id) || null; },
   create: async (data: Record<string, unknown>) => {
     await delay(400);
-    const user = { _id: 'u' + uid(), name: data.name as string, email: (data.email as string).toLowerCase(), role: data.role as string, isActive: true, phone: (data.phone as string) || '', baseSalary: 0, createdAt: now() };
-    USERS.push(user);
+    const lowerEmail = (data.email as string).toLowerCase();
+    if (USERS.find((u: any) => u.email === lowerEmail)) throw { response: { data: { message: 'Email already exists' } } };
+    const user = { _id: 'u' + uid(), organizationId: _currentOrgId, ...data, email: lowerEmail, isActive: true, createdAt: now() };
+    PASSWORDS[lowerEmail] = data.password as string;
+    USERS = [...USERS, user];
     return user;
   },
   update: async (id: string, data: Record<string, unknown>) => {
     await delay(300);
-    const idx = USERS.findIndex((u: any) => u._id === id);
-    if (idx >= 0) Object.assign(USERS[idx], data);
-    return USERS[idx];
+    const { password, organizationId, ...safeData } = data as any;
+    USERS = USERS.map((u: any) => u._id === id && u.organizationId === _currentOrgId ? { ...u, ...safeData } : u);
+    return orgUsers().find((u: any) => u._id === id)!;
   },
   toggleStatus: async (id: string) => {
     await delay(300);
-    const idx = USERS.findIndex((u: any) => u._id === id);
-    if (idx >= 0) USERS[idx].isActive = !USERS[idx].isActive;
-    return USERS[idx];
+    USERS = USERS.map((u: any) => u._id === id && u.organizationId === _currentOrgId ? { ...u, isActive: !u.isActive } : u);
+    const user = USERS.find((u: any) => u._id === id)!;
+    return { isActive: user.isActive };
   },
-  resetPassword: async (_id: string, _password: string) => { await delay(300); },
-  getEngineers: async () => { await delay(); return USERS.filter((u: any) => u.role === 'engineer'); },
-  getSalesmen: async () => { await delay(); return USERS.filter((u: any) => u.role === 'sales'); },
+  resetPassword: async (id: string, password: string) => {
+    await delay(300);
+    const user = USERS.find((u: any) => u._id === id && u.organizationId === _currentOrgId);
+    if (user) PASSWORDS[user.email] = password;
+    return { success: true };
+  },
+  getEngineers: async () => { await delay(200); return orgUsers().filter((u: any) => u.role === 'engineer' && u.isActive); },
+  getSalesmen:  async () => { await delay(200); return orgUsers().filter((u: any) => u.role === 'sales'    && u.isActive); },
 };
 
-// ─── TRAINING MOCK ───────────────────────────────────────────────────────────
+// ─── TRAINING MOCK ────────────────────────────────────────────────────────────
 export const mockTraining = {
   getAll: async (params: Record<string, unknown> = {}) => {
     await delay();
-    let items = [...TRAININGS];
-    if (params.status)     items = items.filter((t: any) => t.status === params.status);
-    if (params.mode)       items = items.filter((t: any) => t.mode === params.mode);
-    if (params.engineerId) items = items.filter((t: any) => t.trainedBy?._id === params.engineerId);
-    if (params.accountId)  items = items.filter((t: any) => t.accountId?._id === params.accountId);
+    let items = [...orgTrainings()];
+    if (params.status) items = items.filter((t: any) => t.status === params.status);
     return mockPaginate(items, Number(params.page) || 1, 15);
   },
-  getById: async (id: string) => { await delay(); return TRAININGS.find((t: any) => t._id === id); },
+  getByAccount: async (accountId: string) => { await delay(); return orgTrainings().filter((t: any) => t.accountId._id === accountId); },
+  getById: async (id: string) => { await delay(); return orgTrainings().find((t: any) => t._id === id); },
   create: async (data: Record<string, unknown>) => {
     await delay(400);
-    const account = ACCOUNTS.find((a: any) => a._id === data.accountId);
-    const engineer = USERS.find((u: any) => u._id === data.trainedBy) || USERS[3];
-    const training = { _id: 'tr' + uid(), accountId: { _id: account?._id, accountName: account?.accountName }, customerName: account?.accountName || String(data.customerName || ''), status: data.status || 'Pending', mode: data.mode, trainingDate: data.trainingDate, trainedBy: engineer, notes: String(data.notes || ''), createdAt: now() };
+    const account   = orgAccounts().find((a: any) => a._id === data.accountId);
+    const trainedBy = orgUsers().find((u: any) => u._id === data.trainedBy) || orgUsers().find((u: any) => u.role === 'engineer');
+    const training  = { _id: 'tr' + uid(), organizationId: _currentOrgId, accountId: { _id: account?._id, accountName: account?.accountName }, customerName: account?.accountName || '', status: 'Pending', mode: data.mode, trainingDate: data.trainingDate, trainedBy, notes: String(data.notes || ''), createdAt: now() };
     TRAININGS = [...TRAININGS, training];
     return training;
   },
   update: async (id: string, data: Record<string, unknown>) => {
     await delay(300);
-    TRAININGS = TRAININGS.map((t: any) => t._id === id ? { ...t, ...data } : t);
-    return TRAININGS.find((t: any) => t._id === id)!;
+    TRAININGS = TRAININGS.map((t: any) => t._id === id && t.organizationId === _currentOrgId ? { ...t, ...data } : t);
+    return orgTrainings().find((t: any) => t._id === id)!;
   },
 };
 
-// ─── DASHBOARD MOCK ──────────────────────────────────────────────────────────
+// ─── DASHBOARD MOCK ───────────────────────────────────────────────────────────
 export const mockDashboard = {
   getAdminStats: async () => {
-    await delay(500);
-    const revenueByMonth = [
-      { month: 'Sep', revenue: 180000 }, { month: 'Oct', revenue: 245000 },
-      { month: 'Nov', revenue: 310000 }, { month: 'Dec', revenue: 280000 },
-      { month: 'Jan', revenue: 420000 }, { month: 'Feb', revenue: 390000 },
-    ];
-    const now30 = Date.now() + 30 * 86400000;
-    const startOfMonth = new Date(); startOfMonth.setDate(1); startOfMonth.setHours(0,0,0,0);
-    const drfBySalesPerson = USERS.filter((u: any) => u.role === 'sales').map((sp: any) => {
-      const myLeadIds = LEADS.filter((l: any) => l.assignedTo?._id === sp._id).map((l: any) => l._id);
-      const myDRFs = DRFs.filter((d: any) => myLeadIds.includes(d.leadId._id));
-      return { name: sp.name, total: myDRFs.length, approved: myDRFs.filter((d: any) => d.status === 'Approved').length, rejected: myDRFs.filter((d: any) => d.status === 'Rejected').length };
+    await delay(300);
+    const leads    = orgLeads().filter((l: any) => !l.isArchived);
+    const accounts = orgAccounts();
+    const invoices = orgInvoices();
+    const tickets  = orgTickets();
+    const drfs     = orgDRFs();
+
+    const revenueByMonth: Record<string, number> = {};
+    invoices.filter((i: any) => i.status === 'Paid').forEach((i: any) => {
+      const m = new Date(i.createdAt).toLocaleString('default', { month: 'short', year: '2-digit' });
+      revenueByMonth[m] = (revenueByMonth[m] || 0) + i.amount;
     });
-    const reasonMap: Record<string, number> = {};
-    DRFs.filter((d: any) => d.status === 'Rejected' && d.rejectionReason).forEach((d: any) => { reasonMap[d.rejectionReason] = (reasonMap[d.rejectionReason] || 0) + 1; });
-    const rejectionReasons = Object.entries(reasonMap).map(([reason, count]) => ({ reason, count }));
+
     return {
-      leads: { total: LEADS.length, new: LEADS.filter((l: any) => l.stage === 'New').length, converted: LEADS.filter((l: any) => l.stage === 'Converted').length, lost: LEADS.filter((l: any) => l.stage === 'Lost').length },
-      accounts: { total: ACCOUNTS.length, active: ACCOUNTS.filter((a: any) => a.status === 'Active').length },
-      invoices: { totalRevenue: INVOICES.filter((i: any) => i.status === 'Paid').reduce((s: number, i: any) => s + i.amount, 0), pending: INVOICES.filter((i: any) => ['Unpaid','Partially Paid'].includes(i.status)).length, overdue: INVOICES.filter((i: any) => i.status === 'Overdue').length },
-      tickets: { open: SUPPORT_TICKETS.filter((t: any) => t.status === 'Open').length, critical: SUPPORT_TICKETS.filter((t: any) => t.priority === 'Critical').length },
-      drfs: { pending: DRFs.filter((d: any) => d.status === 'Pending').length, approved: DRFs.filter((d: any) => d.status === 'Approved').length, rejected: DRFs.filter((d: any) => d.status === 'Rejected').length, expiringSoon: DRFs.filter((d: any) => d.status === 'Approved' && d.expiryDate && new Date(d.expiryDate).getTime() < now30).length, totalThisMonth: DRFs.filter((d: any) => new Date(d.sentDate) >= startOfMonth).length },
-      drfBySalesPerson,
-      rejectionReasons,
-      recentLeads: LEADS.slice(0, 5),
-      revenueByMonth,
+      leads:    { total: leads.length, new: leads.filter((l: any) => l.stage === 'New').length, converted: leads.filter((l: any) => l.stage === 'Converted').length, lost: leads.filter((l: any) => l.stage === 'Lost').length },
+      accounts: { total: accounts.length, active: accounts.filter((a: any) => a.status === 'Active').length },
+      invoices: { totalRevenue: invoices.filter((i: any) => i.status === 'Paid').reduce((s: number, i: any) => s + i.amount, 0), pending: invoices.filter((i: any) => ['Unpaid','Partially Paid'].includes(i.status)).length, overdue: invoices.filter((i: any) => i.status === 'Overdue').length },
+      tickets:  { open: tickets.filter((t: any) => t.status === 'Open').length, critical: tickets.filter((t: any) => t.priority === 'Critical').length },
+      drfs:     { pending: drfs.filter((d: any) => d.status === 'Pending').length, approved: drfs.filter((d: any) => d.status === 'Approved').length, rejected: drfs.filter((d: any) => d.status === 'Rejected').length, expiringSoon: drfs.filter((d: any) => d.status === 'Approved' && d.expiryDate && new Date(d.expiryDate).getTime() - Date.now() < 30 * 86400000).length, totalThisMonth: 0 },
+      drfBySalesPerson: [],
+      rejectionReasons: [],
+      recentLeads: leads.slice(0, 5),
+      revenueByMonth: Object.entries(revenueByMonth).map(([month, revenue]) => ({ month, revenue })),
     };
   },
+
   getSalesStats: async (userId: string) => {
-    await delay(400);
-    const myLeads = LEADS.filter((l: any) => l.assignedTo?._id === userId);
-    const myAccounts = ACCOUNTS.filter((a: any) => a.assignedSales?._id === userId);
-    const myLeadIds = myLeads.map((l: any) => l._id);
-    const myDRFs = DRFs.filter((d: any) => myLeadIds.includes(d.leadId._id));
-    const myQuotations = QUOTATIONS.filter((q: any) => myLeadIds.includes(q.leadId._id));
-    const myPOs = PURCHASE_ORDERS.filter((po: any) => myLeadIds.includes(po.leadId._id));
-    const stages = ['New', 'DRF Submitted', 'DRF Approved', 'Technical Done', 'Quotation Sent', 'Negotiation', 'PO Received'];
-    const pipeline = stages.map(stage => ({ stage: stage.replace('DRF ', ''), count: myLeads.filter((l: any) => l.stage === stage).length }));
+    await delay(300);
+    const myLeads    = orgLeads().filter((l: any) => !l.isArchived && l.assignedTo?._id === userId);
+    const myLeadIds  = myLeads.map((l: any) => l._id);
+    const myAccounts = orgAccounts().filter((a: any) => a.assignedSales?._id === userId);
+    const myQuotes   = orgQuotations().filter((q: any) => myLeadIds.includes(q.leadId._id));
+    const myPOs      = orgPOs().filter((p: any) => myLeadIds.includes(p.leadId._id));
+    const myDRFs     = orgDRFs().filter((d: any) => myLeadIds.includes(d.leadId._id));
+
+    const STAGES = ['New','DRF Submitted','DRF Approved','Quotation Sent','Negotiation','PO Received','Converted','Lost'];
+    const pipeline = STAGES.map((stage) => ({ stage, count: myLeads.filter((l: any) => l.stage === stage).length }));
+
+    const funnel = [
+      { stage: 'Leads', count: myLeads.length },
+      { stage: 'DRFs', count: myDRFs.length },
+      { stage: 'Quotations', count: myQuotes.length },
+      { stage: 'POs', count: myPOs.length },
+      { stage: 'Converted', count: myLeads.filter((l: any) => l.stage === 'Converted').length },
+    ];
+
+    // Org-wide sales leaderboard
+    const salesLeaderboard = orgUsers().filter((u: any) => u.role === 'sales' && u.isActive).map((sp: any) => {
+      const spLeadIds = orgLeads().filter((l: any) => !l.isArchived && l.assignedTo?._id === sp._id).map((l: any) => l._id);
+      const spPOs = orgPOs().filter((p: any) => spLeadIds.includes(p.leadId._id));
+      const spDRFs = orgDRFs().filter((d: any) => spLeadIds.includes(d.leadId._id));
+      const converted = orgLeads().filter((l: any) => l.assignedTo?._id === sp._id && l.stage === 'Converted').length;
+      return {
+        userId: sp._id, name: sp.name,
+        revenue: spPOs.reduce((s: number, p: any) => s + p.amount, 0),
+        leads: spLeadIds.length, converted,
+        drfApproved: spDRFs.filter((d: any) => d.status === 'Approved').length,
+        conversionRate: spLeadIds.length > 0 ? Math.round((converted / spLeadIds.length) * 100) : 0,
+      };
+    }).sort((a: any, b: any) => b.revenue - a.revenue);
+
+    const nowMs = Date.now();
+    const alerts: any[] = [];
+    myDRFs.filter((d: any) => d.status === 'Approved' && d.expiryDate && new Date(d.expiryDate).getTime() - nowMs < 14 * 86400000 && new Date(d.expiryDate).getTime() > nowMs)
+      .forEach((d: any) => alerts.push({ type: 'warning', message: `DRF ${d.drfNumber} for ${d.leadId.companyName} expires in ${Math.ceil((new Date(d.expiryDate).getTime() - nowMs) / 86400000)} days`, entityId: d._id, entityType: 'drf' }));
+    myLeads.filter((l: any) => !['Converted','Lost'].includes(l.stage) && nowMs - new Date(l.updatedAt).getTime() > 30 * 86400000)
+      .forEach((l: any) => alerts.push({ type: 'warning', message: `"${l.companyName}" has no activity for 30+ days`, entityId: l._id, entityType: 'lead' }));
+    myQuotes.filter((q: any) => q.status === 'Sent' && q.validUntil && new Date(q.validUntil).getTime() < nowMs)
+      .forEach((q: any) => alerts.push({ type: 'danger', message: `Quotation ${q.quotationNumber} for ${q.leadId.companyName} has expired`, entityId: q._id, entityType: 'quotation' }));
+    myDRFs.filter((d: any) => d.status === 'Pending' && nowMs - new Date(d.sentDate).getTime() > 7 * 86400000)
+      .forEach((d: any) => alerts.push({ type: 'warning', message: `DRF ${d.drfNumber} for ${d.leadId.companyName} pending for 7+ days`, entityId: d._id, entityType: 'drf' }));
+
     return {
-      myLeads: { total: myLeads.length, new: myLeads.filter((l: any) => l.stage === 'New').length, converted: myLeads.filter((l: any) => l.stage === 'Converted').length, lost: myLeads.filter((l: any) => l.stage === 'Lost').length },
+      myLeads: {
+        total: myLeads.length,
+        new: myLeads.filter((l: any) => l.status === 'New').length,
+        contacted: myLeads.filter((l: any) => l.status === 'Contacted').length,
+        qualified: myLeads.filter((l: any) => l.status === 'Qualified').length,
+        converted: myLeads.filter((l: any) => l.stage === 'Converted').length,
+        lost: myLeads.filter((l: any) => l.stage === 'Lost').length,
+      },
       accounts: { total: myAccounts.length, active: myAccounts.filter((a: any) => a.status === 'Active').length },
-      quotations: { total: myQuotations.length, totalValue: myQuotations.reduce((s: number, q: any) => s + q.total, 0) },
-      purchaseOrders: { total: myPOs.length, totalValue: myPOs.reduce((s: number, po: any) => s + po.amount, 0) },
-      pipeline,
-      drfPending: myDRFs.filter((d: any) => d.status === 'Pending').length,
+      quotations: { total: myQuotes.length, totalValue: myQuotes.reduce((s: number, q: any) => s + (q.total || 0), 0), accepted: myQuotes.filter((q: any) => q.status === 'Accepted').length },
+      purchaseOrders: { total: myPOs.length, totalValue: myPOs.reduce((s: number, p: any) => s + (p.amount || 0), 0) },
+      pipeline, funnel, salesLeaderboard, alerts,
+      myRank: salesLeaderboard.findIndex((e: any) => e.userId === userId) + 1,
       leadsInNegotiation: myLeads.filter((l: any) => l.stage === 'Negotiation').length,
-      recentLeads: myLeads.slice(0, 5),
+      drfPending: myDRFs.filter((d: any) => d.status === 'Pending').length,
+      conversionRate: myLeads.length > 0 ? Math.round((myLeads.filter((l: any) => l.stage === 'Converted').length / myLeads.length) * 100) : 0,
+      drfApprovalRate: myDRFs.length > 0 ? Math.round((myDRFs.filter((d: any) => d.status === 'Approved').length / myDRFs.length) * 100) : 0,
+      recentLeads: myLeads.slice(-5).reverse(),
     };
   },
+
   getEngineerStats: async (userId: string) => {
-    await delay(400);
-    const myAccounts = ACCOUNTS.filter((a: any) => a.assignedEngineer?._id === userId);
-    const myTickets = SUPPORT_TICKETS.filter((t: any) => t.assignedTo?._id === userId);
-    const myInstallations = INSTALLATIONS.filter((i: any) => i.engineer?._id === userId);
-    const myVisits = ENGINEER_VISITS.filter((v: any) => v.engineerId?._id === userId);
+    await delay(300);
+    const myVisits   = orgVisits().filter((v: any) => v.engineerId?._id === userId || v.engineerId === userId);
+    const myInstalls = orgInstalls().filter((i: any) => i.engineer?._id === userId || i.engineer === userId);
+    const myTickets  = orgTickets().filter((t: any) => (t.assignedTo?._id === userId || t.assignedTo === userId) && t.status !== 'Resolved');
+    const myAccounts = orgAccounts();
+
     return {
-      accounts: { total: myAccounts.length, active: myAccounts.filter((a: any) => a.status === 'Active').length },
-      tickets: { open: myTickets.filter((t: any) => t.status === 'Open').length, inProgress: myTickets.filter((t: any) => t.status === 'In Progress').length, resolved: myTickets.filter((t: any) => t.status === 'Resolved').length, critical: myTickets.filter((t: any) => t.priority === 'Critical').length },
-      installations: { scheduled: myInstallations.filter((i: any) => i.status === 'Scheduled').length, inProgress: myInstallations.filter((i: any) => i.status === 'In Progress').length, completed: myInstallations.filter((i: any) => i.status === 'Completed').length },
-      visits: { pending: myVisits.filter((v: any) => v.hrStatus === 'Pending').length, total: myVisits.length },
-      recentInstallations: myInstallations.filter((i: any) => ['Scheduled', 'In Progress'].includes(i.status)).slice(0, 5),
-      recentTickets: myTickets.filter((t: any) => ['Open', 'In Progress'].includes(t.status)).slice(0, 5),
-      recentVisits: myVisits.slice(0, 5),
-      myAccountDetails: myAccounts,
+      accounts: {
+        total:  myAccounts.length,
+        active: myAccounts.filter((a: any) => a.status === 'Active').length,
+      },
+      tickets: {
+        open:     myTickets.filter((t: any) => t.status === 'Open').length,
+        critical: myTickets.filter((t: any) => t.priority === 'Critical').length,
+        resolved: orgTickets().filter((t: any) => (t.assignedTo?._id === userId || t.assignedTo === userId) && t.status === 'Resolved').length,
+      },
+      installations: {
+        scheduled:  myInstalls.filter((i: any) => i.status === 'Scheduled').length,
+        inProgress: myInstalls.filter((i: any) => i.status === 'In Progress').length,
+        completed:  myInstalls.filter((i: any) => i.status === 'Completed').length,
+      },
+      visits: {
+        pending: myVisits.filter((v: any) => v.hrStatus === 'Pending').length,
+        total:   myVisits.length,
+      },
+      recentInstallations: myInstalls.slice(-5).reverse(),
+      recentTickets:       myTickets.slice(-5).reverse(),
+      recentVisits:        myVisits.slice(-5).reverse(),
     };
   },
+
   getHRStats: async () => {
-    await delay(400);
-    const pendingVisits = ENGINEER_VISITS.filter((v: any) => v.hrStatus === 'Pending');
-    const totalRevenue = INVOICES.filter((i: any) => i.status === 'Paid').reduce((s: number, i: any) => s + i.amount, 0);
-    const partialRevenue = INVOICES.filter((i: any) => i.status === 'Partially Paid').reduce((s: number, i: any) => s + i.paidAmount, 0);
+    await delay(300);
+    const invoices      = orgInvoices();
+    const visits        = orgVisits();
+    const salaries      = orgSalaries();
+
     return {
-      invoices: { totalRevenue: totalRevenue + partialRevenue, unpaid: INVOICES.filter((i: any) => i.status === 'Unpaid').length, overdue: INVOICES.filter((i: any) => i.status === 'Overdue').length, partialPaid: INVOICES.filter((i: any) => i.status === 'Partially Paid').length, total: INVOICES.length },
-      visits: { pending: pendingVisits.length, total: ENGINEER_VISITS.length },
-      salaries: { paid: SALARIES.filter((s: any) => s.status === 'Paid').length, pending: SALARIES.filter((s: any) => s.status === 'Calculated').length, totalPaid: SALARIES.filter((s: any) => s.status === 'Paid').reduce((sum: number, s: any) => sum + s.finalSalary, 0) },
-      pendingVisitsList: pendingVisits.slice(0, 5),
-      allInvoices: INVOICES.slice(0, 5),
-      recentSalaries: SALARIES.slice(0, 5),
+      invoices: {
+        totalRevenue: invoices.filter((i: any) => i.status === 'Paid').reduce((s: number, i: any) => s + i.amount, 0),
+        total:        invoices.length,
+        unpaid:       invoices.filter((i: any) => i.status === 'Unpaid').length,
+        overdue:      invoices.filter((i: any) => i.status === 'Overdue').length,
+        partialPaid:  invoices.filter((i: any) => i.status === 'Partially Paid').length,
+      },
+      visits: {
+        pending: visits.filter((v: any) => v.hrStatus === 'Pending').length,
+        total:   visits.length,
+      },
+      salaries: {
+        pending:   salaries.filter((s: any) => s.status === 'Calculated').length,
+        paid:      salaries.filter((s: any) => s.status === 'Paid').length,
+        totalPaid: salaries.filter((s: any) => s.status === 'Paid').reduce((sum: number, s: any) => sum + (s.finalSalary || 0), 0),
+      },
+      allInvoices:      invoices.slice(-10).reverse(),
+      pendingVisitsList: visits.filter((v: any) => v.hrStatus === 'Pending').slice(0, 10),
+      recentSalaries:   salaries.slice(-10).reverse(),
     };
   },
 };

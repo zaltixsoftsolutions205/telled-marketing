@@ -1,13 +1,20 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, Search, FileText } from 'lucide-react';
+import { Plus, Search, FileText, Mail, Check, X, Download } from 'lucide-react';
 import { quotationsApi } from '@/api/quotations';
 import { leadsApi } from '@/api/leads';
+import { drfApi } from '@/api/drf';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
 import { formatDate, formatCurrency } from '@/utils/formatters';
-import type { Quotation, Lead, QuotationItem } from '@/types';
+import type { Quotation, Lead, QuotationItem, QuotationStatus } from '@/types';
 
 const emptyItem: QuotationItem = { description: '', quantity: 1, unitPrice: 0, total: 0 };
+
+const STATUS_COLORS: Record<QuotationStatus, string> = {
+  'Sent':     'bg-blue-100 text-blue-700',
+  'Accepted': 'bg-emerald-100 text-emerald-700',
+  'Rejected': 'bg-red-100 text-red-600',
+};
 
 export default function QuotationsPage() {
   const [quotations, setQuotations] = useState<Quotation[]>([]);
@@ -20,6 +27,8 @@ export default function QuotationsPage() {
   const [items, setItems] = useState<QuotationItem[]>([{ ...emptyItem }]);
   const [form, setForm] = useState({ leadId: '', taxRate: 18, validUntil: '', terms: '', notes: '' });
   const [saving, setSaving] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -35,8 +44,17 @@ export default function QuotationsPage() {
   useEffect(() => { load(); }, [load]);
 
   const openModal = async () => {
-    const res = await leadsApi.getAll({ limit: 100 });
-    setLeads(res.data.filter((l: Lead) => !['Converted', 'Lost'].includes(l.stage)));
+    setCreateError('');
+    setItems([{ ...emptyItem }]);
+    setForm({ leadId: '', taxRate: 18, validUntil: '', terms: '', notes: '' });
+
+    // Load leads that have an approved DRF
+    const [leadsRes, drfRes] = await Promise.all([
+      leadsApi.getAll({ limit: 200 }),
+      drfApi.getAll({ status: 'Approved', limit: 200 }),
+    ]);
+    const approvedLeadIds = new Set((drfRes.data || []).map((d: any) => d.leadId?._id));
+    setLeads((leadsRes.data || []).filter((l: Lead) => approvedLeadIds.has(l._id)));
     setShowModal(true);
   };
 
@@ -58,13 +76,27 @@ export default function QuotationsPage() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    setCreateError('');
     try {
       await quotationsApi.create({ ...form, items });
       setShowModal(false);
-      setItems([{ ...emptyItem }]);
-      setForm({ leadId: '', taxRate: 18, validUntil: '', terms: '', notes: '' });
       load();
+    } catch (err: any) {
+      setCreateError(err?.response?.data?.message || 'Failed to create quotation');
     } finally { setSaving(false); }
+  };
+
+  const handleAction = async (action: 'accept' | 'reject' | 'sendEmail' | 'generatePDF', id: string) => {
+    setActionLoading(id + action);
+    try {
+      if (action === 'accept') await quotationsApi.accept(id);
+      else if (action === 'reject') await quotationsApi.reject(id);
+      else if (action === 'sendEmail') await quotationsApi.sendEmail(id);
+      else if (action === 'generatePDF') await quotationsApi.generatePDF(id);
+      load();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Action failed');
+    } finally { setActionLoading(null); }
   };
 
   return (
@@ -74,7 +106,9 @@ export default function QuotationsPage() {
           <h1 className="page-header">Quotations</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} total</p>
         </div>
-        <button onClick={openModal} className="btn-primary flex items-center gap-2"><Plus size={16} /> New Quotation</button>
+        <button onClick={openModal} className="btn-primary flex items-center gap-2">
+          <Plus size={16} /> New Quotation
+        </button>
       </div>
 
       <div className="relative max-w-xs">
@@ -92,28 +126,74 @@ export default function QuotationsPage() {
                 <tr>
                   <th className="table-header">Quotation #</th>
                   <th className="table-header">Lead</th>
+                  <th className="table-header">Ver.</th>
                   <th className="table-header">Subtotal</th>
-                  <th className="table-header">Tax</th>
                   <th className="table-header">Total</th>
                   <th className="table-header">Valid Until</th>
-                  <th className="table-header">PDF</th>
+                  <th className="table-header">Status</th>
+                  <th className="table-header">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {quotations.map((q) => (
                   <tr key={q._id} className="hover:bg-violet-50/20 transition-colors">
-                    <td className="table-cell font-mono font-medium">{q.quotationNumber}</td>
-                    <td className="table-cell">{(q.leadId as Lead)?.companyName}</td>
-                    <td className="table-cell">{formatCurrency(q.subtotal)}</td>
-                    <td className="table-cell text-gray-400">{q.taxRate}%</td>
+                    <td className="table-cell font-mono font-medium text-violet-700">{q.quotationNumber}</td>
+                    <td className="table-cell font-medium">{(q.leadId as Lead)?.companyName}</td>
+                    <td className="table-cell text-center">
+                      <span className={`badge text-xs ${q.version > 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+                        v{q.version}
+                      </span>
+                    </td>
+                    <td className="table-cell text-gray-500">{formatCurrency(q.subtotal)}</td>
                     <td className="table-cell font-semibold text-violet-700">{formatCurrency(q.total)}</td>
                     <td className="table-cell text-gray-400">{q.validUntil ? formatDate(q.validUntil) : '—'}</td>
                     <td className="table-cell">
-                      {q.pdfPath ? (
-                        <a href={`/uploads/${q.pdfPath}`} target="_blank" rel="noreferrer" className="text-violet-600 hover:text-violet-800">
-                          <FileText size={16} />
-                        </a>
-                      ) : <span className="text-gray-300">—</span>}
+                      <span className={`badge text-xs ${STATUS_COLORS[q.status as QuotationStatus] || 'bg-gray-100 text-gray-600'}`}>
+                        {q.status}
+                      </span>
+                    </td>
+                    <td className="table-cell">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {/* Accept / Reject — only when Sent */}
+                        {q.status === 'Sent' && (
+                          <>
+                            <button
+                              title="Accept"
+                              disabled={actionLoading === q._id + 'accept'}
+                              onClick={() => handleAction('accept', q._id)}
+                              className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
+                            >
+                              <Check size={13} />
+                            </button>
+                            <button
+                              title="Reject"
+                              disabled={actionLoading === q._id + 'reject'}
+                              onClick={() => handleAction('reject', q._id)}
+                              className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                            >
+                              <X size={13} />
+                            </button>
+                          </>
+                        )}
+                        {/* Send Email */}
+                        <button
+                          title={q.emailSent ? `Email sent ${q.emailSentAt ? formatDate(q.emailSentAt) : ''}` : 'Send via Email'}
+                          disabled={!!q.emailSent || actionLoading === q._id + 'sendEmail'}
+                          onClick={() => !q.emailSent && handleAction('sendEmail', q._id)}
+                          className={`p-1.5 rounded-lg transition-colors ${q.emailSent ? 'bg-gray-100 text-gray-400 cursor-default' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
+                        >
+                          <Mail size={13} />
+                        </button>
+                        {/* Generate PDF */}
+                        <button
+                          title={q.pdfPath ? 'PDF ready' : 'Generate PDF'}
+                          disabled={actionLoading === q._id + 'generatePDF'}
+                          onClick={() => handleAction('generatePDF', q._id)}
+                          className={`p-1.5 rounded-lg transition-colors ${q.pdfPath ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}
+                        >
+                          {q.pdfPath ? <Download size={13} /> : <FileText size={13} />}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -132,8 +212,26 @@ export default function QuotationsPage() {
         )}
       </div>
 
+      {/* Create Quotation Modal */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Create Quotation" size="xl">
-        <form onSubmit={handleCreate} className="space-y-4 max-h-[70vh] overflow-y-auto">
+        <form onSubmit={handleCreate} className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+          {createError && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">
+              {createError}
+            </div>
+          )}
+
+          {leads.length === 0 ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+              <p className="font-semibold mb-1">No eligible leads</p>
+              <p className="text-xs">A quotation can only be created for leads with an <strong>Approved DRF</strong>. Approve a DRF first.</p>
+            </div>
+          ) : (
+            <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-xs text-violet-700">
+              Only leads with an <strong>Approved DRF</strong> are shown below.
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">Lead *</label>
@@ -170,9 +268,11 @@ export default function QuotationsPage() {
                   <div className="col-span-3">
                     <input type="number" className="input-field text-sm" placeholder="Unit Price" min={0} value={item.unitPrice} onChange={(e) => updateItem(i, 'unitPrice', Number(e.target.value))} />
                   </div>
-                  <div className="col-span-2 flex items-center">
-                    <span className="text-sm font-medium text-gray-700">{formatCurrency(item.total)}</span>
-                    {items.length > 1 && <button type="button" onClick={() => setItems(p => p.filter((_, idx) => idx !== i))} className="ml-1 text-red-400 hover:text-red-600 text-lg leading-none">×</button>}
+                  <div className="col-span-2 flex items-center gap-1">
+                    <span className="text-sm font-medium text-gray-700 flex-1">{formatCurrency(item.total)}</span>
+                    {items.length > 1 && (
+                      <button type="button" onClick={() => setItems(p => p.filter((_, idx) => idx !== i))} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -183,7 +283,9 @@ export default function QuotationsPage() {
           <div className="bg-gray-50 rounded-xl p-4 text-sm space-y-1">
             <div className="flex justify-between"><span className="text-gray-500">Subtotal</span><span>{formatCurrency(subtotal)}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Tax ({form.taxRate}%)</span><span>{formatCurrency(taxAmount)}</span></div>
-            <div className="flex justify-between font-bold text-base pt-2 border-t border-gray-200"><span>Total</span><span className="text-violet-700">{formatCurrency(total2)}</span></div>
+            <div className="flex justify-between font-bold text-base pt-2 border-t border-gray-200">
+              <span>Total</span><span className="text-violet-700">{formatCurrency(total2)}</span>
+            </div>
           </div>
 
           <div>
@@ -193,7 +295,9 @@ export default function QuotationsPage() {
 
           <div className="flex gap-3 justify-end sticky bottom-0 bg-white pt-2">
             <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Creating…' : 'Create Quotation'}</button>
+            <button type="submit" disabled={saving || leads.length === 0} className="btn-primary">
+              {saving ? 'Creating…' : 'Create Quotation'}
+            </button>
           </div>
         </form>
       </Modal>

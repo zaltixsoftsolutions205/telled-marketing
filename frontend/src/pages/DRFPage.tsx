@@ -3,12 +3,14 @@ import { Link } from 'react-router-dom';
 import { drfApi } from '@/api/drf';
 import { usersApi } from '@/api/users';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
+import Modal from '@/components/common/Modal';
 import { formatDate } from '@/utils/formatters';
+import { useAuthStore } from '@/store/authStore';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts';
 import {
-  FileBadge, CheckCircle2, XCircle, Clock, AlertTriangle, Users, Filter,
+  FileBadge, CheckCircle2, XCircle, Clock, AlertTriangle, Users, Filter, UserCheck,
 } from 'lucide-react';
 import type { User } from '@/types';
 
@@ -26,7 +28,7 @@ function StatCard({ title, value, sub, icon: Icon, color, bg }: {
   icon: React.ElementType; color: string; bg: string;
 }) {
   return (
-    <div className={`card flex items-start gap-4 hover:shadow-md transition-shadow`}>
+    <div className="card flex items-start gap-4 hover:shadow-md transition-shadow">
       <div className={`w-12 h-12 rounded-2xl ${bg} flex items-center justify-center flex-shrink-0`}>
         <Icon size={22} className={color} />
       </div>
@@ -40,28 +42,37 @@ function StatCard({ title, value, sub, icon: Icon, color, bg }: {
 }
 
 export default function DRFPage() {
-  const [analytics, setAnalytics] = useState<any>(null);
-  const [drfs, setDRFs] = useState<any[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const currentUser = useAuthStore((s) => s.user);
+  const isAdmin     = currentUser?.role === 'admin';
+
+  const [analytics, setAnalytics]   = useState<any>(null);
+  const [drfs, setDRFs]             = useState<any[]>([]);
+  const [total, setTotal]           = useState(0);
+  const [loading, setLoading]       = useState(true);
   const [salesUsers, setSalesUsers] = useState<User[]>([]);
   const [statusFilter, setStatusFilter] = useState('');
-  const [salesFilter, setSalesFilter] = useState('');
-  const [oemFilter, setOemFilter] = useState('');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+  const [salesFilter, setSalesFilter]   = useState('');
+  const [oemFilter, setOemFilter]       = useState('');
+  const [fromDate, setFromDate]         = useState('');
+  const [toDate, setToDate]             = useState('');
   const [multiVersion, setMultiVersion] = useState(false);
-  const [page, setPage] = useState(1);
+  const [page, setPage]                 = useState(1);
+
+  // Reassignment state (admin only)
+  const [reassignTarget, setReassignTarget] = useState<any>(null);
+  const [newOwnerId, setNewOwnerId]         = useState('');
+  const [reassigning, setReassigning]       = useState(false);
+  const [reassignError, setReassignError]   = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const params: Record<string, unknown> = { page, limit: 15 };
-      if (statusFilter) params.status = statusFilter;
+      if (statusFilter) params.status      = statusFilter;
       if (salesFilter)  params.salesPerson = salesFilter;
-      if (oemFilter)    params.oemName = oemFilter;
-      if (fromDate)     params.from = fromDate;
-      if (toDate)       params.to = toDate;
+      if (oemFilter)    params.oemName     = oemFilter;
+      if (fromDate)     params.from        = fromDate;
+      if (toDate)       params.to          = toDate;
       if (multiVersion) params.multiVersion = 'true';
       const [analyticsData, drfRes] = await Promise.all([drfApi.getAnalytics(), drfApi.getAll(params)]);
       setAnalytics(analyticsData);
@@ -76,6 +87,22 @@ export default function DRFPage() {
   const resetFilters = () => {
     setStatusFilter(''); setSalesFilter(''); setOemFilter('');
     setFromDate(''); setToDate(''); setMultiVersion(false); setPage(1);
+  };
+
+  const handleReassign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reassignTarget || !newOwnerId) return;
+    setReassigning(true);
+    setReassignError('');
+    try {
+      await drfApi.reassign(reassignTarget._id, newOwnerId);
+      setReassignTarget(null);
+      setNewOwnerId('');
+      load();
+    } catch (err: unknown) {
+      const msg = (err as Error)?.message || 'Reassignment failed';
+      setReassignError(msg);
+    } finally { setReassigning(false); }
   };
 
   if (loading && !analytics) return <LoadingSpinner className="h-64" />;
@@ -159,6 +186,7 @@ export default function DRFPage() {
         </div>
       )}
 
+      {/* Filters */}
       <div className="card">
         <div className="flex items-center gap-2 mb-4">
           <Filter size={16} className="text-gray-500" />
@@ -190,6 +218,7 @@ export default function DRFPage() {
         </div>
       </div>
 
+      {/* DRF Table */}
       <div className="glass-card !p-0 overflow-hidden">
         {loading ? (
           <LoadingSpinner className="h-48" />
@@ -208,7 +237,8 @@ export default function DRFPage() {
                   <th className="table-header">Status</th>
                   <th className="table-header">Sent Date</th>
                   <th className="table-header">Expiry</th>
-                  <th className="table-header">By</th>
+                  <th className="table-header">Owner</th>
+                  {isAdmin && <th className="table-header">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -231,6 +261,17 @@ export default function DRFPage() {
                     <td className="table-cell text-gray-400">{formatDate(drf.sentDate)}</td>
                     <td className="table-cell text-gray-400">{drf.expiryDate ? formatDate(drf.expiryDate) : '—'}</td>
                     <td className="table-cell text-gray-500">{drf.createdBy?.name}</td>
+                    {isAdmin && (
+                      <td className="table-cell">
+                        <button
+                          onClick={() => { setReassignTarget(drf); setNewOwnerId(''); setReassignError(''); }}
+                          title="Reassign DRF ownership"
+                          className="p-1 text-gray-400 hover:text-violet-600 flex items-center gap-1 text-xs"
+                        >
+                          <UserCheck size={15} /> Reassign
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -247,6 +288,41 @@ export default function DRFPage() {
           </div>
         )}
       </div>
+
+      {/* Reassign Modal (admin only) */}
+      <Modal
+        isOpen={!!reassignTarget}
+        onClose={() => { setReassignTarget(null); setNewOwnerId(''); setReassignError(''); }}
+        title="Reassign DRF Ownership"
+        size="sm"
+      >
+        <div className="mb-4 p-3 bg-gray-50 rounded-xl">
+          <p className="text-xs text-gray-500 mb-1">DRF</p>
+          <p className="text-sm font-semibold text-gray-800">{reassignTarget?.drfNumber}</p>
+          <p className="text-xs text-gray-500 mt-0.5">{reassignTarget?.leadId?.companyName} — owned by <span className="font-medium">{reassignTarget?.createdBy?.name}</span></p>
+        </div>
+        <form onSubmit={handleReassign} className="space-y-4">
+          <div>
+            <label className="label">Transfer to Sales Person *</label>
+            <select required className="input-field" value={newOwnerId}
+              onChange={(e) => setNewOwnerId(e.target.value)}>
+              <option value="">Select a sales person…</option>
+              {salesUsers
+                .filter((u) => u._id !== reassignTarget?.createdBy?._id)
+                .map(u => <option key={u._id} value={u._id}>{u.name}</option>)}
+            </select>
+          </div>
+          {reassignError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">{reassignError}</div>
+          )}
+          <div className="flex gap-3 justify-end">
+            <button type="button" onClick={() => setReassignTarget(null)} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={reassigning || !newOwnerId} className="btn-primary">
+              {reassigning ? 'Reassigning…' : 'Confirm Reassign'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

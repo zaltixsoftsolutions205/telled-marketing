@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import OEMApprovalAttempt from '../models/OEMApprovalAttempt';
 import Lead from '../models/Lead';
+import User from '../models/User';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError } from '../utils/response';
 import { addDays } from '../utils/helpers';
@@ -72,4 +73,29 @@ export const extendExpiry = async (req: AuthRequest, res: Response): Promise<voi
     await attempt.save();
     sendSuccess(res, attempt, 'Expiry extended');
   } catch { sendError(res, 'Failed to extend', 500); }
+};
+
+// PATCH /api/oem/:id/reassign  — admin transfers DRF ownership to another sales person
+export const reassignDRF = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { newOwnerId } = req.body;
+    if (!newOwnerId) { sendError(res, 'newOwnerId is required', 400); return; }
+
+    const attempt = await OEMApprovalAttempt.findById(req.params.id).populate('leadId');
+    if (!attempt) { sendError(res, 'DRF not found', 404); return; }
+
+    // New owner must be a sales user inside the same org
+    const newOwner = await User.findOne({
+      _id: newOwnerId,
+      role: 'sales',
+      isActive: true,
+      organizationId: req.user!.organizationId,
+    });
+    if (!newOwner) { sendError(res, 'Target user not found or is not an active sales member', 400); return; }
+
+    // Reassign the lead to the new sales person
+    await Lead.findByIdAndUpdate(attempt.leadId, { assignedTo: newOwner._id });
+
+    sendSuccess(res, { drfId: attempt._id, newOwner: { id: newOwner._id, name: newOwner.name } }, 'DRF ownership reassigned');
+  } catch { sendError(res, 'Failed to reassign DRF', 500); }
 };

@@ -1,10 +1,12 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User } from '@/types';
+import { setCurrentOrgId } from '@/mock/store';
 
 interface AuthState {
   user: User | null;
   token: string | null;
+  organizationId: string | null;
   setAuth: (user: User, token: string) => void;
   setUser: (user: User) => void;
   setToken: (token: string) => void;
@@ -16,11 +18,30 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       token: null,
-      setAuth: (user, token) => set({ user, token }),
-      setUser: (user) => set({ user }),
+      organizationId: null,
+      setAuth: (user, token) => {
+        setCurrentOrgId(user.organizationId);
+        set({ user, token, organizationId: user.organizationId });
+      },
+      setUser: (user) => {
+        setCurrentOrgId(user.organizationId);
+        set({ user, organizationId: user.organizationId });
+      },
       setToken: (token) => set({ token }),
-      logout: () => set({ user: null, token: null }),
+      logout: () => {
+        setCurrentOrgId(null);
+        set({ user: null, token: null, organizationId: null });
+      },
     }),
-    { name: 'auth-storage', partialize: (s) => ({ token: s.token, user: s.user }) }
+    {
+      name: 'auth-storage-v2',   // bumped version clears stale cached demo data
+      partialize: (s) => ({ token: s.token, user: s.user, organizationId: s.organizationId }),
+      // Re-initialize the in-memory org context from persisted state on page reload
+      onRehydrateStorage: () => (state) => {
+        if (state?.user?.organizationId) {
+          setCurrentOrgId(state.user.organizationId);
+        }
+      },
+    }
   )
 );

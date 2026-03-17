@@ -7,5 +7,6 @@ export const drfApi = {
   approve:     (id: string, data: { expiryDate: string; notes?: string }) => mockDRF.approve(id, data),
   reject:      (id: string, data: { rejectionReason: string })            => mockDRF.reject(id, data),
   extend:      (id: string, data: { newExpiry: string; reason: string })  => mockDRF.extend(id, data),
+  reassign:    (id: string, newOwnerId: string)   => mockDRF.reassign(id, newOwnerId),
   getAnalytics: () => mockDRF.getAnalytics(),
 };
