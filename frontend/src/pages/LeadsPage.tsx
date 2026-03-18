@@ -50,6 +50,7 @@ export default function LeadsPage() {
     status: 'New' as LeadStatus,
   });
   const [saving, setSaving] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
 
   // Excel/CSV import state
   const [showImport, setShowImport] = useState(false);
@@ -66,9 +67,9 @@ export default function LeadsPage() {
       if (statusTab !== 'All') params.status = statusTab;
       if (user?.role === 'sales') params.assignedTo = user._id;
       const res = await leadsApi.getAll(params);
-      setLeads(res.data);
+      setLeads(res.data || []);
       setTotal(res.pagination?.total ?? 0);
-    } finally { setLoading(false); }
+    } catch (err) { console.error('LeadsPage load:', err); setLeads([]); setTotal(0); } finally { setLoading(false); }
   }, [page, search, statusTab, user]);
 
   useEffect(() => { load(); }, [load]);
@@ -85,6 +86,18 @@ export default function LeadsPage() {
       setForm({ companyName:'', contactPersonName:'', email:'', phone:'', oemName:'', city:'', state:'', source:'', notes:'', assignedTo:'', status: 'New' });
       load();
     } finally { setSaving(false); }
+  };
+
+  const handleStatusChange = async (leadId: string, newStatus: LeadStatus) => {
+    setUpdatingStatus(leadId);
+    try {
+      await leadsApi.update(leadId, { status: newStatus });
+      setLeads(prev => prev.map(l => l._id === leadId ? { ...l, status: newStatus } : l));
+      if (newStatus === 'Qualified') {
+        // Brief delay then reload to get updated drfEmailSent flag
+        setTimeout(load, 2000);
+      }
+    } catch { /* ignore */ } finally { setUpdatingStatus(null); }
   };
 
   const handleArchive = async () => {
@@ -180,9 +193,19 @@ export default function LeadsPage() {
                     <td className="table-cell text-gray-500">{lead.oemName || '—'}</td>
                     <td className="table-cell text-gray-400">{lead.phone}</td>
                     <td className="table-cell">
-                      <span className={`badge text-xs ${STATUS_COLORS[lead.status as LeadStatus] || 'bg-gray-100 text-gray-600'}`}>
-                        {lead.status || 'New'}
-                      </span>
+                      {updatingStatus === lead._id ? (
+                        <span className="badge text-xs bg-violet-100 text-violet-600 animate-pulse">Updating…</span>
+                      ) : (
+                        <select
+                          value={lead.status || 'New'}
+                          onChange={(e) => handleStatusChange(lead._id, e.target.value as LeadStatus)}
+                          className={`text-xs font-medium rounded-full px-2 py-1 border-0 cursor-pointer focus:ring-1 focus:ring-violet-400 ${STATUS_COLORS[lead.status as LeadStatus] || 'bg-gray-100 text-gray-600'}`}
+                        >
+                          {(['New', 'Contacted', 'Qualified', 'Not Qualified'] as LeadStatus[]).map(s => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
+                        </select>
+                      )}
                     </td>
                     <td className="table-cell"><StatusBadge status={lead.stage} /></td>
                     <td className="table-cell">{(lead.assignedTo as User)?.name || '—'}</td>

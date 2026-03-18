@@ -47,4 +47,11 @@ SalarySchema.pre('save', function (next) {
   next();
 });
 
+// Virtual: frontend uses "status" ('Calculated' | 'Paid') — derived from isPaid
+SalarySchema.virtual('status').get(function () { return this.isPaid ? 'Paid' : 'Calculated'; });
+// Virtual: frontend uses "pdfPath" — alias for payslipPdf
+SalarySchema.virtual('pdfPath').get(function () { return this.payslipPdf; });
+SalarySchema.set('toJSON', { virtuals: true });
+SalarySchema.set('toObject', { virtuals: true });
+
 export default mongoose.model<ISalary>('Salary', SalarySchema);

@@ -1,12 +1,40 @@
-import { mockDRF } from '@/mock/store';
+import api from './axios';
 
 export const drfApi = {
-  getAll:      (params?: Record<string, unknown>) => mockDRF.getAll(params ?? {}),
-  getByLead:   (leadId: string)                   => mockDRF.getByLead(leadId),
-  create:      (data: Record<string, unknown>)    => mockDRF.create(data),
-  approve:     (id: string, data: { expiryDate: string; notes?: string }) => mockDRF.approve(id, data),
-  reject:      (id: string, data: { rejectionReason: string })            => mockDRF.reject(id, data),
-  extend:      (id: string, data: { newExpiry: string; reason: string })  => mockDRF.extend(id, data),
-  reassign:    (id: string, newOwnerId: string)   => mockDRF.reassign(id, newOwnerId),
-  getAnalytics: () => mockDRF.getAnalytics(),
+  getAll: async (params?: Record<string, unknown>) => {
+    const { data } = await api.get('/oem', { params });
+    return { data: data.data, pagination: { total: data.meta?.total ?? 0 } };
+  },
+  getByLead: async (leadId: string) => {
+    const { data } = await api.get(`/oem/lead/${leadId}`);
+    return data.data;
+  },
+  getById: async (id: string) => {
+    const { data } = await api.get('/oem', { params: { id } });
+    return data.data?.[0] || null;
+  },
+  create: async (body: Record<string, unknown>) => {
+    const { data } = await api.post(`/oem/lead/${body.leadId}`, body);
+    return data.data;
+  },
+  approve: async (id: string, body: { expiryDate: string; notes?: string }) => {
+    const { data } = await api.patch(`/oem/${id}/approve`, body);
+    return data.data;
+  },
+  reject: async (id: string, body: { rejectionReason: string }) => {
+    const { data } = await api.patch(`/oem/${id}/reject`, { reason: body.rejectionReason });
+    return data.data;
+  },
+  extend: async (id: string, body: { newExpiry: string; reason: string }) => {
+    const { data } = await api.patch(`/oem/${id}/extend`, body);
+    return data.data;
+  },
+  reassign: async (id: string, newOwnerId: string) => {
+    const { data } = await api.patch(`/oem/${id}/reassign`, { newOwnerId });
+    return data.data;
+  },
+  getAnalytics: async () => {
+    const { data } = await api.get('/oem/analytics');
+    return data.data;
+  },
 };

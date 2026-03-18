@@ -61,9 +61,9 @@ export default function UsersPage() {
       if (search)     params.search = search;
       if (roleFilter) params.role   = roleFilter;
       const res = await usersApi.getAll(params);
-      setUsers(res.data);
+      setUsers(res.data || []);
       setTotal(res.pagination?.total ?? 0);
-    } finally { setLoading(false); }
+    } catch (err) { console.error('UsersPage load:', err); setUsers([]); setTotal(0); } finally { setLoading(false); }
   }, [page, search, roleFilter]);
 
   useEffect(() => { load(); }, [load]);

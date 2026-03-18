@@ -7,10 +7,7 @@ import Modal from '@/components/common/Modal';
 import { formatDate } from '@/utils/formatters';
 import { useAuthStore } from '@/store/authStore';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
-} from 'recharts';
-import {
-  FileBadge, CheckCircle2, XCircle, Clock, AlertTriangle, Users, Filter, UserCheck,
+  FileBadge, CheckCircle2, XCircle, Clock, AlertTriangle, Filter, UserCheck,
 } from 'lucide-react';
 import type { User } from '@/types';
 
@@ -75,10 +72,10 @@ export default function DRFPage() {
       if (toDate)       params.to          = toDate;
       if (multiVersion) params.multiVersion = 'true';
       const [analyticsData, drfRes] = await Promise.all([drfApi.getAnalytics(), drfApi.getAll(params)]);
-      setAnalytics(analyticsData);
-      setDRFs(drfRes.data);
+      setAnalytics(analyticsData || {});
+      setDRFs(drfRes.data || []);
       setTotal(drfRes.pagination?.total ?? 0);
-    } finally { setLoading(false); }
+    } catch (err) { console.error('DRFPage load:', err); setAnalytics({}); setDRFs([]); setTotal(0); } finally { setLoading(false); }
   }, [page, statusFilter, salesFilter, oemFilter, fromDate, toDate, multiVersion]);
 
   useEffect(() => { load(); }, [load]);
@@ -114,52 +111,16 @@ export default function DRFPage() {
         <p className="text-sm text-gray-500 mt-0.5">Document Request Forms — {total} records</p>
       </div>
 
-      {analytics && (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          <StatCard title="Total DRFs"    value={analytics.total}        sub={`This month: ${analytics.totalThisMonth ?? 0}`} icon={FileBadge}     color="text-violet-700"  bg="bg-violet-50"  />
-          <StatCard title="Pending"       value={analytics.pending}      sub="Awaiting review"                                 icon={Clock}         color="text-amber-700"   bg="bg-amber-50"   />
-          <StatCard title="Approved"      value={analytics.approved}     sub={`${analytics.approvalRate}% approval rate`}      icon={CheckCircle2}  color="text-emerald-700" bg="bg-emerald-50" />
-          <StatCard title="Rejected"      value={analytics.rejected}     sub={`${analytics.rejectionRate}% rejection rate`}    icon={XCircle}       color="text-red-600"     bg="bg-red-50"     />
-          <StatCard title="Expiring Soon" value={analytics.expiringSoon} sub="Within 30 days"                                  icon={AlertTriangle} color="text-orange-600"  bg="bg-orange-50"  />
-        </div>
-      )}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <StatCard title="Total DRFs Sent"  value={analytics?.total ?? 0}    sub={`This month: ${analytics?.totalThisMonth ?? 0}`} icon={FileBadge}    color="text-violet-700"  bg="bg-violet-50"  />
+        <StatCard title="DRFs Approved"    value={analytics?.approved ?? 0} sub={`${analytics?.approvalRate ?? 0}% approval rate`} icon={CheckCircle2} color="text-emerald-700" bg="bg-emerald-50" />
+        <StatCard title="DRFs Rejected"    value={analytics?.rejected ?? 0} sub={`${analytics?.rejectionRate ?? 0}% rejection rate`} icon={XCircle}    color="text-red-600"     bg="bg-red-50"     />
+      </div>
 
       {analytics && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="card">
-            <div className="flex items-center gap-2 mb-4">
-              <Users size={16} className="text-violet-600" />
-              <h2 className="section-title !mb-0">DRFs by Sales Person</h2>
-            </div>
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={analytics.drfBySalesPerson} layout="vertical" barSize={16} margin={{ left: 8, right: 16 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
-                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-                <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={false} tickLine={false} width={72} />
-                <Tooltip cursor={{ fill: '#f5f3ff' }} contentStyle={{ borderRadius: '12px', border: '1px solid #e5e7eb' }} />
-                <Bar dataKey="approved" name="Approved" fill="#10b981" radius={[0, 4, 4, 0]} stackId="a" />
-                <Bar dataKey="rejected" name="Rejected" fill="#ef4444" radius={[0, 4, 4, 0]} stackId="a" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="card">
-            <div className="flex items-center gap-2 mb-4">
-              <XCircle size={16} className="text-red-500" />
-              <h2 className="section-title !mb-0">Rejection Reasons</h2>
-            </div>
-            {analytics.rejectionReasons.length === 0 ? (
-              <div className="text-center text-gray-400 py-8 text-sm">No rejections yet</div>
-            ) : (
-              <div className="space-y-2">
-                {analytics.rejectionReasons.map((r: any) => (
-                  <div key={r.reason} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                    <p className="text-sm text-gray-700 truncate flex-1">{r.reason}</p>
-                    <span className="badge bg-red-100 text-red-700 ml-3 flex-shrink-0">{r.count}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <StatCard title="Pending Review" value={analytics.pending ?? 0} sub="Awaiting decision" icon={Clock}         color="text-amber-700"  bg="bg-amber-50"  />
+          <StatCard title="Expiring Soon"  value={analytics.expiringSoon ?? 0} sub="Within 30 days" icon={AlertTriangle} color="text-orange-600" bg="bg-orange-50" />
         </div>
       )}
 

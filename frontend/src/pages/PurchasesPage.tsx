@@ -43,16 +43,15 @@ export default function PurchasesPage() {
       const params: Record<string, unknown> = { page, limit: 15 };
       if (search) params.search = search;
       const res = await purchasesApi.getAll(params);
-      setOrders(res.data);
+      setOrders(res.data || []);
       setTotal(res.pagination?.total ?? 0);
-    } finally { setLoading(false); }
+    } catch (err) { console.error('PurchasesPage load:', err); setOrders([]); setTotal(0); } finally { setLoading(false); }
   }, [page, search]);
 
   useEffect(() => { load(); }, [load]);
 
   const openCreate = async () => {
-    const res = await leadsApi.getAll({ limit: 200 });
-    setLeads(res.data);
+    try { const res = await leadsApi.getAll({ limit: 200 }); setLeads(res.data || []); } catch (err) { console.error('openCreate:', err); setLeads([]); }
     setCreateForm({ leadId: '', amount: '', product: '', vendorName: '', vendorEmail: '', receivedDate: '', notes: '' });
     setFile(null);
     setShowCreate(true);

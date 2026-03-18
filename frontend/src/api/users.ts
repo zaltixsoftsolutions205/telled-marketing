@@ -1,11 +1,36 @@
-﻿import { mockUsers } from '@/mock/store';
+import api from './axios';
+
 export const usersApi = {
-  getAll: (params?: Record<string, unknown>) => mockUsers.getAll(params),
-  getById: (id: string) => mockUsers.getById(id),
-  create: (data: unknown) => mockUsers.create(data as Record<string, unknown>),
-  update: (id: string, data: unknown) => mockUsers.update(id, data as Record<string, unknown>),
-  toggleStatus: (id: string) => mockUsers.toggleStatus(id),
-  resetPassword: (id: string, password: string) => mockUsers.resetPassword(id, password),
-  getEngineers: () => mockUsers.getEngineers(),
-  getSalesmen: () => mockUsers.getSalesmen(),
+  getAll: async (params?: Record<string, unknown>) => {
+    const { data } = await api.get('/users', { params });
+    return { data: data.data, pagination: { total: data.meta?.total ?? 0 } };
+  },
+  getById: async (id: string) => {
+    const { data } = await api.get(`/users/${id}`);
+    return data.data;
+  },
+  create: async (body: unknown) => {
+    const { data } = await api.post('/users', body);
+    return data.data;
+  },
+  update: async (id: string, body: unknown) => {
+    const { data } = await api.put(`/users/${id}`, body);
+    return data.data;
+  },
+  toggleStatus: async (id: string) => {
+    const { data } = await api.patch(`/users/${id}/toggle-status`);
+    return data.data;
+  },
+  resetPassword: async (id: string, password: string) => {
+    const { data } = await api.patch(`/users/${id}/reset-password`, { password });
+    return data.data;
+  },
+  getEngineers: async () => {
+    const { data } = await api.get('/users', { params: { role: 'engineer', limit: 200 } });
+    return data.data;
+  },
+  getSalesmen: async () => {
+    const { data } = await api.get('/users', { params: { role: 'sales', limit: 200 } });
+    return data.data;
+  },
 };

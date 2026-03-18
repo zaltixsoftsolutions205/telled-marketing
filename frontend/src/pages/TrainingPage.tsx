@@ -49,21 +49,23 @@ export default function TrainingPage() {
       const res = await trainingApi.getAll(params);
       // Filter by search client-side
       const data = search
-        ? res.data.filter((t: any) =>
+        ? (res.data || []).filter((t: any) =>
             t.customerName?.toLowerCase().includes(search.toLowerCase()) ||
             t.accountId?.accountName?.toLowerCase().includes(search.toLowerCase())
           )
-        : res.data;
+        : (res.data || []);
       setTrainings(data as Training[]);
       setTotal(search ? data.length : res.pagination?.total ?? 0);
-    } finally { setLoading(false); }
+    } catch (err) { console.error('TrainingPage load:', err); setTrainings([]); setTotal(0); } finally { setLoading(false); }
   }, [page, statusFilter, modeFilter, user, search]);
 
   useEffect(() => { load(); }, [load]);
 
   const openCreate = async () => {
-    const res = await accountsApi.getAll({ limit: 100 });
-    setAccounts(res.data);
+    try {
+      const res = await accountsApi.getAll({ limit: 100 });
+      setAccounts(res.data || []);
+    } catch (err) { console.error('openCreate:', err); }
     setForm({ accountId: '', mode: 'Online', trainingDate: '', notes: '', status: 'Pending' });
     setShowModal(true);
   };

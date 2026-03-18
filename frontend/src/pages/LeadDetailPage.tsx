@@ -12,7 +12,7 @@ import Modal from '@/components/common/Modal';
 import { formatDate, formatDateTime, formatCurrency } from '@/utils/formatters';
 import type { Lead, DRF, User, Quotation, PurchaseOrder, LeadStatus, QuotationStatus } from '@/types';
 
-const LEAD_STAGES = ['New','DRF Submitted','DRF Approved','DRF Rejected','DRF Expired','Technical Done','Quotation Sent','Negotiation','PO Received','Converted','Lost'];
+const LEAD_STAGES = ['New','OEM Submitted','OEM Approved','OEM Rejected','OEM Expired','Technical Done','Quotation Sent','Negotiation','PO Received','Converted','Lost'];
 const LEAD_STATUSES: LeadStatus[] = ['New','Contacted','Qualified','Not Qualified'];
 
 const STATUS_COLORS: Record<LeadStatus, string> = {
@@ -74,16 +74,16 @@ export default function LeadDetailPage() {
     try {
       const [leadData, drfData, quoteData, poData] = await Promise.all([
         leadsApi.getById(id),
-        drfApi.getByLead(id),
-        quotationsApi.getByLead(id),
-        purchasesApi.getByLead(id),
+        drfApi.getByLead(id).catch(() => []),
+        quotationsApi.getByLead(id).catch(() => []),
+        purchasesApi.getByLead(id).catch(() => []),
       ]);
       setLead(leadData as Lead);
       setForm(leadData as Lead);
-      setDRFs(drfData as DRF[]);
-      setQuotations(quoteData as Quotation[]);
-      setPOs(poData as PurchaseOrder[]);
-    } finally { setLoading(false); }
+      setDRFs((drfData || []) as DRF[]);
+      setQuotations((quoteData || []) as Quotation[]);
+      setPOs((poData || []) as PurchaseOrder[]);
+    } catch (err) { console.error('LeadDetailPage load:', err); } finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, [id]);

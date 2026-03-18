@@ -1,12 +1,40 @@
-import { mockQuotations } from '@/mock/store';
+import api from './axios';
+
 export const quotationsApi = {
-  getAll:       (params?: Record<string, unknown>) => mockQuotations.getAll(params),
-  getByLead:    (leadId: string) => mockQuotations.getByLead(leadId),
-  getById:      (id: string) => mockQuotations.getById(id),
-  create:       (data: unknown) => mockQuotations.create(data as Record<string, unknown>),
-  update:       (id: string, data: unknown) => mockQuotations.update(id, data as Record<string, unknown>),
-  accept:       (id: string) => mockQuotations.accept(id),
-  reject:       (id: string) => mockQuotations.reject(id),
-  sendEmail:    (id: string) => mockQuotations.sendEmail(id),
-  generatePDF:  (id: string) => mockQuotations.generatePDF(id),
+  getAll: async (params?: Record<string, unknown>) => {
+    const { data } = await api.get('/quotations', { params });
+    return { data: data.data, pagination: { total: data.meta?.total ?? 0 } };
+  },
+  getByLead: async (leadId: string) => {
+    const { data } = await api.get('/quotations', { params: { leadId } });
+    return data.data;
+  },
+  getById: async (id: string) => {
+    const { data } = await api.get(`/quotations/${id}`);
+    return data.data;
+  },
+  create: async (body: unknown) => {
+    const { data } = await api.post('/quotations', body);
+    return data.data;
+  },
+  update: async (id: string, body: unknown) => {
+    const { data } = await api.put(`/quotations/${id}`, body);
+    return data.data;
+  },
+  accept: async (id: string) => {
+    const { data } = await api.patch(`/quotations/${id}/accept`);
+    return data.data;
+  },
+  reject: async (id: string) => {
+    const { data } = await api.patch(`/quotations/${id}/reject`);
+    return data.data;
+  },
+  sendEmail: async (id: string) => {
+    const { data } = await api.post(`/quotations/${id}/send-email`);
+    return data.data;
+  },
+  generatePDF: async (id: string) => {
+    const { data } = await api.post(`/quotations/${id}/generate-pdf`);
+    return data.data;
+  },
 };

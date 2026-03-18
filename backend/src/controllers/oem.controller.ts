@@ -3,10 +3,39 @@ import OEMApprovalAttempt from '../models/OEMApprovalAttempt';
 import Lead from '../models/Lead';
 import User from '../models/User';
 import { AuthRequest } from '../middleware/auth.middleware';
-import { sendSuccess, sendError } from '../utils/response';
+import { sendSuccess, sendPaginated, sendError } from '../utils/response';
 import { addDays } from '../utils/helpers';
 import { OEM_EXPIRY_DAYS } from '../config/constants';
 import { sendOEMApprovalRequest, sendOEMRejectionNotification } from '../services/email.service';
+
+export const getAllDRFs = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const limit = Number(req.query.limit) || 20;
+    const page  = Number(req.query.page)  || 1;
+    const filter: Record<string, unknown> = {};
+    if (req.query.status) filter.status = req.query.status;
+    if (req.query.leadId) filter.leadId = req.query.leadId;
+    const [data, total] = await Promise.all([
+      OEMApprovalAttempt.find(filter).populate('leadId', 'companyName oemName').populate('createdBy', 'name email').sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
+      OEMApprovalAttempt.countDocuments(filter),
+    ]);
+    sendPaginated(res, data, total, page, limit);
+  } catch { sendError(res, 'Failed to fetch DRFs', 500); }
+};
+
+export const getDRFAnalytics = async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const [total, pending, approved, rejected] = await Promise.all([
+      OEMApprovalAttempt.countDocuments({}),
+      OEMApprovalAttempt.countDocuments({ status: 'Pending' }),
+      OEMApprovalAttempt.countDocuments({ status: 'Approved' }),
+      OEMApprovalAttempt.countDocuments({ status: 'Rejected' }),
+    ]);
+    const approvalRate  = total ? Math.round((approved / total) * 100) : 0;
+    const rejectionRate = total ? Math.round((rejected / total) * 100) : 0;
+    sendSuccess(res, { total, pending, approved, rejected, approvalRate, rejectionRate, expiringSoon: 0 });
+  } catch { sendError(res, 'Failed to get analytics', 500); }
+};
 
 export const getAttemptsByLead = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -28,8 +57,8 @@ export const createAttempt = async (req: AuthRequest, res: Response): Promise<vo
       sentDate: new Date(), expiryDate: addDays(new Date(), OEM_EXPIRY_DAYS),
       createdBy: req.user!.id, notes: req.body.notes,
     }).save();
-    await Lead.findByIdAndUpdate(leadId, { stage: 'OEM Pending' });
-    await sendOEMApprovalRequest(lead.contactEmail, lead.companyName, lead.oemName, attempt.attemptNumber);
+    await Lead.findByIdAndUpdate(leadId, { stage: 'OEM Submitted' });
+    await sendOEMApprovalRequest(lead.email, lead.companyName, lead.oemName || '', attempt.attemptNumber);
     sendSuccess(res, attempt, 'OEM request submitted', 201);
   } catch { sendError(res, 'Failed to create OEM attempt', 500); }
 };
@@ -56,7 +85,7 @@ export const rejectAttempt = async (req: AuthRequest, res: Response): Promise<vo
     attempt.status = 'Rejected'; attempt.rejectedDate = new Date(); attempt.rejectionReason = reason;
     await attempt.save();
     const lead = await Lead.findByIdAndUpdate(attempt.leadId, { stage: 'OEM Rejected' }, { new: true });
-    if (lead) await sendOEMRejectionNotification(lead.contactEmail, lead.companyName, reason, attempt.attemptNumber);
+    if (lead) await sendOEMRejectionNotification(lead.email, lead.companyName, reason, attempt.attemptNumber);
     sendSuccess(res, attempt, 'OEM rejected');
   } catch { sendError(res, 'Failed to reject', 500); }
 };

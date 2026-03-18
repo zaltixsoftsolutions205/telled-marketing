@@ -15,11 +15,54 @@ td{padding:8px;border:1px solid #eee}
 <div class="f">© ${new Date().getFullYear()} Telled CRM</div>
 </div></body></html>`;
 
-const send = async (to: string, subject: string, html: string) => {
+const send = async (to: string, subject: string, html: string, attachments?: Array<{ filename: string; path: string }>) => {
   try {
-    await createTransporter().sendMail({ from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`, to, subject, html });
+    await createTransporter().sendMail({
+      from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`,
+      to, subject, html,
+      ...(attachments ? { attachments } : {}),
+    });
     logger.info(`Email sent to ${to}: ${subject}`);
   } catch (e) { logger.error('Email failed:', e); }
+};
+
+export const sendDRFEmail = async (
+  to: string,
+  data: {
+    drfNumber: string;
+    version: number;
+    companyName: string;
+    contactName: string;
+    oemName: string;
+    salesName: string;
+  },
+  pdfPath: string
+) => {
+  const html = base(`
+    <h2 style="color:#4f2d7f">Dealer Registration Form — ${data.drfNumber}</h2>
+    <p>Dear <b>${data.contactName}</b>,</p>
+    <p>
+      Your lead <b>${data.companyName}</b> has been <span style="color:#16a34a;font-weight:bold">Qualified</span>
+      and a Dealer Registration Form (DRF) has been automatically raised on your behalf.
+    </p>
+    <table>
+      <tr><td style="background:#f0eaf9;font-weight:bold">DRF Number</td><td>${data.drfNumber}</td></tr>
+      <tr><td style="background:#f0eaf9;font-weight:bold">Version</td><td>v${data.version}</td></tr>
+      <tr><td style="background:#f0eaf9;font-weight:bold">Company</td><td>${data.companyName}</td></tr>
+      <tr><td style="background:#f0eaf9;font-weight:bold">OEM / Brand</td><td>${data.oemName || '—'}</td></tr>
+      <tr><td style="background:#f0eaf9;font-weight:bold">Sales Executive</td><td>${data.salesName}</td></tr>
+      <tr><td style="background:#f0eaf9;font-weight:bold">Status</td><td><span style="color:#d97706;font-weight:bold">Pending Review</span></td></tr>
+    </table>
+    <p style="margin-top:16px">
+      Please find the DRF document attached. The form is now under review by the admin team.
+      You will be notified once it is <b>Approved</b> or <b>Rejected</b>.
+    </p>
+    <p style="color:#888;font-size:12px">This is an auto-generated email from Telled CRM.</p>
+  `, `DRF Raised — ${data.companyName}`);
+
+  await send(to, `DRF ${data.drfNumber} — ${data.companyName} (Qualified)`, html, [
+    { filename: `DRF-${data.drfNumber}.pdf`, path: pdfPath },
+  ]);
 };
 
 export const sendOEMApprovalRequest = (to: string, company: string, oem: string, attempt: number) =>

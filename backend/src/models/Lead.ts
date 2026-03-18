@@ -3,6 +3,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface ILead extends Document {
   companyName: string;
   contactName: string;
+  contactPersonName?: string;
   email: string;
   phone: string;
   address?: string;
@@ -11,30 +12,38 @@ export interface ILead extends Document {
   source?: string;
   oemName?: string;
   assignedTo?: mongoose.Types.ObjectId;
+  status: 'New' | 'Contacted' | 'Qualified' | 'Not Qualified';
   stage: string;
   notes?: string;
   isArchived: boolean;
   archivedAt?: Date;
   archivedBy?: mongoose.Types.ObjectId;
+  drfEmailSent?: boolean;
+  drfEmailSentAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
 
 const LeadSchema = new Schema<ILead>(
   {
-    companyName:  { type: String, required: true, trim: true },
-    contactName:  { type: String, required: true, trim: true },
-    email:        { type: String, required: true, lowercase: true, trim: true },
+    companyName:       { type: String, required: true, trim: true },
+    contactName:       { type: String, required: true, trim: true },
+    contactPersonName: { type: String, trim: true },
+    email:             { type: String, required: true, lowercase: true, trim: true },
     phone:        { type: String, required: true },
     address:      { type: String },
     city:         { type: String },
     state:        { type: String },
-    source: {
-      type: String,
-      enum: ['Website', 'Referral', 'Cold Call', 'Exhibition', 'LinkedIn', 'Email', 'Other'],
-    },
+    source: { type: String },
     oemName:    { type: String, trim: true },
     assignedTo: { type: Schema.Types.ObjectId, ref: 'User' },
+    status: {
+      type: String,
+      enum: ['New', 'Contacted', 'Qualified', 'Not Qualified'],
+      default: 'New',
+    },
+    drfEmailSent:   { type: Boolean, default: false },
+    drfEmailSentAt: { type: Date },
     stage: {
       type: String,
       enum: [

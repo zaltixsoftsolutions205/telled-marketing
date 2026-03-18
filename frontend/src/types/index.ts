@@ -26,10 +26,10 @@ export interface User {
 
 export type LeadStage =
   | 'New'
-  | 'DRF Submitted'
-  | 'DRF Approved'
-  | 'DRF Rejected'
-  | 'DRF Expired'
+  | 'OEM Submitted'
+  | 'OEM Approved'
+  | 'OEM Rejected'
+  | 'OEM Expired'
   | 'Technical Done'
   | 'Quotation Sent'
   | 'Negotiation'

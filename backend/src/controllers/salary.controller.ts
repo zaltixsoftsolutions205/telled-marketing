@@ -33,7 +33,7 @@ export const calculateSalary = async (req: AuthRequest, res: Response): Promise<
     if (!employee) { sendError(res, 'Employee not found', 404); return; }
     const [start, end] = [new Date(year, month - 1, 1), new Date(year, month, 0)];
     const visitAgg = await EngineerVisit.aggregate([
-      { $match: { engineerId: employee._id, approvedByHR: true, visitDate: { $gte: start, $lte: end } } },
+      { $match: { engineerId: employee._id, hrStatus: 'Approved', visitDate: { $gte: start, $lte: end } } },
       { $group: { _id: null, total: { $sum: '$totalAmount' } } },
     ]);
     const visitChargesTotal = visitAgg[0]?.total || 0;

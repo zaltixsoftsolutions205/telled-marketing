@@ -34,20 +34,22 @@ export default function InstallationsPage() {
       if (search) params.search = search;
       if (statusFilter) params.status = statusFilter;
       const res = await installationsApi.getAll(params);
-      setInstallations(res.data);
+      setInstallations(res.data || []);
       setTotal(res.pagination?.total ?? 0);
-    } finally { setLoading(false); }
+    } catch (err) { console.error('InstallationsPage load:', err); setInstallations([]); setTotal(0); } finally { setLoading(false); }
   }, [page, search, statusFilter]);
 
   useEffect(() => { load(); }, [load]);
 
   const openCreate = async () => {
+    try {
     const [accRes, engRes] = await Promise.all([
       accountsApi.getAll({ limit: 100 }),
       usersApi.getEngineers(),
     ]);
-    setAccounts(accRes.data);
-    setEngineers(engRes);
+    setAccounts(accRes.data || []);
+    setEngineers(engRes || []);
+    } catch (err) { console.error('openCreate:', err); }
     setEditTarget(null);
     setForm({ accountId: '', scheduledDate: '', siteAddress: '', engineer: '', status: 'Scheduled', licenseVersion: '', notes: '' });
     setShowModal(true);
@@ -55,9 +57,11 @@ export default function InstallationsPage() {
 
   const openEdit = async (inst: Installation) => {
     if (!accounts.length) {
-      const [accRes, engRes] = await Promise.all([accountsApi.getAll({ limit: 100 }), usersApi.getEngineers()]);
-      setAccounts(accRes.data);
-      setEngineers(engRes);
+      try {
+        const [accRes, engRes] = await Promise.all([accountsApi.getAll({ limit: 100 }), usersApi.getEngineers()]);
+        setAccounts(accRes.data || []);
+        setEngineers(engRes || []);
+      } catch (err) { console.error('openEdit:', err); }
     }
     setEditTarget(inst);
     setForm({

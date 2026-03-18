@@ -1,8 +1,24 @@
-import { mockEngineerVisits } from '@/mock/store';
+import api from './axios';
+
 export const engineerVisitsApi = {
-  getAll:      (params?: Record<string, unknown>) => mockEngineerVisits.getAll(params),
-  getMyVisits: (engineerId: string)               => mockEngineerVisits.getMyVisits(engineerId),
-  create:      (data: unknown)                    => mockEngineerVisits.create(data as Record<string, unknown>),
-  approve:     (id: string)                       => mockEngineerVisits.approve(id),
-  reject:      (id: string)                       => mockEngineerVisits.reject(id),
+  getAll: async (params?: Record<string, unknown>) => {
+    const { data } = await api.get('/engineer-visits', { params });
+    return { data: data.data, pagination: { total: data.meta?.total ?? 0 } };
+  },
+  getMyVisits: async (engineerId: string) => {
+    const { data } = await api.get('/engineer-visits', { params: { engineerId } });
+    return data.data;
+  },
+  create: async (body: unknown) => {
+    const { data } = await api.post('/engineer-visits', body);
+    return data.data;
+  },
+  approve: async (id: string) => {
+    const { data } = await api.patch(`/engineer-visits/${id}/approve`);
+    return data.data;
+  },
+  reject: async (id: string) => {
+    const { data } = await api.patch(`/engineer-visits/${id}/reject`);
+    return data.data;
+  },
 };

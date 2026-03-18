@@ -23,7 +23,10 @@ export const getTickets = async (req: AuthRequest, res: Response): Promise<void>
 
 export const createTicket = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const ticket = await new SupportTicket({ ...req.body, ticketId: generateTicketId(), createdBy: req.user!.id }).save();
+    const data = { ...req.body };
+    // Normalize: frontend sends "assignedTo", backend uses "assignedEngineer"
+    if (data.assignedTo && !data.assignedEngineer) { data.assignedEngineer = data.assignedTo; delete data.assignedTo; }
+    const ticket = await new SupportTicket({ ...data, ticketId: generateTicketId(), createdBy: req.user!.id }).save();
     sendSuccess(res, ticket, 'Ticket created', 201);
   } catch { sendError(res, 'Failed', 500); }
 };

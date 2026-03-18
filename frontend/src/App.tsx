@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
+import ErrorBoundary from '@/components/common/ErrorBoundary';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
@@ -44,6 +45,7 @@ function RoleRoute({ children, roles }: { children: React.ReactNode; roles: Role
 
 export default function App() {
   return (
+    <ErrorBoundary>
     <BrowserRouter>
       <Routes>
         {/* Public routes */}
@@ -118,5 +120,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
+    </ErrorBoundary>
   );
 }

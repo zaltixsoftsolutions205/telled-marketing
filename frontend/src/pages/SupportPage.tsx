@@ -36,16 +36,18 @@ export default function SupportPage() {
       if (search) params.search = search;
       if (statusFilter) params.status = statusFilter;
       const res = await supportApi.getAll(params);
-      setTickets(res.data);
+      setTickets(res.data || []);
       setTotal(res.pagination?.total ?? 0);
-    } finally { setLoading(false); }
+    } catch (err) { console.error('SupportPage load:', err); setTickets([]); setTotal(0); } finally { setLoading(false); }
   }, [page, search, statusFilter]);
 
   useEffect(() => { load(); }, [load]);
 
   const openCreate = async () => {
-    const res = await accountsApi.getAll({ limit: 100 });
-    setAccounts(res.data);
+    try {
+      const res = await accountsApi.getAll({ limit: 100 });
+      setAccounts(res.data || []);
+    } catch (err) { console.error('openCreate:', err); }
     setShowCreate(true);
   };
 
@@ -73,8 +75,10 @@ export default function SupportPage() {
   };
 
   const handleStatusChange = async (ticket: SupportTicket, newStatus: string) => {
-    await supportApi.update(ticket._id, { status: newStatus });
-    load();
+    try {
+      await supportApi.update(ticket._id, { status: newStatus });
+      load();
+    } catch (err) { console.error('handleStatusChange:', err); }
   };
 
   return (

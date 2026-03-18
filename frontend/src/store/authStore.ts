@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User } from '@/types';
-import { setCurrentOrgId } from '@/mock/store';
+
+const setCurrentOrgId = (_id: string | null) => {}; // no-op — using real backend now
 
 interface AuthState {
   user: User | null;

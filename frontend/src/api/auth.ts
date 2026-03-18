@@ -1,19 +1,24 @@
-import { mockAuth, setCurrentOrgId } from '@/mock/store';
+import api from './axios';
+
+// Normalize backend user (id → _id)
+const normalizeUser = (user: any) => ({ ...user, _id: user._id || user.id });
 
 export const authApi = {
   login: async (email: string, password: string) => {
-    const result = await mockAuth.login(email, password);
-    setCurrentOrgId(result.user.organizationId);
-    return result;
+    const { data } = await api.post('/auth/login', { email, password });
+    const d = data.data;
+    return { user: normalizeUser(d.user), accessToken: d.accessToken };
   },
   signup: async (orgName: string, adminName: string, email: string, password: string) => {
-    const result = await mockAuth.signup(orgName, adminName, email, password);
-    setCurrentOrgId(result.user.organizationId);
-    return result;
+    const { data } = await api.post('/auth/signup', { orgName, name: adminName, email, password });
+    const d = data.data;
+    return { user: normalizeUser(d.user), accessToken: d.accessToken };
   },
   logout: async () => {
-    await mockAuth.logout();
-    setCurrentOrgId(null);
+    await api.post('/auth/logout');
   },
-  getMe: (userId: string) => mockAuth.getMe(userId),
+  getMe: async (_userId: string) => {
+    const { data } = await api.get('/auth/me');
+    return normalizeUser(data.data);
+  },
 };

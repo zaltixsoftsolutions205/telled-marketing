@@ -26,16 +26,18 @@ export default function AccountsPage() {
       const params: Record<string, unknown> = { page, limit: 15 };
       if (search) params.search = search;
       const res = await accountsApi.getAll(params);
-      setAccounts(res.data);
+      setAccounts(res.data || []);
       setTotal(res.pagination?.total ?? 0);
-    } finally { setLoading(false); }
+    } catch (err) { console.error('AccountsPage load:', err); setAccounts([]); setTotal(0); } finally { setLoading(false); }
   }, [page, search]);
 
   useEffect(() => { load(); }, [load]);
 
   const openConvert = async () => {
-    const res = await leadsApi.getAll({ stage: 'PO Received', limit: 100 });
-    setEligibleLeads(res.data);
+    try {
+      const res = await leadsApi.getAll({ stage: 'PO Received', limit: 100 });
+      setEligibleLeads(res.data || []);
+    } catch (err) { console.error('openConvert:', err); setEligibleLeads([]); }
     setShowConvert(true);
   };
 

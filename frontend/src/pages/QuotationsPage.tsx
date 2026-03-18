@@ -36,9 +36,9 @@ export default function QuotationsPage() {
       const params: Record<string, unknown> = { page, limit: 15 };
       if (search) params.search = search;
       const res = await quotationsApi.getAll(params);
-      setQuotations(res.data);
+      setQuotations(res.data || []);
       setTotal(res.pagination?.total ?? 0);
-    } finally { setLoading(false); }
+    } catch (err) { console.error('QuotationsPage load:', err); setQuotations([]); setTotal(0); } finally { setLoading(false); }
   }, [page, search]);
 
   useEffect(() => { load(); }, [load]);
@@ -49,12 +49,14 @@ export default function QuotationsPage() {
     setForm({ leadId: '', taxRate: 18, validUntil: '', terms: '', notes: '' });
 
     // Load leads that have an approved DRF
-    const [leadsRes, drfRes] = await Promise.all([
-      leadsApi.getAll({ limit: 200 }),
-      drfApi.getAll({ status: 'Approved', limit: 200 }),
-    ]);
-    const approvedLeadIds = new Set((drfRes.data || []).map((d: any) => d.leadId?._id));
-    setLeads((leadsRes.data || []).filter((l: Lead) => approvedLeadIds.has(l._id)));
+    try {
+      const [leadsRes, drfRes] = await Promise.all([
+        leadsApi.getAll({ limit: 200 }),
+        drfApi.getAll({ status: 'Approved', limit: 200 }),
+      ]);
+      const approvedLeadIds = new Set((drfRes.data || []).map((d: any) => d.leadId?._id));
+      setLeads((leadsRes.data || []).filter((l: Lead) => approvedLeadIds.has(l._id)));
+    } catch (err) { console.error('openModal:', err); setLeads([]); }
     setShowModal(true);
   };
 

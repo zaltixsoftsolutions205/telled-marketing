@@ -64,11 +64,13 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    dashboardApi.getAdminStats().then(setStats).catch(console.error).finally(() => setLoading(false));
+    dashboardApi.getAdminStats()
+      .then(setStats)
+      .catch((e) => { console.error('Admin dashboard:', e); setStats({}); })
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <LoadingSpinner className="h-64" />;
-  if (!stats) return <div className="text-center text-gray-400 mt-20">Failed to load dashboard</div>;
 
   return (
     <div className="space-y-5 sm:space-y-7 animate-fade-in">

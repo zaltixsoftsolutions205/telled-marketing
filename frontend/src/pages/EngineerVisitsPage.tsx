@@ -29,16 +29,18 @@ export default function EngineerVisitsPage() {
       const params: Record<string, unknown> = { page, limit: 15 };
       if (hrStatusFilter) params.hrStatus = hrStatusFilter;
       const res = await engineerVisitsApi.getAll(params);
-      setVisits(res.data);
+      setVisits(res.data || []);
       setTotal(res.pagination?.total ?? 0);
-    } finally { setLoading(false); }
+    } catch (err) { console.error('EngineerVisitsPage load:', err); setVisits([]); setTotal(0); } finally { setLoading(false); }
   }, [page, hrStatusFilter]);
 
   useEffect(() => { load(); }, [load]);
 
   const openCreate = async () => {
-    const res = await accountsApi.getAll({ limit: 100 });
-    setAccounts(res.data);
+    try {
+      const res = await accountsApi.getAll({ limit: 100 });
+      setAccounts(res.data || []);
+    } catch (err) { console.error('openCreate:', err); }
     setShowCreate(true);
   };
 

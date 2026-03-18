@@ -14,7 +14,8 @@
       "Bash(python3:*)",
       "Bash(node:*)",
       "Bash(npx vite build:*)",
-      "Bash(find /c/Users/anjali/OneDrive/Desktop/telled-marketing -not -path */node_modules/* -not -path */.git/* -type d)"
+      "Bash(find /c/Users/anjali/OneDrive/Desktop/telled-marketing -not -path */node_modules/* -not -path */.git/* -type d)",
+      "Bash(Test-NetConnection -ComputerName ac-sjhya6t-shard-00-00.hehwo7z.mongodb.net -Port 27017)"
     ]
   }
 }

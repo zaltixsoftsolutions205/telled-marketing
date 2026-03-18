@@ -21,12 +21,12 @@ export default function PaymentsPage() {
       const res = await invoicesApi.getAll({ page, limit: 15, search });
       // Gather payments from these invoices
       const paymentLists = await Promise.all(
-        res.data.map((inv: Invoice) => invoicesApi.getPayments(inv._id).catch(() => []))
+        (res.data || []).map((inv: Invoice) => invoicesApi.getPayments(inv._id).catch(() => []))
       );
       const allPayments: Payment[] = paymentLists.flat();
       setPayments(allPayments);
       setTotal(res.pagination?.total ?? 0);
-    } finally { setLoading(false); }
+    } catch (err) { console.error('PaymentsPage load:', err); setPayments([]); setTotal(0); } finally { setLoading(false); }
   }, [page, search]);
 
   useEffect(() => { load(); }, [load]);

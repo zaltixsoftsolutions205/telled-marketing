@@ -253,7 +253,7 @@ export const mockDRF = {
       notes: String(data.notes || ''), createdBy: createdByUser, approvedBy: null, createdAt: now(),
     };
     DRFs = [...DRFs, drf];
-    LEADS = LEADS.map((l: any) => l._id === data.leadId ? { ...l, stage: 'DRF Submitted', updatedAt: now() } : l);
+    LEADS = LEADS.map((l: any) => l._id === data.leadId ? { ...l, stage: 'OEM Submitted', updatedAt: now() } : l);
     return drf;
   },
   approve: async (id: string, data: { expiryDate: string; notes?: string }) => {
@@ -261,14 +261,14 @@ export const mockDRF = {
     const admin = orgUsers().find((u: any) => u.role === 'admin');
     DRFs = DRFs.map((d: any) => d._id === id ? { ...d, status: 'Approved', approvedDate: now(), expiryDate: data.expiryDate, approvedBy: admin, notes: data.notes || d.notes } : d);
     const drf = orgDRFs().find((d: any) => d._id === id)!;
-    LEADS = LEADS.map((l: any) => l._id === drf.leadId._id ? { ...l, stage: 'DRF Approved', updatedAt: now() } : l);
+    LEADS = LEADS.map((l: any) => l._id === drf.leadId._id ? { ...l, stage: 'OEM Approved', updatedAt: now() } : l);
     return drf;
   },
   reject: async (id: string, data: { rejectionReason: string }) => {
     await delay(400);
     DRFs = DRFs.map((d: any) => d._id === id ? { ...d, status: 'Rejected', rejectedDate: now(), rejectionReason: data.rejectionReason } : d);
     const drf = orgDRFs().find((d: any) => d._id === id)!;
-    LEADS = LEADS.map((l: any) => l._id === drf.leadId._id ? { ...l, stage: 'DRF Rejected', updatedAt: now() } : l);
+    LEADS = LEADS.map((l: any) => l._id === drf.leadId._id ? { ...l, stage: 'OEM Rejected', updatedAt: now() } : l);
     return drf;
   },
   extend: async (id: string, data: { newExpiry: string; reason: string }) => {
@@ -741,7 +741,7 @@ export const mockDashboard = {
     const myPOs      = orgPOs().filter((p: any) => myLeadIds.includes(p.leadId._id));
     const myDRFs     = orgDRFs().filter((d: any) => myLeadIds.includes(d.leadId._id));
 
-    const STAGES = ['New','DRF Submitted','DRF Approved','Quotation Sent','Negotiation','PO Received','Converted','Lost'];
+    const STAGES = ['New','OEM Submitted','OEM Approved','Quotation Sent','Negotiation','PO Received','Converted','Lost'];
     const pipeline = STAGES.map((stage) => ({ stage, count: myLeads.filter((l: any) => l.stage === stage).length }));
 
     const funnel = [

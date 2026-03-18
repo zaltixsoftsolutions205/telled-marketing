@@ -1,9 +1,28 @@
-import { mockLeads } from '@/mock/store';
+import api from './axios';
+
 export const leadsApi = {
-  getAll:       (params?: Record<string, unknown>) => mockLeads.getAll(params),
-  getById:      (id: string) => mockLeads.getById(id),
-  create:       (data: unknown) => mockLeads.create(data as Record<string, unknown>),
-  update:       (id: string, data: unknown) => mockLeads.update(id, data as Record<string, unknown>),
-  archive:      (id: string) => mockLeads.archive(id),
-  importLeads:  (rows: Array<Record<string, string>>) => mockLeads.importLeads(rows),
+  getAll: async (params?: Record<string, unknown>) => {
+    const { data } = await api.get('/leads', { params });
+    return { data: data.data, pagination: { total: data.meta?.total ?? 0 } };
+  },
+  getById: async (id: string) => {
+    const { data } = await api.get(`/leads/${id}`);
+    return data.data;
+  },
+  create: async (body: unknown) => {
+    const { data } = await api.post('/leads', body);
+    return data.data;
+  },
+  update: async (id: string, body: unknown) => {
+    const { data } = await api.put(`/leads/${id}`, body);
+    return data.data;
+  },
+  archive: async (id: string) => {
+    const { data } = await api.patch(`/leads/${id}/archive`);
+    return data.data;
+  },
+  importLeads: async (rows: Array<Record<string, string>>) => {
+    const { data } = await api.post('/leads/import', { rows });
+    return data.data; // { imported }
+  },
 };

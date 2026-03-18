@@ -21,7 +21,11 @@ export const getInstallations = async (req: AuthRequest, res: Response): Promise
 
 export const createInstallation = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const inst = await new Installation({ ...req.body, assignedBy: req.user!.id }).save();
+    const data = { ...req.body };
+    // Normalize: frontend sends "engineer", backend uses "engineerId"
+    if (data.engineer && !data.engineerId) { data.engineerId = data.engineer; delete data.engineer; }
+    data.assignedBy = req.user!.id;
+    const inst = await new Installation(data).save();
     sendSuccess(res, inst, 'Installation scheduled', 201);
   } catch { sendError(res, 'Failed', 500); }
 };

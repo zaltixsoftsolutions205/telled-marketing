@@ -27,6 +27,7 @@ import supportRoutes from './routes/support.routes';
 import invoiceRoutes from './routes/invoice.routes';
 import engineerVisitRoutes from './routes/engineer-visit.routes';
 import salaryRoutes from './routes/salary.routes';
+import trainingRoutes from './routes/training.routes';
 import dashboardRoutes from './routes/dashboard.routes';
 
 const app = express();
@@ -55,6 +56,7 @@ app.use('/api/support', supportRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/engineer-visits', engineerVisitRoutes);
 app.use('/api/salaries', salaryRoutes);
+app.use('/api/training', trainingRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
 app.use(notFound);

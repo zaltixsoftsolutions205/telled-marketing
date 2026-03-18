@@ -305,15 +305,17 @@ export default function SalesDashboard() {
       
       setLoading(true);
       try {
-        const [salesStats, drfStats, drfList] = await Promise.all([
+        const [salesRes, drfStatsRes, drfListRes] = await Promise.allSettled([
           dashboardApi.getSalesStats(user._id),
           drfApi.getAnalytics(),
-          drfApi.getAll({ limit: 5, sort: '-createdAt' })
+          drfApi.getAll({ limit: 5 }),
         ]);
-        
-        setStats(salesStats);
-        setDrfAnalytics(drfStats);
-        setRecentDrfs(drfList.data || []);
+
+        if (salesRes.status === 'fulfilled') setStats(salesRes.value);
+        if (drfStatsRes.status === 'fulfilled') setDrfAnalytics(drfStatsRes.value);
+        if (drfListRes.status === 'fulfilled') setRecentDrfs((drfListRes.value as any)?.data || []);
+
+        if (salesRes.status === 'rejected') console.error('Sales stats failed:', salesRes.reason);
       } catch (error) {
         console.error('Failed to load dashboard data:', error);
       } finally {

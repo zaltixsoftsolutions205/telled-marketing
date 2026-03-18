@@ -32,16 +32,18 @@ export default function InvoicesPage() {
       if (search) params.search = search;
       if (statusFilter) params.status = statusFilter;
       const res = await invoicesApi.getAll(params);
-      setInvoices(res.data);
+      setInvoices(res.data || []);
       setTotal(res.pagination?.total ?? 0);
-    } finally { setLoading(false); }
+    } catch (err) { console.error('InvoicesPage load:', err); setInvoices([]); setTotal(0); } finally { setLoading(false); }
   }, [page, search, statusFilter]);
 
   useEffect(() => { load(); }, [load]);
 
   const openCreate = async () => {
-    const res = await accountsApi.getAll({ limit: 100 });
-    setAccounts(res.data);
+    try {
+      const res = await accountsApi.getAll({ limit: 100 });
+      setAccounts(res.data || []);
+    } catch (err) { console.error('openCreate:', err); }
     setShowCreate(true);
   };
 

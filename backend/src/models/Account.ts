@@ -45,4 +45,9 @@ AccountSchema.index({ assignedEngineer: 1 });
 AccountSchema.index({ assignedSales: 1 });
 AccountSchema.index({ companyName: 'text', contactName: 'text' });
 
+// Virtual: frontend uses "accountName" — alias for companyName
+AccountSchema.virtual('accountName').get(function () { return this.companyName; });
+AccountSchema.set('toJSON', { virtuals: true });
+AccountSchema.set('toObject', { virtuals: true });
+
 export default mongoose.model<IAccount>('Account', AccountSchema);

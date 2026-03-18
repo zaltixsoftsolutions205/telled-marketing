@@ -32,15 +32,15 @@ export default function AccountDetailPage() {
     try {
       const [acc, inst, tick, inv] = await Promise.all([
         accountsApi.getById(id),
-        installationsApi.getByAccount(id),
-        supportApi.getByAccount(id),
-        invoicesApi.getByAccount(id),
+        installationsApi.getByAccount(id).catch(() => []),
+        supportApi.getByAccount(id).catch(() => []),
+        invoicesApi.getByAccount(id).catch(() => []),
       ]);
       setAccount(acc);
-      setInstallations(inst);
-      setTickets(tick);
-      setInvoices(inv);
-    } finally { setLoading(false); }
+      setInstallations(inst || []);
+      setTickets(tick || []);
+      setInvoices(inv || []);
+    } catch (err) { console.error('AccountDetailPage load:', err); } finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, [id]);

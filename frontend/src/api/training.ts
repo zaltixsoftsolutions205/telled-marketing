@@ -1,8 +1,20 @@
-import { mockTraining } from '@/mock/store';
+import api from './axios';
 
 export const trainingApi = {
-  getAll:  (params?: Record<string, unknown>) => mockTraining.getAll(params ?? {}),
-  getById: (id: string)                       => mockTraining.getById(id),
-  create:  (data: Record<string, unknown>)    => mockTraining.create(data),
-  update:  (id: string, data: Record<string, unknown>) => mockTraining.update(id, data),
+  getAll: async (params?: Record<string, unknown>) => {
+    const { data } = await api.get('/training', { params });
+    return { data: data.data, pagination: { total: data.meta?.total ?? 0 } };
+  },
+  getById: async (id: string) => {
+    const { data } = await api.get(`/training/${id}`);
+    return data.data;
+  },
+  create: async (body: Record<string, unknown>) => {
+    const { data } = await api.post('/training', body);
+    return data.data;
+  },
+  update: async (id: string, body: Record<string, unknown>) => {
+    const { data } = await api.put(`/training/${id}`, body);
+    return data.data;
+  },
 };

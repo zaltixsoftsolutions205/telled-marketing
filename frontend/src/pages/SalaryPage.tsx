@@ -29,16 +29,18 @@ export default function SalaryPage() {
     setLoading(true);
     try {
       const res = await salariesApi.getAll({ page, limit: 15 });
-      setSalaries(res.data);
+      setSalaries(res.data || []);
       setTotal(res.pagination?.total ?? 0);
-    } finally { setLoading(false); }
+    } catch (err) { console.error('SalaryPage load:', err); setSalaries([]); setTotal(0); } finally { setLoading(false); }
   }, [page]);
 
   useEffect(() => { load(); }, [load]);
 
   const openCalc = async () => {
-    const engs = await usersApi.getEngineers();
-    setEngineers(engs);
+    try {
+      const engs = await usersApi.getEngineers();
+      setEngineers(engs || []);
+    } catch (err) { console.error('openCalc:', err); }
     setShowCalc(true);
   };
 

@@ -40,7 +40,7 @@ export const convertLeadToAccount = async (req: AuthRequest, res: Response): Pro
     if (!lead) { sendError(res, 'Lead not found', 404); return; }
     if (lead.stage !== 'PO Received') { sendError(res, 'Lead must have PO received before converting', 400); return; }
     if (await Account.findOne({ leadId })) { sendError(res, 'Lead already converted', 409); return; }
-    const account = await new Account({ leadId, companyName: lead.companyName, contactName: lead.contactName, contactEmail: lead.contactEmail, phone: lead.phone, assignedSales: lead.assignedSales, ...req.body }).save();
+    const account = await new Account({ leadId, companyName: req.body.accountName || lead.companyName, contactName: lead.contactName || lead.contactPersonName || '', contactEmail: lead.email, phone: lead.phone, assignedSales: lead.assignedTo, ...req.body }).save();
     await Lead.findByIdAndUpdate(leadId, { stage: 'Converted' });
     sendSuccess(res, account, 'Lead converted to account', 201);
   } catch { sendError(res, 'Failed to convert lead', 500); }

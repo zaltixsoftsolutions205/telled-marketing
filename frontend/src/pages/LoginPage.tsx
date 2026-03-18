@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { authApi } from '@/api/auth';
-import { setCurrentOrgId } from '@/mock/store';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -20,7 +19,6 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const data = await authApi.login(email, password);
-      setCurrentOrgId(data.user.organizationId);
       setAuth(data.user, data.accessToken);
       navigate('/dashboard');
     } catch (err: unknown) {
