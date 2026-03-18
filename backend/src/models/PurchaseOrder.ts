@@ -1,13 +1,17 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IPurchaseOrder extends Document {
-  accountId: mongoose.Types.ObjectId;
-  quotationId?: mongoose.Types.ObjectId;
+  leadId: mongoose.Types.ObjectId;
   poNumber: string;
-  poDocument?: string;
-  receivedDate: Date;
   amount: number;
+  product?: string;
+  vendorName?: string;
+  vendorEmail?: string;
+  receivedDate: Date;
   notes?: string;
+  vendorEmailSent: boolean;
+  vendorEmailSentAt?: Date;
+  converted: boolean;
   uploadedBy: mongoose.Types.ObjectId;
   isArchived: boolean;
   createdAt: Date;
@@ -16,19 +20,23 @@ export interface IPurchaseOrder extends Document {
 
 const POSchema = new Schema<IPurchaseOrder>(
   {
-    accountId: { type: Schema.Types.ObjectId, ref: 'Account', required: true },
-    quotationId: { type: Schema.Types.ObjectId, ref: 'Quotation' },
-    poNumber: { type: String, required: true, unique: true },
-    poDocument: { type: String },
-    receivedDate: { type: Date, required: true },
-    amount: { type: Number, required: true, min: 0 },
-    notes: { type: String },
-    uploadedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    isArchived: { type: Boolean, default: false },
+    leadId:            { type: Schema.Types.ObjectId, ref: 'Lead', required: true },
+    poNumber:          { type: String, required: true, unique: true },
+    amount:            { type: Number, required: true, min: 0 },
+    product:           { type: String },
+    vendorName:        { type: String },
+    vendorEmail:       { type: String },
+    receivedDate:      { type: Date, required: true },
+    notes:             { type: String },
+    vendorEmailSent:   { type: Boolean, default: false },
+    vendorEmailSentAt: { type: Date },
+    converted:         { type: Boolean, default: false },
+    uploadedBy:        { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    isArchived:        { type: Boolean, default: false },
   },
   { timestamps: true }
 );
 
-POSchema.index({ accountId: 1 });
+POSchema.index({ leadId: 1 });
 
 export default mongoose.model<IPurchaseOrder>('PurchaseOrder', POSchema);
