@@ -1,0 +1,10 @@
+import { Router } from 'express';
+import { authenticate } from '../middleware/auth.middleware';
+import { getLeaves, applyLeave, approveLeave, rejectLeave } from '../controllers/leave.controller';
+const router = Router();
+router.use(authenticate);
+router.get('/', getLeaves);
+router.post('/', applyLeave);
+router.patch('/:id/approve', approveLeave);
+router.patch('/:id/reject', rejectLeave);
+export default router;

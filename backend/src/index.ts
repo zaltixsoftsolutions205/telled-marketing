@@ -29,6 +29,8 @@ import engineerVisitRoutes from './routes/engineer-visit.routes';
 import salaryRoutes from './routes/salary.routes';
 import trainingRoutes from './routes/training.routes';
 import dashboardRoutes from './routes/dashboard.routes';
+import attendanceRoutes from './routes/attendance.routes';
+import leaveRoutes from './routes/leave.routes';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -58,6 +60,8 @@ app.use('/api/engineer-visits', engineerVisitRoutes);
 app.use('/api/salaries', salaryRoutes);
 app.use('/api/training', trainingRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/leaves', leaveRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

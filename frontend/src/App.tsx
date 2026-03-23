@@ -21,6 +21,8 @@ import SalaryPage from '@/pages/SalaryPage';
 import UsersPage from '@/pages/UsersPage';
 import TrainingPage from '@/pages/TrainingPage';
 import EngineerPerformancePage from '@/pages/EngineerPerformancePage';
+import AttendancePage from '@/pages/AttendancePage';
+import LeavePage from '@/pages/LeavePage';
 import type { Role } from '@/types';
 
 // ─── Route guards ─────────────────────────────────────────────────────────────
@@ -113,6 +115,14 @@ export default function App() {
           } />
           <Route path="engineer-performance" element={
             <RoleRoute roles={['admin','engineer']}><EngineerPerformancePage /></RoleRoute>
+          } />
+
+          {/* Attendance & Leave — HR, Admin, Engineers */}
+          <Route path="attendance" element={
+            <RoleRoute roles={['admin','hr_finance','engineer']}><AttendancePage /></RoleRoute>
+          } />
+          <Route path="leaves" element={
+            <RoleRoute roles={['admin','hr_finance','engineer']}><LeavePage /></RoleRoute>
           } />
 
           {/* Admin only */}

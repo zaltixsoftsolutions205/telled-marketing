@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, DollarSign } from 'lucide-react';
+import { Plus, DollarSign, Download } from 'lucide-react';
 import { salariesApi } from '@/api/salaries';
 import { usersApi } from '@/api/users';
+import { useAuthStore } from '@/store/authStore';
 import StatusBadge from '@/components/common/StatusBadge';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
@@ -12,15 +13,25 @@ import type { Salary, User } from '@/types';
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 export default function SalaryPage() {
+  const user = useAuthStore((s) => s.user);
+  const isHR = user?.role === 'admin' || user?.role === 'hr_finance';
+
   const [salaries, setSalaries] = useState<Salary[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [showCalc, setShowCalc] = useState(false);
   const [engineers, setEngineers] = useState<User[]>([]);
+
+  // Filters
+  const now = new Date();
+  const [filterMonth, setFilterMonth] = useState(0);
+  const [filterYear, setFilterYear] = useState(now.getFullYear());
+  const [filterEmployee, setFilterEmployee] = useState('');
+
   const [form, setForm] = useState({
-    employeeId: '', month: new Date().getMonth() + 1, year: new Date().getFullYear(),
-    baseSalary: '', incentives: '', deductions: '',
+    employeeId: '', month: now.getMonth() + 1, year: now.getFullYear(),
+    baseSalary: '', incentives: '', deductions: '', travelAllowance: '',
   });
   const [saving, setSaving] = useState(false);
   const [payTarget, setPayTarget] = useState<Salary | null>(null);
@@ -28,11 +39,15 @@ export default function SalaryPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await salariesApi.getAll({ page, limit: 15 });
+      const params: Record<string, unknown> = { page, limit: 15 };
+      if (filterMonth) params.month = filterMonth;
+      if (filterYear) params.year = filterYear;
+      if (filterEmployee) params.employeeId = filterEmployee;
+      const res = await salariesApi.getAll(params);
       setSalaries(res.data || []);
       setTotal(res.pagination?.total ?? 0);
     } catch (err) { console.error('SalaryPage load:', err); setSalaries([]); setTotal(0); } finally { setLoading(false); }
-  }, [page]);
+  }, [page, filterMonth, filterYear, filterEmployee]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -41,8 +56,16 @@ export default function SalaryPage() {
       const engs = await usersApi.getEngineers();
       setEngineers(engs || []);
     } catch (err) { console.error('openCalc:', err); }
+    setForm({ employeeId: '', month: now.getMonth() + 1, year: now.getFullYear(), baseSalary: '', incentives: '', deductions: '', travelAllowance: '' });
     setShowCalc(true);
   };
+
+  // Load engineers for filter
+  useEffect(() => {
+    if (isHR) {
+      usersApi.getEngineers().then(e => setEngineers(e || [])).catch(() => {});
+    }
+  }, [isHR]);
 
   const handleCalculate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,7 +78,8 @@ export default function SalaryPage() {
         baseSalary: Number(form.baseSalary),
         incentives: Number(form.incentives) || 0,
         deductions: Number(form.deductions) || 0,
-      });
+        travelAllowance: Number(form.travelAllowance) || 0,
+      } as any);
       setShowCalc(false);
       load();
     } finally { setSaving(false); }
@@ -75,7 +99,40 @@ export default function SalaryPage() {
           <h1 className="page-header">Salary Management</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} records</p>
         </div>
-        <button onClick={openCalc} className="btn-primary flex items-center gap-2"><Plus size={16} /> Calculate Salary</button>
+        {isHR && (
+          <button onClick={openCalc} className="btn-primary flex items-center gap-2"><Plus size={16} /> Calculate Salary</button>
+        )}
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3">
+        <select
+          value={filterMonth}
+          onChange={(e) => { setFilterMonth(Number(e.target.value)); setPage(1); }}
+          className="input-field w-auto"
+        >
+          <option value={0}>All Months</option>
+          {MONTHS.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+        </select>
+        <input
+          type="number"
+          value={filterYear}
+          onChange={(e) => { setFilterYear(Number(e.target.value)); setPage(1); }}
+          className="input-field w-28"
+          min={2020}
+          max={2099}
+          placeholder="Year"
+        />
+        {isHR && (
+          <select
+            value={filterEmployee}
+            onChange={(e) => { setFilterEmployee(e.target.value); setPage(1); }}
+            className="input-field w-auto"
+          >
+            <option value="">All Employees</option>
+            {engineers.map(e => <option key={e._id} value={e._id}>{e.name}</option>)}
+          </select>
+        )}
       </div>
 
       <div className="glass-card !p-0 overflow-hidden">
@@ -90,6 +147,7 @@ export default function SalaryPage() {
                   <th className="table-header">Month / Year</th>
                   <th className="table-header">Base Salary</th>
                   <th className="table-header">Visit Charges</th>
+                  <th className="table-header">Travel Allow.</th>
                   <th className="table-header">Incentives</th>
                   <th className="table-header">Deductions</th>
                   <th className="table-header">Final Salary</th>
@@ -104,16 +162,30 @@ export default function SalaryPage() {
                     <td className="table-cell text-gray-500">{MONTHS[sal.month - 1]} {sal.year}</td>
                     <td className="table-cell">{formatCurrency(sal.baseSalary)}</td>
                     <td className="table-cell text-blue-600">{formatCurrency(sal.visitChargesTotal)}</td>
+                    <td className="table-cell text-blue-500">{formatCurrency(sal.travelAllowance || 0)}</td>
                     <td className="table-cell text-green-600">{formatCurrency(sal.incentives)}</td>
                     <td className="table-cell text-red-600">-{formatCurrency(sal.deductions)}</td>
                     <td className="table-cell font-bold text-violet-700 text-base">{formatCurrency(sal.finalSalary)}</td>
                     <td className="table-cell"><StatusBadge status={sal.status} /></td>
                     <td className="table-cell">
-                      {sal.status === 'Calculated' && (
-                        <button onClick={() => setPayTarget(sal)} className="flex items-center gap-1 text-xs bg-green-100 hover:bg-green-200 text-green-800 px-2.5 py-1 rounded-lg font-medium">
-                          <DollarSign size={12} /> Mark Paid
-                        </button>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {sal.status === 'Calculated' && (
+                          <button onClick={() => setPayTarget(sal)} className="flex items-center gap-1 text-xs bg-green-100 hover:bg-green-200 text-green-800 px-2.5 py-1 rounded-lg font-medium">
+                            <DollarSign size={12} /> Mark Paid
+                          </button>
+                        )}
+                        {(sal.payslipPdf || sal.pdfPath) && (
+                          <a
+                            href={`/uploads/${sal.payslipPdf || sal.pdfPath}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center gap-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-800 px-2.5 py-1 rounded-lg font-medium"
+                            title="Download Payslip"
+                          >
+                            <Download size={12} /> Payslip
+                          </a>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -155,6 +227,10 @@ export default function SalaryPage() {
             <div>
               <label className="label">Base Salary (₹) *</label>
               <input required type="number" className="input-field" value={form.baseSalary} onChange={(e) => setForm(f => ({...f, baseSalary: e.target.value}))} />
+            </div>
+            <div>
+              <label className="label">Travel Allowance (₹)</label>
+              <input type="number" className="input-field" value={form.travelAllowance} onChange={(e) => setForm(f => ({...f, travelAllowance: e.target.value}))} placeholder="0" />
             </div>
             <div>
               <label className="label">Incentives (₹)</label>

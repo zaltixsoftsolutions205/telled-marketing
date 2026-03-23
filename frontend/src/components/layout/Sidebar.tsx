@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Building2, FileText,
   ShoppingCart, Wrench, Headphones, Receipt, CreditCard,
   CalendarCheck, DollarSign, UserCog, LogOut, ChevronDown, ChevronRight,
-  FileBadge, GraduationCap, TrendingUp,
+  FileBadge, GraduationCap, TrendingUp, CalendarDays, Calendar,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { authApi } from '@/api/auth';
@@ -34,14 +34,18 @@ const engineerNav = [
   { to: '/training',             label: 'Training',       icon: GraduationCap },
   { to: '/engineer-visits',      label: 'Visit Claims',   icon: CalendarCheck },
   { to: '/engineer-performance', label: 'My Performance', icon: TrendingUp },
+  { to: '/attendance',           label: 'My Attendance',  icon: CalendarDays },
+  { to: '/leaves',               label: 'My Leaves',      icon: Calendar },
 ];
 
 const hrNav = [
-  { to: '/invoices',        label: 'Invoices',        icon: Receipt },
-  { to: '/payments',        label: 'Payments',        icon: CreditCard },
-  { to: '/engineer-visits', label: 'Engineer Visits', icon: CalendarCheck },
-  { to: '/salary',          label: 'Salary',          icon: DollarSign },
-  { to: '/accounts',        label: 'Accounts',        icon: Building2 },
+  { to: '/invoices',        label: 'Invoices',          icon: Receipt },
+  { to: '/payments',        label: 'Payments',          icon: CreditCard },
+  { to: '/engineer-visits', label: 'Engineer Visits',   icon: CalendarCheck },
+  { to: '/salary',          label: 'Salary',            icon: DollarSign },
+  { to: '/attendance',      label: 'Attendance',        icon: CalendarDays },
+  { to: '/leaves',          label: 'Leave Management',  icon: CalendarDays },
+  { to: '/accounts',        label: 'Accounts',          icon: Building2 },
 ];
 
 const adminSections = [
@@ -68,10 +72,12 @@ const adminSections = [
   {
     label: 'HR & Finance',
     items: [
-      { to: '/invoices',        label: 'Invoices',        icon: Receipt },
-      { to: '/payments',        label: 'Payments',        icon: CreditCard },
-      { to: '/engineer-visits', label: 'Engineer Visits', icon: CalendarCheck },
-      { to: '/salary',          label: 'Salary',          icon: DollarSign },
+      { to: '/invoices',        label: 'Invoices',          icon: Receipt },
+      { to: '/payments',        label: 'Payments',          icon: CreditCard },
+      { to: '/engineer-visits', label: 'Engineer Visits',   icon: CalendarCheck },
+      { to: '/salary',          label: 'Salary',            icon: DollarSign },
+      { to: '/attendance',      label: 'Attendance',        icon: CalendarDays },
+      { to: '/leaves',          label: 'Leave Management',  icon: CalendarDays },
     ],
   },
 ];

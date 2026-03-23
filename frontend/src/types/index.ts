@@ -235,13 +235,42 @@ export interface Salary {
   year: number;
   baseSalary: number;
   visitChargesTotal: number;
+  travelAllowance: number;
   incentives: number;
   deductions: number;
   finalSalary: number;
   status: 'Calculated' | 'Paid';
   paidDate?: string;
+  payslipPdf?: string;
   pdfPath?: string;
   notes?: string;
+  createdAt: string;
+}
+
+export interface Attendance {
+  _id: string;
+  employeeId: User | string;
+  date: string;
+  checkIn?: string;
+  checkOut?: string;
+  status: 'Present' | 'Absent' | 'Half Day' | 'Leave' | 'Holiday';
+  notes?: string;
+  markedBy?: User | string;
+  createdAt: string;
+}
+
+export interface Leave {
+  _id: string;
+  employeeId: User | string;
+  type: 'Casual' | 'Sick' | 'Annual' | 'Unpaid';
+  startDate: string;
+  endDate: string;
+  days: number;
+  reason: string;
+  status: 'Pending' | 'Approved' | 'Rejected';
+  approvedBy?: User | string;
+  approvedAt?: string;
+  rejectionReason?: string;
   createdAt: string;
 }
 

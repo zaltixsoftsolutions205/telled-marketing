@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, Search, FileText, CreditCard } from 'lucide-react';
+import { Plus, Search, FileText, CreditCard, Download, Receipt, TrendingUp, AlertCircle } from 'lucide-react';
 import { invoicesApi } from '@/api/invoices';
 import { accountsApi } from '@/api/accounts';
 import StatusBadge from '@/components/common/StatusBadge';
@@ -24,6 +24,7 @@ export default function InvoicesPage() {
   const [form, setForm] = useState({ accountId: '', amount: '', dueDate: '', notes: '' });
   const [payForm, setPayForm] = useState({ amount: '', paymentDate: new Date().toISOString().slice(0, 10), mode: 'Bank Transfer', reference: '', notes: '' });
   const [saving, setSaving] = useState(false);
+  const [stats, setStats] = useState<{ total?: number; totalAmount?: number; collected?: number; outstanding?: number } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -37,7 +38,15 @@ export default function InvoicesPage() {
     } catch (err) { console.error('InvoicesPage load:', err); setInvoices([]); setTotal(0); } finally { setLoading(false); }
   }, [page, search, statusFilter]);
 
+  const loadStats = useCallback(async () => {
+    try {
+      const s = await invoicesApi.getStats();
+      setStats(s);
+    } catch (_e) { /* stats optional */ }
+  }, []);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadStats(); }, [loadStats]);
 
   const openCreate = async () => {
     try {
@@ -55,6 +64,7 @@ export default function InvoicesPage() {
       setShowCreate(false);
       setForm({ accountId: '', amount: '', dueDate: '', notes: '' });
       load();
+      loadStats();
     } finally { setSaving(false); }
   };
 
@@ -66,8 +76,13 @@ export default function InvoicesPage() {
       await invoicesApi.recordPayment(selected._id, payForm);
       setShowPayment(false);
       load();
+      loadStats();
     } finally { setSaving(false); }
   };
+
+  const totalAmount = stats?.totalAmount ?? invoices.reduce((s, i) => s + i.amount, 0);
+  const collected = stats?.collected ?? invoices.reduce((s, i) => s + i.paidAmount, 0);
+  const outstanding = stats?.outstanding ?? (totalAmount - collected);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -77,6 +92,46 @@ export default function InvoicesPage() {
           <p className="text-sm text-gray-500 mt-0.5">{total} total</p>
         </div>
         <button onClick={openCreate} className="btn-primary flex items-center gap-2"><Plus size={16} /> New Invoice</button>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="glass-card flex items-center gap-4">
+          <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
+            <Receipt size={18} className="text-blue-600" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">{stats?.total ?? total}</p>
+            <p className="text-xs text-gray-400">Total Invoices</p>
+          </div>
+        </div>
+        <div className="glass-card flex items-center gap-4">
+          <div className="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center flex-shrink-0">
+            <TrendingUp size={18} className="text-violet-600" />
+          </div>
+          <div>
+            <p className="text-xl font-bold text-gray-900">{formatCurrency(totalAmount)}</p>
+            <p className="text-xs text-gray-400">Total Amount</p>
+          </div>
+        </div>
+        <div className="glass-card flex items-center gap-4">
+          <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center flex-shrink-0">
+            <CreditCard size={18} className="text-green-600" />
+          </div>
+          <div>
+            <p className="text-xl font-bold text-gray-900">{formatCurrency(collected)}</p>
+            <p className="text-xs text-gray-400">Collected</p>
+          </div>
+        </div>
+        <div className="glass-card flex items-center gap-4">
+          <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
+            <AlertCircle size={18} className="text-red-500" />
+          </div>
+          <div>
+            <p className="text-xl font-bold text-gray-900">{formatCurrency(outstanding)}</p>
+            <p className="text-xs text-gray-400">Outstanding</p>
+          </div>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3">
@@ -109,7 +164,10 @@ export default function InvoicesPage() {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {invoices.map((inv) => (
-                  <tr key={inv._id} className="hover:bg-violet-50/20 transition-colors">
+                  <tr
+                    key={inv._id}
+                    className={`hover:bg-violet-50/20 transition-colors ${inv.status === 'Overdue' ? 'bg-red-50/40' : ''}`}
+                  >
                     <td className="table-cell font-mono font-medium text-sm">{inv.invoiceNumber}</td>
                     <td className="table-cell">{(inv.accountId as Account)?.accountName}</td>
                     <td className="table-cell font-semibold">{formatCurrency(inv.amount)}</td>
@@ -124,8 +182,13 @@ export default function InvoicesPage() {
                           </button>
                         )}
                         {inv.pdfPath && (
-                          <a href={`/uploads/${inv.pdfPath}`} target="_blank" rel="noreferrer" className="p-1 hover:text-violet-600 text-gray-400">
+                          <a href={`/uploads/${inv.pdfPath}`} target="_blank" rel="noreferrer" className="p-1 hover:text-violet-600 text-gray-400" title="View PDF">
                             <FileText size={15} />
+                          </a>
+                        )}
+                        {(inv as any).pdfUrl && (
+                          <a href={`/api/invoices/${inv._id}/pdf`} target="_blank" rel="noreferrer" className="p-1 hover:text-blue-600 text-gray-400" title="Download PDF">
+                            <Download size={15} />
                           </a>
                         )}
                       </div>

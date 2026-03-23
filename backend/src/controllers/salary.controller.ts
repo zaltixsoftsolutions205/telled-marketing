@@ -27,7 +27,7 @@ export const getSalaries = async (req: AuthRequest, res: Response): Promise<void
 
 export const calculateSalary = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { employeeId, month, year, incentives = 0, deductions = 0, notes } = req.body;
+    const { employeeId, month, year, incentives = 0, deductions = 0, travelAllowance = 0, notes } = req.body;
     if (await Salary.findOne({ employeeId, month, year })) { sendError(res, 'Salary already calculated for this period', 409); return; }
     const employee = await User.findById(employeeId);
     if (!employee) { sendError(res, 'Employee not found', 404); return; }
@@ -37,9 +37,9 @@ export const calculateSalary = async (req: AuthRequest, res: Response): Promise<
       { $group: { _id: null, total: { $sum: '$totalAmount' } } },
     ]);
     const visitChargesTotal = visitAgg[0]?.total || 0;
-    const salary = await new Salary({ employeeId, month, year, baseSalary: employee.baseSalary, visitChargesTotal, incentives, deductions, notes }).save();
+    const salary = await new Salary({ employeeId, month, year, baseSalary: employee.baseSalary, visitChargesTotal, travelAllowance, incentives, deductions, notes }).save();
     try {
-      const pdf = await generatePayslipPDF({ employeeName: employee.name, email: employee.email, role: employee.role, month: MONTHS[month - 1], year, baseSalary: employee.baseSalary, visitChargesTotal, incentives, deductions, finalSalary: salary.finalSalary });
+      const pdf = await generatePayslipPDF({ employeeName: employee.name, email: employee.email, role: employee.role, month: MONTHS[month - 1], year, baseSalary: employee.baseSalary, visitChargesTotal, travelAllowance, incentives, deductions, finalSalary: salary.finalSalary });
       await Salary.findByIdAndUpdate(salary._id, { payslipPdf: pdf });
     } catch (_e) {}
     sendSuccess(res, salary, 'Salary calculated', 201);
