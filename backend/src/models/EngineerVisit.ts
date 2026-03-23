@@ -17,6 +17,14 @@ export interface IEngineerVisit extends Document {
   isArchived: boolean;
   createdAt: Date;
   updatedAt: Date;
+  // New fields
+  visitType: 'Installation' | 'Support' | 'Maintenance' | 'Training';
+  scheduledDate?: Date;
+  status: 'Scheduled' | 'In Progress' | 'Completed' | 'Cancelled';
+  workNotes?: string;
+  completedAt?: Date;
+  dayReminderSent: boolean;
+  twoHourReminderSent: boolean;
 }
 
 const VisitSchema = new Schema<IEngineerVisit>(
@@ -35,6 +43,23 @@ const VisitSchema = new Schema<IEngineerVisit>(
     rejectionReason: { type: String },
     notes: { type: String },
     isArchived: { type: Boolean, default: false },
+    // New fields
+    visitType: {
+      type: String,
+      enum: ['Installation', 'Support', 'Maintenance', 'Training'],
+      required: true,
+      default: 'Support',
+    },
+    scheduledDate: { type: Date },
+    status: {
+      type: String,
+      enum: ['Scheduled', 'In Progress', 'Completed', 'Cancelled'],
+      default: 'Scheduled',
+    },
+    workNotes: { type: String },
+    completedAt: { type: Date },
+    dayReminderSent: { type: Boolean, default: false },
+    twoHourReminderSent: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
@@ -42,6 +67,7 @@ const VisitSchema = new Schema<IEngineerVisit>(
 VisitSchema.index({ engineerId: 1, visitDate: -1 });
 VisitSchema.index({ accountId: 1 });
 VisitSchema.index({ hrStatus: 1 });
+VisitSchema.index({ status: 1, scheduledDate: 1 });
 
 VisitSchema.pre('save', function (next) {
   this.totalAmount = this.visitCharges + this.travelAllowance + this.additionalExpense;

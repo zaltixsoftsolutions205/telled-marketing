@@ -16,7 +16,7 @@ const genDRFNumber = () => {
   const d = new Date();
   const date = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
   const rand = Math.floor(1000 + Math.random() * 9000);
-  return `DRF-${date}-${rand}`;
+  return { drfNumber: `DRF-${date}-${rand}`, rand, date };
 };
 
 export const getLeads = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -86,7 +86,7 @@ export const updateLead = async (req: AuthRequest, res: Response): Promise<void>
     // ── Auto DRF email when status transitions to Qualified ──────────────
     if (req.body.status === 'Qualified' && old.status !== 'Qualified' && !old.drfEmailSent) {
       const assignedUser = lead.assignedTo as any;
-      const drfNumber = genDRFNumber();
+      const { drfNumber, rand } = genDRFNumber();
       const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
       try {
@@ -109,9 +109,10 @@ export const updateLead = async (req: AuthRequest, res: Response): Promise<void>
 
         const pdfAbsPath = path.join(process.cwd(), uploadDir, pdfFile);
 
-        // Send to the lead's email contact AND the assigned sales user
-        const recipients = [lead.email];
-        if (assignedUser?.email && assignedUser.email !== lead.email) {
+        // Send DRF to OEM email (if set), otherwise fall back to lead's email
+        const oemEmail = (lead as any).oemEmail || lead.email;
+        const recipients = [oemEmail];
+        if (assignedUser?.email && assignedUser.email !== oemEmail) {
           recipients.push(assignedUser.email);
         }
 
@@ -128,8 +129,18 @@ export const updateLead = async (req: AuthRequest, res: Response): Promise<void>
           pdfAbsPath
         );
 
+        // Create OEMApprovalAttempt so this DRF appears in DRF Management
+        await new OEMApprovalAttempt({
+          leadId: lead._id,
+          attemptNumber: rand,
+          status: 'Pending',
+          sentDate: new Date(),
+          expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          createdBy: req.user!.id,
+        }).save();
+
         // Mark DRF email as sent so it doesn't re-send on subsequent updates
-        await Lead.findByIdAndUpdate(lead._id, { drfEmailSent: true, drfEmailSentAt: new Date() });
+        await Lead.findByIdAndUpdate(lead._id, { drfNumber, drfEmailSent: true, drfEmailSentAt: new Date() });
         logger.info(`DRF email sent for lead ${lead._id} (${lead.companyName}) — ${drfNumber}`);
       } catch (emailErr) {
         // Don't fail the request if email fails — just log it

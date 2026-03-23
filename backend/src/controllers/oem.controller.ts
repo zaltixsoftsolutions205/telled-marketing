@@ -7,6 +7,7 @@ import { sendSuccess, sendPaginated, sendError } from '../utils/response';
 import { addDays } from '../utils/helpers';
 import { OEM_EXPIRY_DAYS } from '../config/constants';
 import { sendOEMApprovalRequest, sendOEMRejectionNotification } from '../services/email.service';
+import { syncEmailsForDRF } from '../services/emailInbox.service';
 
 export const getAllDRFs = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -58,7 +59,10 @@ export const createAttempt = async (req: AuthRequest, res: Response): Promise<vo
       createdBy: req.user!.id, notes: req.body.notes,
     }).save();
     await Lead.findByIdAndUpdate(leadId, { stage: 'OEM Submitted' });
-    await sendOEMApprovalRequest(lead.email, lead.companyName, lead.oemName || '', attempt.attemptNumber);
+    const d = attempt.sentDate;
+    const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    const drfNumber = `DRF-${dateStr}-${String(attempt.attemptNumber).padStart(3, '0')}`;
+    await sendOEMApprovalRequest(lead.email, lead.companyName, lead.oemName || '', attempt.attemptNumber, drfNumber);
     sendSuccess(res, attempt, 'OEM request submitted', 201);
   } catch { sendError(res, 'Failed to create OEM attempt', 500); }
 };
@@ -102,6 +106,16 @@ export const extendExpiry = async (req: AuthRequest, res: Response): Promise<voi
     await attempt.save();
     sendSuccess(res, attempt, 'Expiry extended');
   } catch { sendError(res, 'Failed to extend', 500); }
+};
+
+// POST /api/oem/sync-emails  — reads inbox and auto-approves/rejects Pending DRFs
+export const syncDRFEmails = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const result = await syncEmailsForDRF();
+    sendSuccess(res, result, `Sync complete — ${result.processed} DRFs updated`);
+  } catch (err) {
+    sendError(res, 'Email sync failed', 500);
+  }
 };
 
 // PATCH /api/oem/:id/reassign  — admin transfers DRF ownership to another sales person

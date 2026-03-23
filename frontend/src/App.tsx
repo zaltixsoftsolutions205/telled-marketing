@@ -20,6 +20,7 @@ import EngineerVisitsPage from '@/pages/EngineerVisitsPage';
 import SalaryPage from '@/pages/SalaryPage';
 import UsersPage from '@/pages/UsersPage';
 import TrainingPage from '@/pages/TrainingPage';
+import EngineerPerformancePage from '@/pages/EngineerPerformancePage';
 import type { Role } from '@/types';
 
 // ─── Route guards ─────────────────────────────────────────────────────────────
@@ -109,6 +110,9 @@ export default function App() {
           {/* Engineer visits — engineer submits, HR approves */}
           <Route path="engineer-visits" element={
             <RoleRoute roles={['admin','engineer','hr_finance']}><EngineerVisitsPage /></RoleRoute>
+          } />
+          <Route path="engineer-performance" element={
+            <RoleRoute roles={['admin','engineer']}><EngineerPerformancePage /></RoleRoute>
           } />
 
           {/* Admin only */}

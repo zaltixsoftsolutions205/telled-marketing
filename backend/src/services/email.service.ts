@@ -65,9 +65,19 @@ export const sendDRFEmail = async (
   ]);
 };
 
-export const sendOEMApprovalRequest = (to: string, company: string, oem: string, attempt: number) =>
-  send(to, `OEM Approval Request - ${company} (Attempt #${attempt})`,
-    base(`<h2>OEM Approval Request</h2><p>Company: <b>${company}</b></p><p>OEM: <b>${oem}</b></p><p>Attempt: <b>#${attempt}</b></p>`, 'OEM Approval Required'));
+export const sendOEMApprovalRequest = (to: string, company: string, oem: string, attempt: number, drfNumber: string) =>
+  send(to, `OEM Approval Request — ${drfNumber} — ${company} (Attempt #${attempt})`,
+    base(`
+      <h2>OEM Approval Request</h2>
+      <table>
+        <tr><td style="background:#f0eaf9;font-weight:bold">DRF Number</td><td><b>${drfNumber}</b></td></tr>
+        <tr><td style="background:#f0eaf9;font-weight:bold">Company</td><td>${company}</td></tr>
+        <tr><td style="background:#f0eaf9;font-weight:bold">OEM / Brand</td><td>${oem || '—'}</td></tr>
+        <tr><td style="background:#f0eaf9;font-weight:bold">Attempt</td><td>#${attempt}</td></tr>
+      </table>
+      <p>Please reply to this email with <b>Approved</b> or <b>Rejected</b>.<br/>
+      Make sure to keep the DRF number <b>${drfNumber}</b> in your reply so it can be automatically processed.</p>
+    `, 'OEM Approval Required'));
 
 export const sendOEMRejectionNotification = (to: string, company: string, reason: string, attempt: number) =>
   send(to, `OEM Approval Rejected - ${company}`,

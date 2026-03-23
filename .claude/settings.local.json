@@ -16,7 +16,11 @@
       "Bash(npx vite build:*)",
       "Bash(find /c/Users/anjali/OneDrive/Desktop/telled-marketing -not -path */node_modules/* -not -path */.git/* -type d)",
       "Bash(Test-NetConnection -ComputerName ac-sjhya6t-shard-00-00.hehwo7z.mongodb.net -Port 27017)",
-      "Bash(grep -E \"\\\\.ts$\")"
+      "Bash(grep -E \"\\\\.ts$\")",
+      "Bash(npm install:*)",
+      "Read(//c/Users/anjali/AppData/Local/Temp/claude/c--Users-anjali-OneDrive-Desktop-telled-marketing/c0b3e1f6-881b-4f4e-ac16-2ae4ab8dc022/tasks/**)",
+      "Bash(curl -s http://localhost:5000/health)",
+      "Bash(python -c \"import sys; [print\\(l.strip\\(\\)\\) for l in sys.stdin]\")"
     ]
   }
 }

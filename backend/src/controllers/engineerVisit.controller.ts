@@ -61,3 +61,85 @@ export const rejectVisit = async (req: AuthRequest, res: Response): Promise<void
     sendSuccess(res, visit, 'Visit rejected');
   } catch { sendError(res, 'Failed', 500); }
 };
+
+export const scheduleVisit = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { visitType, scheduledDate, accountId, notes } = req.body;
+    if (!visitType || !scheduledDate || !accountId) {
+      sendError(res, 'visitType, scheduledDate, and accountId are required', 400);
+      return;
+    }
+    const data = {
+      visitType,
+      scheduledDate: new Date(scheduledDate),
+      accountId,
+      notes,
+      engineerId: req.body.engineerId || req.user!.id,
+      status: 'Scheduled',
+      // visitDate defaults to scheduledDate; will be updated on completion
+      visitDate: new Date(scheduledDate),
+      purpose: visitType,
+    };
+    const visit = await new EngineerVisit(data).save();
+    const populated = await visit.populate([
+      { path: 'engineerId', select: 'name email' },
+      { path: 'accountId', select: 'companyName' },
+    ]);
+    sendSuccess(res, populated, 'Visit scheduled', 201);
+  } catch { sendError(res, 'Failed', 500); }
+};
+
+export const completeVisit = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const visit = await EngineerVisit.findById(req.params.id);
+    if (!visit) { sendError(res, 'Visit not found', 404); return; }
+
+    const now = new Date();
+    const { workNotes, visitCharges, travelAllowance, additionalExpense } = req.body;
+
+    visit.status = 'Completed';
+    visit.completedAt = now;
+    visit.visitDate = now;
+    if (workNotes !== undefined) visit.workNotes = workNotes;
+    if (visitCharges !== undefined) visit.visitCharges = Number(visitCharges);
+    if (travelAllowance !== undefined) visit.travelAllowance = Number(travelAllowance);
+    if (additionalExpense !== undefined) visit.additionalExpense = Number(additionalExpense);
+    // totalAmount is recalculated by pre-save hook
+    await visit.save();
+
+    const populated = await visit.populate([
+      { path: 'engineerId', select: 'name email' },
+      { path: 'accountId', select: 'companyName' },
+    ]);
+    sendSuccess(res, populated, 'Visit marked as completed');
+  } catch { sendError(res, 'Failed', 500); }
+};
+
+export const getVisitById = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const visit = await EngineerVisit.findById(req.params.id)
+      .populate('engineerId', 'name email')
+      .populate('accountId', 'companyName')
+      .populate('approvedBy', 'name email');
+    if (!visit) { sendError(res, 'Visit not found', 404); return; }
+    sendSuccess(res, visit);
+  } catch { sendError(res, 'Failed', 500); }
+};
+
+export const updateVisitStatus = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { status } = req.body;
+    const allowed: string[] = ['Scheduled', 'In Progress', 'Cancelled'];
+    if (!status || !allowed.includes(status)) {
+      sendError(res, `status must be one of: ${allowed.join(', ')}`, 400);
+      return;
+    }
+    const visit = await EngineerVisit.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true }
+    ).populate('engineerId', 'name email').populate('accountId', 'companyName');
+    if (!visit) { sendError(res, 'Visit not found', 404); return; }
+    sendSuccess(res, visit, 'Status updated');
+  } catch { sendError(res, 'Failed', 500); }
+};

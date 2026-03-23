@@ -3,9 +3,11 @@ import OEMApprovalAttempt from '../models/OEMApprovalAttempt';
 import Lead from '../models/Lead';
 import Invoice from '../models/Invoice';
 import SupportTicket from '../models/SupportTicket';
+import EngineerVisit from '../models/EngineerVisit';
 import logger from '../utils/logger';
-import { sendOEMExpiryReminder, sendInvoiceReminder, sendTicketClosureNotification } from '../services/email.service';
+import sendEmail, { sendOEMExpiryReminder, sendInvoiceReminder, sendTicketClosureNotification } from '../services/email.service';
 import { OEM_EXPIRY_REMINDER_DAYS, TICKET_AUTO_CLOSE_DAYS, INVOICE_DUE_REMINDER_DAYS } from '../config/constants';
+import { syncEmailsForDRF } from '../services/emailInbox.service';
 
 export const startCronJobs = (): void => {
   // Auto-expire OEM approvals — every hour
@@ -74,6 +76,80 @@ export const startCronJobs = (): void => {
       }
       if (stale.length > 0) logger.info(`Auto-closed ${stale.length} stale tickets`);
     } catch (e) { logger.error('Ticket auto-close cron:', e); }
+  });
+
+  // Engineer visit day reminder — daily 8 AM
+  cron.schedule('0 8 * * *', async () => {
+    try {
+      const now = new Date();
+      const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      const visits = await EngineerVisit.find({
+        status: 'Scheduled',
+        scheduledDate: { $gte: now, $lte: in24h },
+        dayReminderSent: false,
+      }).populate<{ engineerId: { name: string; email: string } }>('engineerId', 'name email')
+        .populate<{ accountId: { companyName: string } }>('accountId', 'companyName');
+
+      for (const visit of visits) {
+        const engineer = visit.engineerId as unknown as { name: string; email: string };
+        const account = visit.accountId as unknown as { companyName: string };
+        if (engineer?.email) {
+          const scheduledStr = visit.scheduledDate
+            ? visit.scheduledDate.toLocaleString()
+            : 'N/A';
+          const subject = `Reminder: Visit scheduled tomorrow — ${account?.companyName || 'Account'}`;
+          const html = `<p>Hi ${engineer.name},</p>
+<p>This is a reminder that you have a <strong>${visit.visitType}</strong> visit scheduled for <strong>${scheduledStr}</strong> at <strong>${account?.companyName || 'your assigned account'}</strong>.</p>
+<p>Please make sure you are prepared and on time.</p>
+<p>Purpose: ${visit.purpose}</p>`;
+          await sendEmail(engineer.email, subject, html);
+        }
+        await EngineerVisit.findByIdAndUpdate(visit._id, { dayReminderSent: true });
+      }
+      logger.info(`Sent ${visits.length} engineer visit day reminders`);
+    } catch (e) { logger.error('Engineer visit day reminder cron:', e); }
+  });
+
+  // Engineer visit 2-hour reminder — every hour
+  cron.schedule('0 * * * *', async () => {
+    try {
+      const now = new Date();
+      const in2h = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+      const visits = await EngineerVisit.find({
+        status: 'Scheduled',
+        scheduledDate: { $gte: now, $lte: in2h },
+        twoHourReminderSent: false,
+      }).populate<{ engineerId: { name: string; email: string } }>('engineerId', 'name email')
+        .populate<{ accountId: { companyName: string } }>('accountId', 'companyName');
+
+      for (const visit of visits) {
+        const engineer = visit.engineerId as unknown as { name: string; email: string };
+        const account = visit.accountId as unknown as { companyName: string };
+        if (engineer?.email) {
+          const scheduledStr = visit.scheduledDate
+            ? visit.scheduledDate.toLocaleString()
+            : 'N/A';
+          const subject = `Reminder: Visit in ~2 hours — ${account?.companyName || 'Account'}`;
+          const html = `<p>Hi ${engineer.name},</p>
+<p>Your <strong>${visit.visitType}</strong> visit at <strong>${account?.companyName || 'your assigned account'}</strong> is coming up at <strong>${scheduledStr}</strong> (within the next 2 hours).</p>
+<p>Please ensure you are on your way and have everything you need.</p>
+<p>Purpose: ${visit.purpose}</p>`;
+          await sendEmail(engineer.email, subject, html);
+        }
+        await EngineerVisit.findByIdAndUpdate(visit._id, { twoHourReminderSent: true });
+      }
+      logger.info(`Sent ${visits.length} engineer visit 2-hour reminders`);
+    } catch (e) { logger.error('Engineer visit 2-hour reminder cron:', e); }
+  });
+
+  // DRF email inbox sync — every 2 minutes
+  cron.schedule('*/2 * * * *', async () => {
+    try {
+      const result = await syncEmailsForDRF();
+      if (result.approved.length || result.rejected.length) {
+        logger.info(`DRF email sync: ${result.approved.length} approved, ${result.rejected.length} rejected`);
+      }
+    } catch (e) { logger.error('DRF email sync cron:', e); }
   });
 
   logger.info('All cron jobs started');

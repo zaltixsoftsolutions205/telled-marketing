@@ -37,4 +37,8 @@ export const quotationsApi = {
     const { data } = await api.post(`/quotations/${id}/generate-pdf`);
     return data.data;
   },
+  finalize: async (id: string) => {
+    const { data } = await api.patch(`/quotations/${id}/accept`);
+    return data.data;
+  },
 };

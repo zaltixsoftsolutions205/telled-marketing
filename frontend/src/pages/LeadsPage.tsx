@@ -46,7 +46,7 @@ export default function LeadsPage() {
   const [salesUsers, setSalesUsers] = useState<User[]>([]);
   const [form, setForm] = useState({
     companyName: '', contactPersonName: '', email: '', phone: '',
-    oemName: '', city: '', state: '', source: '', notes: '', assignedTo: '',
+    oemName: '', oemEmail: '', city: '', state: '', source: '', notes: '', assignedTo: '',
     status: 'New' as LeadStatus,
   });
   const [saving, setSaving] = useState(false);
@@ -83,7 +83,7 @@ export default function LeadsPage() {
     try {
       await leadsApi.create(form);
       setShowModal(false);
-      setForm({ companyName:'', contactPersonName:'', email:'', phone:'', oemName:'', city:'', state:'', source:'', notes:'', assignedTo:'', status: 'New' });
+      setForm({ companyName:'', contactPersonName:'', email:'', phone:'', oemName:'', oemEmail:'', city:'', state:'', source:'', notes:'', assignedTo:'', status: 'New' });
       load();
     } finally { setSaving(false); }
   };
@@ -261,10 +261,11 @@ export default function LeadsPage() {
             </div>
             <div>
               <label className="label">OEM Name *</label>
-              <select required className="input-field" value={form.oemName} onChange={(e) => setForm(f => ({...f, oemName: e.target.value}))}>
-                <option value="">Select OEM</option>
-                {['Siemens','ABB','Schneider Electric','Rockwell Automation','Honeywell','Mitsubishi Electric','Other'].map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
+              <input required className="input-field" placeholder="e.g. Siemens, ABB..." value={form.oemName} onChange={(e) => setForm(f => ({...f, oemName: e.target.value}))} />
+            </div>
+            <div>
+              <label className="label">OEM Email <span className="text-gray-400 font-normal">(DRF will be sent here)</span></label>
+              <input type="email" className="input-field" placeholder="oem@company.com" value={form.oemEmail} onChange={(e) => setForm(f => ({...f, oemEmail: e.target.value}))} />
             </div>
             <div>
               <label className="label">Lead Status</label>

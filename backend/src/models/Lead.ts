@@ -11,6 +11,7 @@ export interface ILead extends Document {
   state?: string;
   source?: string;
   oemName?: string;
+  oemEmail?: string;
   assignedTo?: mongoose.Types.ObjectId;
   status: 'New' | 'Contacted' | 'Qualified' | 'Not Qualified';
   stage: string;
@@ -18,6 +19,7 @@ export interface ILead extends Document {
   isArchived: boolean;
   archivedAt?: Date;
   archivedBy?: mongoose.Types.ObjectId;
+  drfNumber?: string;
   drfEmailSent?: boolean;
   drfEmailSentAt?: Date;
   createdAt: Date;
@@ -36,12 +38,14 @@ const LeadSchema = new Schema<ILead>(
     state:        { type: String },
     source: { type: String },
     oemName:    { type: String, trim: true },
+    oemEmail:   { type: String, lowercase: true, trim: true },
     assignedTo: { type: Schema.Types.ObjectId, ref: 'User' },
     status: {
       type: String,
       enum: ['New', 'Contacted', 'Qualified', 'Not Qualified'],
       default: 'New',
     },
+    drfNumber:      { type: String, index: true },
     drfEmailSent:   { type: Boolean, default: false },
     drfEmailSentAt: { type: Date },
     stage: {

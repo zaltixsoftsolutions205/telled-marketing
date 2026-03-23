@@ -1,6 +1,6 @@
 export type Role = 'admin' | 'sales' | 'engineer' | 'hr_finance';
 export type LeadStatus = 'New' | 'Contacted' | 'Qualified' | 'Not Qualified';
-export type QuotationStatus = 'Sent' | 'Accepted' | 'Rejected';
+export type QuotationStatus = 'Draft' | 'Sent' | 'Accepted' | 'Rejected' | 'Final';
 
 export interface Organization {
   _id: string;
@@ -45,6 +45,7 @@ export interface Lead {
   email: string;
   phone: string;
   oemName: string;
+  oemEmail?: string;
   address?: string;
   city?: string;
   state?: string;
@@ -122,6 +123,8 @@ export interface Quotation {
   validUntil?: string;
   terms?: string;
   notes?: string;
+  gstApplicable?: boolean;
+  finalAmount?: number;
   pdfPath?: string;
   emailSent?: boolean;
   emailSentAt?: string;

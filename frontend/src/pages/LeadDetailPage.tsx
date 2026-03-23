@@ -23,9 +23,11 @@ const STATUS_COLORS: Record<LeadStatus, string> = {
 };
 
 const Q_STATUS_STYLE: Record<QuotationStatus, string> = {
+  Draft:    'bg-gray-100 text-gray-600',
   Sent:     'bg-amber-100 text-amber-700',
   Accepted: 'bg-emerald-100 text-emerald-700',
   Rejected: 'bg-red-100 text-red-600',
+  Final:    'bg-purple-100 text-purple-700',
 };
 
 const DRF_STATUS_STYLE: Record<string, string> = {
@@ -252,6 +254,7 @@ export default function LeadDetailPage() {
               { label: 'Email', key: 'email' },
               { label: 'Phone', key: 'phone' },
               { label: 'OEM Name', key: 'oemName' },
+              { label: 'OEM Email', key: 'oemEmail' },
               { label: 'City', key: 'city' },
               { label: 'State', key: 'state' },
               { label: 'Source', key: 'source' },

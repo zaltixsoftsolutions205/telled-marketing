@@ -37,4 +37,12 @@ export const drfApi = {
     const { data } = await api.get('/oem/analytics');
     return data.data;
   },
+  syncEmails: async () => {
+    const { data } = await api.post('/oem/sync-emails');
+    return data.data as {
+      scanned: number; processed: number;
+      approved: string[]; rejected: string[];
+      skipped: string[]; errors: string[];
+    };
+  },
 };
