@@ -188,51 +188,234 @@ export const generateDRFPDF = (data: {
   stream.on('error', reject);
 });
 
-// ─── Quotation PDF ──────────────────────────────────────────────────────────
+// ─── Quotation PDF (Vyapar-style) ───────────────────────────────────────────
+
+function amountToWords(n: number): string {
+  const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+  const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  const cvt = (x: number): string => {
+    if (x === 0) return '';
+    if (x < 20) return ones[x] + ' ';
+    if (x < 100) return tens[Math.floor(x/10)] + (x%10 ? ' ' + ones[x%10] : '') + ' ';
+    return ones[Math.floor(x/100)] + ' Hundred ' + cvt(x%100);
+  };
+  if (n === 0) return 'Zero Rupees Only';
+  const cr = Math.floor(n/10000000); n %= 10000000;
+  const la = Math.floor(n/100000);   n %= 100000;
+  const th = Math.floor(n/1000);     n %= 1000;
+  let w = '';
+  if (cr) w += cvt(cr) + 'Crore ';
+  if (la) w += cvt(la) + 'Lakh ';
+  if (th) w += cvt(th) + 'Thousand ';
+  if (n)  w += cvt(n);
+  return w.trim() + ' Rupees Only';
+}
+
 export const generateQuotationPDF = (data: {
-  quotationNumber: string; companyName: string; contactName: string;
-  productList: Array<{ description: string; quantity: number; unitPrice: number; total: number }>;
-  subtotal: number; taxPercent: number; taxAmount: number; total: number;
-  validUntil?: Date; notes?: string;
+  quotationNumber: string;
+  contactName: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  contactAddress?: string;
+  items: Array<{ description: string; quantity: number; unitPrice: number; total: number }>;
+  subtotal: number; taxRate: number; taxAmount: number; total: number;
+  discount?: number;
+  validUntil?: Date; notes?: string; terms?: string;
 }): Promise<string> => new Promise((resolve, reject) => {
   const fileName = `quotation-${data.quotationNumber}-${Date.now()}.pdf`;
   const filePath = path.join(uploadDir, fileName);
-  const doc = new PDFDocument({ margin: 50 });
+  const doc = new PDFDocument({ size: 'A4', margin: 0 });
   const stream = fs.createWriteStream(filePath);
   doc.pipe(stream);
 
-  doc.fontSize(22).fillColor('#4f2d7f').text('QUOTATION', { align: 'right' });
-  doc.fontSize(10).fillColor('#666').text('Telled CRM', 50, 80);
-  doc.moveTo(50, 100).lineTo(550, 100).stroke('#ddd');
-  doc.fontSize(11).fillColor('#333');
-  doc.text(`Quotation: ${data.quotationNumber}`, 50, 115);
-  doc.text(`Date: ${new Date().toLocaleDateString()}`, 50, 132);
-  doc.text(`Bill To: ${data.companyName}`, 350, 115);
-  doc.text(`Contact: ${data.contactName}`, 350, 132);
+  const W = 595, M = 30, inner = W - M * 2;
+  const SALMON  = '#CD6B5A';
+  const LSALMON = '#F5E0DB';
+  const GREEN   = '#2E7D5A';
+  const AMBER   = '#D97706';
+  const LAMB    = '#FEF3C7';
+  const DARK    = '#1a1a1a';
+  const GRAY    = '#555555';
+  const LGRAY   = '#F7F7F7';
+  const BORDER  = '#CCCCCC';
+  const now     = new Date();
+  const fmt     = (d?: Date) => d ? d.toLocaleDateString('en-IN') : '—';
 
-  let y = 165;
-  doc.rect(50, y, 500, 22).fill('#4f2d7f');
-  doc.fillColor('#fff').fontSize(10);
-  doc.text('Description', 60, y + 6); doc.text('Qty', 320, y + 6); doc.text('Price', 370, y + 6); doc.text('Total', 470, y + 6);
-  y += 26;
-  data.productList.forEach((item, i) => {
-    if (i % 2 === 0) doc.rect(50, y - 2, 500, 20).fill('#f9f5ff');
-    doc.fillColor('#333').fontSize(10);
-    doc.text(item.description.substring(0, 40), 60, y); doc.text(String(item.quantity), 320, y);
-    doc.text(`₹${item.unitPrice}`, 370, y); doc.text(`₹${item.total}`, 470, y);
-    y += 22;
-  });
+  // helper: draw text clipped to a cell
+  const cell = (txt: string, x: number, y: number, w: number, opts: Record<string,unknown> = {}) => {
+    doc.text(String(txt), x + 4, y, { width: w - 8, lineBreak: false, ellipsis: true, ...opts });
+  };
+
+  // ── 1. HEADER BAR ─────────────────────────────────────────────────────────
+  doc.rect(0, 0, W, 52).fill(SALMON);
+  doc.fillColor('#000').fontSize(26).font('Helvetica-Bold')
+     .text('QUOTATION', 0, 13, { width: W, align: 'center' });
+
+  // ── 2. DATE / QUOTATION NO. ────────────────────────────────────────────────
+  let y = 60;
+  doc.fillColor(GRAY).fontSize(9).font('Helvetica')
+     .text(`DATE`, W - 180, y);
+  doc.fillColor(DARK).fontSize(9).font('Helvetica-Bold')
+     .text(fmt(now), W - 130, y);
+  doc.fillColor(GRAY).fontSize(9).font('Helvetica')
+     .text(`Quotation No.:`, W - 180, y + 14);
+  doc.fillColor(DARK).fontSize(9).font('Helvetica-Bold')
+     .text(data.quotationNumber, W - 110, y + 14);
+  y += 38;
+
+  // ── 3. SHIPPER + RECEIVER ─────────────────────────────────────────────────
+  const half = inner / 2;
+  const rowH = 18;
+  const shipFields = [
+    ['Company name :', 'Telled CRM'],
+    ['Address:',       'Hyderabad, Telangana'],
+    ['Contact:',       process.env.SMTP_USER || ''],
+    ['CIN:',           ''],
+    ['Email:',         process.env.EMAIL_FROM || 'zaltixsoftsolutions@gmail.com'],
+    ['GSTIN:',         ''],
+  ];
+  const recvFields = [
+    ['Name:',    data.contactName],
+    ['Address:', data.contactAddress || ''],
+    ['Cell:',    data.contactPhone || ''],
+    ['Email:',   data.contactEmail || ''],
+    ['GSTIN:',   ''],
+  ];
+
+  // Section header rows
+  doc.rect(M, y, half, 18).fill(SALMON);
+  doc.fillColor('#fff').fontSize(9).font('Helvetica-Bold')
+     .text('SHIPPER', M, y + 4, { width: half, align: 'center' });
+  doc.rect(M + half, y, half, 18).fill(GREEN);
+  doc.fillColor('#fff').fontSize(9).font('Helvetica-Bold')
+     .text('RECEIVER', M + half, y + 4, { width: half, align: 'center' });
+  y += 18;
+
+  const maxRows = Math.max(shipFields.length, recvFields.length);
+  for (let i = 0; i < maxRows; i++) {
+    const sh = shipFields[i] || ['', ''];
+    const rv = recvFields[i] || ['', ''];
+    const bg = i % 2 === 0 ? '#fff' : LGRAY;
+    doc.rect(M, y, half, rowH).fill(bg).stroke(BORDER);
+    doc.rect(M + half, y, half, rowH).fill(bg).stroke(BORDER);
+    doc.fillColor(DARK).fontSize(8).font('Helvetica-Bold');
+    cell(sh[0], M + 2, y + 4, 80);
+    doc.fillColor(GRAY).font('Helvetica');
+    cell(sh[1], M + 80, y + 4, half - 82);
+    doc.fillColor(DARK).font('Helvetica-Bold');
+    cell(rv[0], M + half + 2, y + 4, 80);
+    doc.fillColor(GRAY).font('Helvetica');
+    cell(rv[1], M + half + 80, y + 4, half - 82);
+    y += rowH;
+  }
   y += 8;
-  doc.moveTo(350, y).lineTo(550, y).stroke('#ddd'); y += 8;
-  doc.fillColor('#333').fontSize(11);
-  doc.text('Subtotal:', 380, y); doc.text(`₹${data.subtotal}`, 470, y); y += 18;
-  doc.text(`Tax (${data.taxPercent}%):`, 380, y); doc.text(`₹${data.taxAmount}`, 470, y); y += 18;
-  doc.rect(350, y - 4, 200, 26).fill('#4f2d7f');
-  doc.fillColor('#fff').fontSize(13).text('TOTAL:', 380, y + 2); doc.text(`₹${data.total}`, 470, y + 2);
-  if (data.notes) { y += 45; doc.fillColor('#666').fontSize(10).text(`Notes: ${data.notes}`, 50, y); }
+
+  // ── 4. NOTE / REMARK ──────────────────────────────────────────────────────
+  const noteText = data.notes || data.terms || 'Material cost 100% advance. Product warranty 1 year';
+  doc.rect(M, y, inner, 24).fill('#fff').stroke(BORDER);
+  doc.fillColor(DARK).fontSize(8).font('Helvetica-Bold')
+     .text('NOTE / REMARK : ', M + 6, y + 7, { continued: true });
+  doc.fillColor(GRAY).font('Helvetica')
+     .text(noteText, { width: inner - 20, lineBreak: false, ellipsis: true });
+  y += 32;
+
+  // ── 5. ITEMS TABLE ────────────────────────────────────────────────────────
+  // Column defs [label, x, w, align]
+  const cols = [
+    { lbl: 'S.No.', x: M,        w: 30,  al: 'center' },
+    { lbl: 'Description', x: M+30,  w: 155, al: 'left'   },
+    { lbl: 'Unit',        x: M+185, w: 50,  al: 'center' },
+    { lbl: 'Quantity',    x: M+235, w: 55,  al: 'center' },
+    { lbl: 'Price/unit',  x: M+290, w: 65,  al: 'right'  },
+    { lbl: 'GST (%)',     x: M+355, w: 55,  al: 'center' },
+    { lbl: 'Amount',      x: M+410, w: 125, al: 'right'  },
+  ] as const;
+
+  // Header row
+  doc.rect(M, y, inner, 22).fill(SALMON);
+  doc.fillColor('#fff').fontSize(8.5).font('Helvetica-Bold');
+  cols.forEach(c => {
+    doc.text(c.lbl, c.x + 2, y + 6, { width: c.w - 4, align: c.al as any, lineBreak: false });
+  });
+  y += 22;
+
+  // Item rows
+  data.items.forEach((item, i) => {
+    const bg = i % 2 === 0 ? '#fff' : LSALMON;
+    const rowHt = 20;
+    doc.rect(M, y, inner, rowHt).fill(bg).stroke(BORDER);
+    const gstAmt = item.total * (data.taxRate / 100);
+    const lineAmt = item.total + gstAmt;
+    const vals = [
+      String(i + 1),
+      item.description,
+      'Nos',
+      String(item.quantity),
+      `${item.unitPrice.toFixed(2)}`,
+      `${data.taxRate}%`,
+      `\u20B9 ${lineAmt.toFixed(2)}`,
+    ];
+    doc.fillColor(DARK).fontSize(8).font('Helvetica');
+    cols.forEach((c, ci) => {
+      doc.text(vals[ci], c.x + 2, y + 5, { width: c.w - 4, align: c.al as any, lineBreak: false, ellipsis: true });
+    });
+    y += rowHt;
+  });
+  y += 4;
+
+  // ── 6. SUMMARY + AMOUNT IN WORDS ─────────────────────────────────────────
+  const discount = data.discount || 0;
+  const finalAmt = data.total - discount;
+  const summaryRows = [
+    { lbl: 'Sub Total',    val: `\u20B9  ${data.subtotal.toFixed(2)}`,       bg: '#fff',  bold: false },
+    { lbl: 'Discount',     val: `\u20B9  ${discount.toFixed(2)}`,             bg: '#fff',  bold: false },
+    { lbl: 'Final Amount', val: `\u20B9  ${finalAmt.toFixed(2)}`,             bg: AMBER,   bold: true  },
+    { lbl: 'Amount Paid',  val: `\u20B9  0.00`,                               bg: '#fff',  bold: false },
+    { lbl: 'Balance',      val: `\u20B9  ${finalAmt.toFixed(2)}`,             bg: LAMB,    bold: false },
+  ];
+  const sumX = M + 270, sumLW = 100, sumVW = 165, sumH = 22;
+  summaryRows.forEach(r => {
+    doc.rect(sumX, y, sumLW + sumVW, sumH).fill(r.bg).stroke(BORDER);
+    doc.fillColor(DARK).fontSize(8.5).font(r.bold ? 'Helvetica-Bold' : 'Helvetica')
+       .text(r.lbl, sumX + 4, y + 6, { width: sumLW - 8, lineBreak: false });
+    doc.fillColor(r.bold ? '#fff' : DARK).font(r.bold ? 'Helvetica-Bold' : 'Helvetica')
+       .text(r.val, sumX + sumLW + 2, y + 6, { width: sumVW - 6, align: 'right', lineBreak: false });
+    y += sumH;
+  });
+
+  // Amount in words (left side, aligned with first summary row)
+  const wordsY = y - summaryRows.length * sumH;
+  doc.rect(M, wordsY, 265, sumH * 2).fill('#fff').stroke(BORDER);
+  doc.fillColor(DARK).fontSize(8).font('Helvetica-Bold')
+     .text('Amount in Words:', M + 4, wordsY + 4);
+  doc.fillColor(GRAY).font('Helvetica').fontSize(7.5)
+     .text(amountToWords(Math.round(finalAmt)), M + 4, wordsY + 16, { width: 257, lineBreak: false, ellipsis: true });
+  y += 6;
+
+  // ── 7. DECLARATION ────────────────────────────────────────────────────────
+  doc.rect(M, y, inner, 50).fill('#fff').stroke(BORDER);
+  doc.fillColor(DARK).fontSize(8).font('Helvetica-Bold')
+     .text('Declaration:', M + 6, y + 5);
+  doc.fillColor(GRAY).font('Helvetica').fontSize(7.5)
+     .text('We declare that this quotation shows the actual price of the goods/services described and that all particulars are true and correct.', M + 6, y + 18, { width: inner - 12 });
+  y += 56;
+
+  // ── 8. SIGNATURES ─────────────────────────────────────────────────────────
+  doc.rect(M, y, inner / 2, 42).fill('#fff').stroke(BORDER);
+  doc.rect(M + inner / 2, y, inner / 2, 42).fill('#fff').stroke(BORDER);
+  doc.fillColor(SALMON).fontSize(8).font('Helvetica')
+     .text("Client's Signature", M + 6, y + 28, { width: inner / 2 - 12, align: 'center' });
+  doc.fillColor(SALMON).fontSize(8).font('Helvetica')
+     .text('Business Signature', M + inner / 2 + 6, y + 28, { width: inner / 2 - 12, align: 'center' });
+  y += 48;
+
+  // ── 9. FOOTER ─────────────────────────────────────────────────────────────
+  doc.rect(0, y, W, 26).fill(LSALMON);
+  doc.fillColor(DARK).fontSize(9).font('Helvetica-Bold')
+     .text('Thanks for business with us!!! Please visit us again !!!', 0, y + 8, { width: W, align: 'center' });
 
   doc.end();
-  stream.on('finish', () => { logger.info(`PDF: ${filePath}`); resolve(fileName); });
+  stream.on('finish', () => { logger.info(`Quotation PDF: ${filePath}`); resolve(fileName); });
   stream.on('error', reject);
 });
 

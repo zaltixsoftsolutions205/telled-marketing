@@ -327,6 +327,7 @@ const STATUS_COLORS: Record<QuotationStatus, string> = {
 };
 
 export default function QuotationsPage() {
+  const [activeTab, setActiveTab] = useState<'customer' | 'vendor'>('customer');
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -338,14 +339,15 @@ export default function QuotationsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [items, setItems] = useState<QuotationItem[]>([{ ...emptyItem }]);
   const [selectedQuotation, setSelectedQuotation] = useState<Quotation | null>(null);
-  const [form, setForm] = useState({ 
-    leadId: '', 
-    taxRate: 18, 
+  const [form, setForm] = useState({
+    leadId: '',
+    taxRate: 18,
     gstApplicable: true,
-    validUntil: '', 
-    terms: '', 
+    validUntil: '',
+    terms: '',
     notes: '',
     finalAmount: 0,
+    vendorEmail: '',
   });
   const [saving, setSaving] = useState(false);
   const [createError, setCreateError] = useState('');
@@ -412,6 +414,7 @@ export default function QuotationsPage() {
       terms: quotation.terms || '',
       notes: quotation.notes || '',
       finalAmount: quotation.finalAmount || quotation.total || 0,
+      vendorEmail: (quotation as any).vendorEmail || '',
     });
     setShowEditModal(true);
   };
@@ -545,17 +548,21 @@ export default function QuotationsPage() {
   const getActionButtons = (q: Quotation) => {
     const buttons = [];
 
+    // Edit always available for non-Final quotations
+    buttons.push(
+      <button
+        key="edit"
+        title="Edit Quotation"
+        onClick={() => openEditModal(q)}
+        className="p-1.5 rounded-lg bg-gray-50 text-gray-600 hover:bg-gray-100 transition-colors"
+      >
+        <Edit size={13} />
+      </button>
+    );
+
     // Customer quotation actions
     if (q.status === 'Draft') {
       buttons.push(
-        <button
-          key="edit"
-          title="Edit Quotation"
-          onClick={() => openEditModal(q)}
-          className="p-1.5 rounded-lg bg-gray-50 text-gray-600 hover:bg-gray-100 transition-colors"
-        >
-          <Edit size={13} />
-        </button>,
         <button
           key="send"
           title="Send to Customer"
@@ -578,6 +585,15 @@ export default function QuotationsPage() {
 
     if (q.status === 'Sent') {
       buttons.push(
+        <button
+          key="sendEmail"
+          title={q.emailSent ? `Resend Email (last sent ${q.emailSentAt ? new Date(q.emailSentAt).toLocaleDateString() : ''})` : 'Send Email to Customer'}
+          disabled={actionLoading === q._id + 'sendEmail'}
+          onClick={() => handleAction('sendEmail', q._id)}
+          className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+        >
+          <Mail size={13} />
+        </button>,
         <button
           key="accept"
           title="Accept"
@@ -640,6 +656,10 @@ export default function QuotationsPage() {
     return buttons;
   };
 
+  const customerQuotations = quotations.filter(q => q.status !== 'Final');
+  const vendorQuotations   = quotations.filter(q => q.status === 'Final');
+  const displayed = activeTab === 'customer' ? customerQuotations : vendorQuotations;
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
@@ -647,29 +667,50 @@ export default function QuotationsPage() {
           <h1 className="page-header">Quotations</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} total</p>
         </div>
-        <button onClick={openModal} className="btn-primary flex items-center gap-2">
-          <Plus size={16} /> New Quotation
+        {activeTab === 'customer' && (
+          <button onClick={openModal} className="btn-primary flex items-center gap-2">
+            <Plus size={16} /> New Quotation
+          </button>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+        <button
+          onClick={() => { setActiveTab('customer'); setPage(1); }}
+          className={`px-5 py-1.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'customer' ? 'bg-white text-violet-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+        >
+          Customer Quotations
+          <span className="ml-2 text-xs bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full">{customerQuotations.length}</span>
+        </button>
+        <button
+          onClick={() => { setActiveTab('vendor'); setPage(1); }}
+          className={`px-5 py-1.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'vendor' ? 'bg-white text-amber-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+        >
+          Vendor Quotations
+          <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{vendorQuotations.length}</span>
         </button>
       </div>
 
       <div className="relative max-w-xs">
         <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
-        <input 
-          value={search} 
-          onChange={(e) => { setSearch(e.target.value); setPage(1); }} 
-          placeholder="Search quotations..." 
-          className="input-field pl-9" 
+        <input
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          placeholder="Search quotations..."
+          className="input-field pl-9"
         />
       </div>
 
       <div className="glass-card !p-0 overflow-hidden">
         {loading ? (
           <LoadingSpinner className="h-48" />
-        ) : quotations.length === 0 ? (
+        ) : displayed.length === 0 ? (
           <div className="text-center text-gray-400 py-16">
-            No quotations found
+            {activeTab === 'customer' ? 'No customer quotations found' : 'No vendor quotations yet — send a customer quotation to vendor first'}
           </div>
-        ) : (
+        ) : activeTab === 'customer' ? (
+          /* ── CUSTOMER QUOTATIONS TABLE ── */
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100">
@@ -680,63 +721,86 @@ export default function QuotationsPage() {
                   <th className="table-header">Subtotal</th>
                   <th className="table-header">Tax</th>
                   <th className="table-header">Total</th>
-                  <th className="table-header">Final Amount</th>
                   <th className="table-header">Valid Until</th>
                   <th className="table-header">Status</th>
                   <th className="table-header">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {quotations.map((q) => (
+                {displayed.map((q) => (
                   <tr key={q._id} className="hover:bg-violet-50/20 transition-colors">
-                    <td className="table-cell font-mono font-medium text-violet-700">
-                      {q.quotationNumber}
-                    </td>
-                    <td className="table-cell font-medium">
-                      {(q.leadId as Lead)?.companyName || '—'}
-                    </td>
+                    <td className="table-cell font-mono font-medium text-violet-700">{q.quotationNumber}</td>
+                    <td className="table-cell font-medium">{(q.leadId as Lead)?.companyName || '—'}</td>
                     <td className="table-cell text-center">
-                      <span className={`badge text-xs ${
-                        q.version > 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
-                      }`}>
-                        v{q.version}
-                      </span>
+                      <span className={`badge text-xs ${q.version > 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>v{q.version}</span>
                     </td>
                     <td className="table-cell text-gray-500">{formatCurrency(q.subtotal)}</td>
                     <td className="table-cell text-gray-500">
                       {q.gstApplicable ? (
-                        <div className="flex items-center gap-1">
-                          <Percent size={12} />
-                          {q.taxRate}%
-                        </div>
-                      ) : (
-                        <span className="text-gray-400">N/A</span>
-                      )}
+                        <div className="flex items-center gap-1"><Percent size={12} />{q.taxRate}%</div>
+                      ) : <span className="text-gray-400">N/A</span>}
                     </td>
-                    <td className="table-cell font-semibold text-violet-700">
-                      {formatCurrency(q.total)}
+                    <td className="table-cell font-semibold text-violet-700">{formatCurrency(q.total)}</td>
+                    <td className="table-cell text-gray-400">{q.validUntil ? formatDate(q.validUntil) : '—'}</td>
+                    <td className="table-cell">
+                      <span className={`badge text-xs ${STATUS_COLORS[q.status as QuotationStatus] || 'bg-gray-100 text-gray-600'}`}>{q.status}</span>
                     </td>
-                    <td className="table-cell font-medium">
-                      {q.finalAmount ? (
-                        <span className="text-purple-700">{formatCurrency(q.finalAmount)}</span>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
+                    <td className="table-cell">
+                      <div className="flex items-center gap-1.5 flex-wrap">{getActionButtons(q)}</div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          /* ── VENDOR QUOTATIONS TABLE ── */
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-amber-50 border-b border-amber-100">
+                <tr>
+                  <th className="table-header">Quotation #</th>
+                  <th className="table-header">Customer</th>
+                  <th className="table-header">Ver.</th>
+                  <th className="table-header">Original Total</th>
+                  <th className="table-header">Final Amount (Vendor)</th>
+                  <th className="table-header">Sent to Vendor</th>
+                  <th className="table-header">PDF</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {displayed.map((q) => (
+                  <tr key={q._id} className="hover:bg-amber-50/20 transition-colors">
+                    <td className="table-cell font-mono font-medium text-amber-700">{q.quotationNumber}</td>
+                    <td className="table-cell font-medium">{(q.leadId as Lead)?.companyName || '—'}</td>
+                    <td className="table-cell text-center">
+                      <span className="badge text-xs bg-gray-100 text-gray-500">v{q.version}</span>
+                    </td>
+                    <td className="table-cell text-gray-500">{formatCurrency(q.total)}</td>
+                    <td className="table-cell font-bold text-amber-700 text-base">
+                      {q.finalAmount ? formatCurrency(q.finalAmount) : <span className="text-gray-400">—</span>}
                     </td>
                     <td className="table-cell text-gray-400">
-                      {q.validUntil ? formatDate(q.validUntil) : '—'}
+                      {(q as any).vendorSentAt ? formatDate((q as any).vendorSentAt) : <span className="badge bg-amber-100 text-amber-700">Sent</span>}
                     </td>
                     <td className="table-cell">
-                      <span className={`badge text-xs ${
-                        STATUS_COLORS[q.status as QuotationStatus] || 'bg-gray-100 text-gray-600'
-                      }`}>
-                        {q.status}
-                      </span>
-                    </td>
-                    <td className="table-cell">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {getActionButtons(q)}
-                      </div>
+                      {q.pdfPath ? (
+                        <button
+                          title="Download PDF"
+                          onClick={() => handleAction('generatePDF', q._id)}
+                          className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
+                        >
+                          <Download size={13} />
+                        </button>
+                      ) : (
+                        <button
+                          title="Generate PDF"
+                          onClick={() => handleAction('generatePDF', q._id)}
+                          className="p-1.5 rounded-lg bg-gray-50 text-gray-500 hover:bg-gray-100 transition-colors"
+                        >
+                          <FileText size={13} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -746,24 +810,10 @@ export default function QuotationsPage() {
         )}
         {total > 15 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-            <p className="text-sm text-gray-500">
-              Page {page} of {Math.ceil(total / 15)}
-            </p>
+            <p className="text-sm text-gray-500">Page {page} of {Math.ceil(total / 15)}</p>
             <div className="flex gap-2">
-              <button 
-                disabled={page === 1} 
-                onClick={() => setPage(p => p - 1)} 
-                className="btn-secondary py-1 px-3 text-sm"
-              >
-                Prev
-              </button>
-              <button 
-                disabled={page >= Math.ceil(total / 15)} 
-                onClick={() => setPage(p => p + 1)} 
-                className="btn-secondary py-1 px-3 text-sm"
-              >
-                Next
-              </button>
+              <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="btn-secondary py-1 px-3 text-sm">Prev</button>
+              <button disabled={page >= Math.ceil(total / 15)} onClick={() => setPage(p => p + 1)} className="btn-secondary py-1 px-3 text-sm">Next</button>
             </div>
           </div>
         )}
@@ -1107,28 +1157,79 @@ export default function QuotationsPage() {
 
           <div>
             <label className="label">Notes</label>
-            <textarea 
-              rows={2} 
-              className="input-field" 
-              value={form.notes} 
-              onChange={(e) => setForm(f => ({...f, notes: e.target.value}))} 
+            <textarea
+              rows={2}
+              className="input-field"
+              value={form.notes}
+              onChange={(e) => setForm(f => ({...f, notes: e.target.value}))}
             />
           </div>
 
+          {/* Vendor section */}
+          <div className="border border-amber-200 rounded-xl p-4 bg-amber-50 space-y-3">
+            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Send to Vendor</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Vendor Email</label>
+                <input
+                  type="email"
+                  className="input-field"
+                  placeholder="vendor@company.com"
+                  value={form.vendorEmail}
+                  onChange={(e) => setForm(f => ({...f, vendorEmail: e.target.value}))}
+                />
+              </div>
+              <div>
+                <label className="label">Final Amount (₹)</label>
+                <input
+                  type="number"
+                  className="input-field"
+                  min="0"
+                  step="0.01"
+                  value={form.finalAmount}
+                  onChange={(e) => setForm(f => ({...f, finalAmount: Number(e.target.value)}))}
+                />
+              </div>
+            </div>
+          </div>
+
           <div className="flex gap-3 justify-end sticky bottom-0 bg-white pt-2">
-            <button 
-              type="button" 
-              onClick={() => {
-                setShowEditModal(false);
-                setSelectedQuotation(null);
-              }} 
+            <button
+              type="button"
+              onClick={() => { setShowEditModal(false); setSelectedQuotation(null); }}
               className="btn-secondary"
             >
               Cancel
             </button>
-            <button 
-              type="submit" 
-              disabled={saving} 
+            <button
+              type="button"
+              disabled={saving || !form.vendorEmail}
+              onClick={async () => {
+                if (!selectedQuotation) return;
+                setSaving(true);
+                try {
+                  await quotationsApi.update(selectedQuotation._id, {
+                    ...form,
+                    items,
+                    subtotal,
+                    taxAmount: form.gstApplicable ? taxAmount : 0,
+                    total: form.gstApplicable ? total2 : subtotal,
+                    status: 'Final',
+                    vendorSentAt: new Date().toISOString(),
+                  });
+                  setShowEditModal(false);
+                  setSelectedQuotation(null);
+                  load();
+                } catch { setCreateError('Failed to send to vendor'); }
+                finally { setSaving(false); }
+              }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium disabled:opacity-50 transition-colors"
+            >
+              <Send size={14} /> Send to Vendor
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
               className="btn-primary"
             >
               {saving ? 'Saving...' : 'Save Changes'}

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import {
   getQuotations, createQuotation, acceptQuotation, rejectQuotation,
-  sendQuotationEmail, generateQuotationPDF,
+  sendQuotationEmail, generateQuotationPDFRoute,
 } from '../controllers/quotation.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { authorize } from '../middleware/role.middleware';
@@ -14,6 +14,6 @@ router.post('/',                                  authorize('admin', 'sales'), c
 router.patch('/:id/accept',                       authorize('admin', 'sales'), acceptQuotation);
 router.patch('/:id/reject',                       authorize('admin', 'sales'), rejectQuotation);
 router.post('/:id/send-email',                    authorize('admin', 'sales'), sendQuotationEmail);
-router.post('/:id/generate-pdf',                  authorize('admin', 'sales'), generateQuotationPDF);
+router.post('/:id/generate-pdf',                  authorize('admin', 'sales'), generateQuotationPDFRoute);
 
 export default router;
