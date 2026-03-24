@@ -1,3 +1,4 @@
+// backend/src/services/email.service.ts
 import { createTransporter } from '../config/email';
 import logger from '../utils/logger';
 
@@ -17,13 +18,19 @@ td{padding:8px;border:1px solid #eee}
 
 const send = async (to: string, subject: string, html: string, attachments?: Array<{ filename: string; path: string }>) => {
   try {
-    await createTransporter().sendMail({
-      from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`,
-      to, subject, html,
-      ...(attachments ? { attachments } : {}),
+    const transporter = createTransporter();
+    await transporter.sendMail({
+      from: `"${process.env.EMAIL_FROM_NAME || 'Telled CRM'}" <${process.env.EMAIL_FROM || process.env.SMTP_USER}>`,
+      to,
+      subject,
+      html,
+      ...(attachments && attachments.length > 0 ? { attachments } : {}),
     });
     logger.info(`Email sent to ${to}: ${subject}`);
-  } catch (e) { logger.error('Email failed:', e); }
+  } catch (e) {
+    logger.error('Email failed:', e);
+    throw e;
+  }
 };
 
 export const sendDRFEmail = async (
