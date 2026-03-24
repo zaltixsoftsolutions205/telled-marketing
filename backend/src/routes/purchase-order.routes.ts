@@ -32,7 +32,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 });
 
 // Create
-router.post('/', authorize('admin', 'sales'), async (req: AuthRequest, res: Response) => {
+router.post('/', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
   try {
     const { leadId, amount, product, vendorName, vendorEmail, receivedDate, notes } = req.body;
     if (!leadId || !amount || !receivedDate) { sendError(res, 'leadId, amount and receivedDate are required', 400); return; }
@@ -48,7 +48,7 @@ router.post('/', authorize('admin', 'sales'), async (req: AuthRequest, res: Resp
 });
 
 // Update
-router.put('/:id', authorize('admin', 'sales'), async (req: AuthRequest, res: Response) => {
+router.put('/:id', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
   try {
     const po = await PurchaseOrder.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!po) { sendError(res, 'Purchase order not found', 404); return; }
@@ -57,11 +57,18 @@ router.put('/:id', authorize('admin', 'sales'), async (req: AuthRequest, res: Re
 });
 
 // Send to vendor
-router.post('/:id/send-to-vendor', authorize('admin', 'sales'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/send-to-vendor', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
   try {
     const po = await PurchaseOrder.findById(req.params.id).populate('leadId', 'companyName');
     if (!po) { sendError(res, 'Purchase order not found', 404); return; }
-    if (!po.vendorEmail) { sendError(res, 'Vendor email not set', 400); return; }
+    // Use email from request body if provided, otherwise fall back to saved vendorEmail
+    const vendorEmailToUse: string = req.body.vendorEmail || po.vendorEmail;
+    if (!vendorEmailToUse) { sendError(res, 'Vendor email not set', 400); return; }
+    // Save the vendor email if it wasn't saved yet
+    if (req.body.vendorEmail) {
+      po.vendorEmail = req.body.vendorEmail;
+      await po.save();
+    }
     const lead = po.leadId as unknown as { companyName: string };
     const html = `<div style="font-family:Arial,sans-serif;padding:20px">
       <h2 style="color:#4f2d7f">Purchase Order ${po.poNumber}</h2>
@@ -75,34 +82,52 @@ router.post('/:id/send-to-vendor', authorize('admin', 'sales'), async (req: Auth
       </table>
       <p style="margin-top:16px;color:#666">Please confirm receipt of this order.</p>
     </div>`;
-    await sendEmail(po.vendorEmail, `Purchase Order ${po.poNumber}`, html);
+    await sendEmail(vendorEmailToUse, `Purchase Order ${po.poNumber}`, html);
     await PurchaseOrder.findByIdAndUpdate(req.params.id, { vendorEmailSent: true, vendorEmailSentAt: new Date() });
     sendSuccess(res, {}, 'Email sent to vendor');
   } catch { sendError(res, 'Failed to send email', 500); }
 });
 
 // Convert to account
-router.post('/:id/convert', authorize('admin', 'sales'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/convert', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
   try {
     const po = await PurchaseOrder.findById(req.params.id).populate('leadId');
     if (!po) { sendError(res, 'Purchase order not found', 404); return; }
-    const lead = po.leadId as unknown as { _id: string; companyName: string; assignedTo?: string };
+    const lead = po.leadId as any;
     const { accountName, notes } = req.body;
+
+    // Check if account already exists for this lead
+    const existing = await Account.findOne({ leadId: lead._id });
+    if (existing) {
+      await PurchaseOrder.findByIdAndUpdate(req.params.id, { converted: true });
+      sendSuccess(res, existing, 'Account already exists for this lead');
+      return;
+    }
+
     const account = await new Account({
       leadId: lead._id,
-      accountName: accountName || lead.companyName,
+      companyName: accountName || lead.companyName,
+      contactName: lead.contactPersonName || lead.contactName || lead.companyName,
+      contactEmail: lead.email || '',
+      phone: lead.phone || '',
+      address: lead.address || '',
+      city: lead.city || '',
+      state: lead.state || '',
       notes,
       status: 'Active',
-      assignedSales: lead.assignedTo,
+      assignedSales: lead.assignedTo || req.user!.id,
     }).save();
     await Lead.findByIdAndUpdate(lead._id, { stage: 'Converted' });
     await PurchaseOrder.findByIdAndUpdate(req.params.id, { converted: true });
     sendSuccess(res, account, 'Converted to account', 201);
-  } catch { sendError(res, 'Failed to convert', 500); }
+  } catch (err) {
+    logger.error('Convert to account error:', err);
+    sendError(res, 'Failed to convert', 500);
+  }
 });
 
 // Update this route to allow admin and sales
-router.post('/sync-emails', authorize('admin', 'sales'), async (req: AuthRequest, res: Response) => {
+router.post('/sync-emails', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
   try {
     logger.info('Manual PO email sync triggered by user:', req.user?.email);
     const result = await syncPurchaseOrderEmails();

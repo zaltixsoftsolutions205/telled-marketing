@@ -477,9 +477,8 @@ export async function syncPurchaseOrderEmails(): Promise<PurchaseOrderEmailResul
           // Update existing PO
           const updateData: any = {};
           if (amount && !existingPO.amount) updateData.amount = amount;
-          if (vendorName && !existingPO.vendorName) updateData.vendorName = vendorName;
-          if (vendorEmail && !existingPO.vendorEmail) updateData.vendorEmail = vendorEmail;
           if (product && !existingPO.product) updateData.product = product;
+          // vendorName and vendorEmail are always entered manually — never auto-filled from email
           
           if (Object.keys(updateData).length > 0) {
             await PurchaseOrder.findByIdAndUpdate(existingPO._id, updateData);
@@ -491,17 +490,16 @@ export async function syncPurchaseOrderEmails(): Promise<PurchaseOrderEmailResul
         } else {
           // Create new PO
           const defaultAdmin = await getDefaultAdminUser();
-          const finalVendorName = vendorName || fromName || fromEmail.split('@')[0] || 'Unknown Vendor';
-          
+
           const newPO = await new PurchaseOrder({
             leadId: lead._id,
             poNumber: poNumber || generatePONumber(),
             amount: amount || 0,
             product: product || '',
-            vendorName: finalVendorName, // Use extracted company name
-            vendorEmail: vendorEmail || fromEmail,
+            vendorName: '',   // must be entered manually
+            vendorEmail: '',  // must be entered manually
             receivedDate: receivedDate,
-            notes: `Auto-created from email from ${fromEmail} on ${new Date().toISOString()}\n\nOriginal Subject: ${subject}\n\nVendor: ${finalVendorName}`,
+            notes: `Auto-created from email on ${new Date().toISOString()}\n\nOriginal Subject: ${subject}`,
             uploadedBy: defaultAdmin?._id || lead.assignedTo || new mongoose.Types.ObjectId(),
             vendorEmailSent: false,
             converted: false,
@@ -512,7 +510,7 @@ export async function syncPurchaseOrderEmails(): Promise<PurchaseOrderEmailResul
           await Lead.findByIdAndUpdate(lead._id, { stage: 'PO Received' });
 
           result.created.push(newPO.poNumber);
-          logger.info(`Created PO ${newPO.poNumber} for lead ${lead.companyName} with vendor ${finalVendorName} from email from ${fromEmail}`);
+          logger.info(`Created PO ${newPO.poNumber} for lead ${lead.companyName} from email ${fromEmail} — vendor details pending manual entry`);
         }
 
         result.processed++;

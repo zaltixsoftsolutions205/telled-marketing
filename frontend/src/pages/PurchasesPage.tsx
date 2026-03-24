@@ -25,7 +25,7 @@ export default function PurchasesPage() {
   const [createForm, setCreateForm] = useState({
     leadId: '', amount: '', product: '', vendorName: '', vendorEmail: '', receivedDate: '', notes: '',
   });
-  const [file, setFile] = useState<File | null>(null);
+  const [_file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
 
   // Edit modal
@@ -35,12 +35,16 @@ export default function PurchasesPage() {
   });
   const [editSaving, setEditSaving] = useState(false);
 
+  // Send to vendor modal
+  const [sendTarget, setSendTarget] = useState<PurchaseOrder | null>(null);
+  const [sendVendorEmail, setSendVendorEmail] = useState('');
+  const [sending, setSending] = useState(false);
+
   // Convert modal
   const [convertTarget, setConvertTarget] = useState<PurchaseOrder | null>(null);
   const [convertForm, setConvertForm] = useState({ accountName: '', notes: '' });
   const [converting, setConverting] = useState(false);
 
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // Add this function for syncing emails
   const handleSyncEmails = async () => {
@@ -75,6 +79,9 @@ export default function PurchasesPage() {
     setFile(null);
     setShowCreate(true);
   };
+
+  // Auto-fill customer info from selected lead
+  const selectedLead = leads.find(l => l._id === createForm.leadId);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,18 +119,24 @@ export default function PurchasesPage() {
     } finally { setEditSaving(false); }
   };
 
-  const handleSendToVendor = async (po: PurchaseOrder) => {
-    if (!po.vendorEmail) {
-      alert('Please add a vendor email before sending. Click the edit button to add one.');
-      return;
-    }
-    setActionLoading(po._id + 'send');
+  const openSendModal = (po: PurchaseOrder) => {
+    setSendTarget(po);
+    setSendVendorEmail(po.vendorEmail || '');
+  };
+
+  const handleSendToVendor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sendTarget) return;
+    if (!sendVendorEmail.trim()) { alert('Please enter vendor email'); return; }
+    setSending(true);
     try {
-      await purchasesApi.sendToVendor(po._id);
+      await purchasesApi.sendToVendor(sendTarget._id, sendVendorEmail.trim());
+      setSendTarget(null);
+      setSendVendorEmail('');
       load();
     } catch (err: any) {
       alert(err?.response?.data?.message || 'Failed to send to vendor');
-    } finally { setActionLoading(null); }
+    } finally { setSending(false); }
   };
 
   const openConvert = (po: PurchaseOrder) => {
@@ -238,7 +251,7 @@ export default function PurchasesPage() {
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
                       <th className="table-header">PO Number</th>
-                      <th className="table-header">Lead</th>
+                      <th className="table-header">Customer</th>
                       <th className="table-header">Product</th>
                       <th className="table-header">Vendor</th>
                       <th className="table-header">Amount</th>
@@ -251,7 +264,11 @@ export default function PurchasesPage() {
                     {orders.map((po) => (
                       <tr key={po._id} className="hover:bg-violet-50/20 transition-colors">
                         <td className="table-cell font-mono font-medium text-violet-700">{po.poNumber}</td>
-                        <td className="table-cell font-medium">{(po.leadId as Lead)?.companyName}</td>
+                        <td className="table-cell">
+                          <p className="font-medium text-gray-800">{(po.leadId as Lead)?.companyName}</p>
+                          {(po.leadId as Lead)?.contactPersonName && <p className="text-xs text-gray-500">{(po.leadId as Lead).contactPersonName}</p>}
+                          {(po.leadId as Lead)?.email && <p className="text-xs text-gray-400">{(po.leadId as Lead).email}</p>}
+                        </td>
                         <td className="table-cell text-gray-500">{po.product || '—'}</td>
                         <td className="table-cell">
                           {po.vendorName ? (
@@ -285,10 +302,9 @@ export default function PurchasesPage() {
                             {/* Send to Vendor */}
                             {!po.vendorEmailSent && (
                               <button
-                                title={po.vendorEmail ? 'Send to Vendor' : 'Add vendor email first'}
-                                disabled={actionLoading === po._id + 'send'}
-                                onClick={() => handleSendToVendor(po)}
-                                className={`p-1.5 rounded-lg transition-colors ${po.vendorEmail ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' : 'bg-gray-50 text-gray-300 cursor-not-allowed'}`}
+                                title="Send to Vendor"
+                                onClick={() => openSendModal(po)}
+                                className="p-1.5 rounded-lg transition-colors bg-blue-50 text-blue-600 hover:bg-blue-100"
                               >
                                 <Send size={13} />
                               </button>
@@ -332,13 +348,45 @@ export default function PurchasesPage() {
       {/* Create PO Modal */}
       <Modal isOpen={showCreate} onClose={() => setShowCreate(false)} title="Add Purchase Order" size="lg">
         <form onSubmit={handleCreate} className="space-y-4">
-          <div>
-            <label className="label">Lead *</label>
-            <select required className="input-field" value={createForm.leadId} onChange={(e) => setCreateForm(f => ({...f, leadId: e.target.value}))}>
-              <option value="">Select lead</option>
-              {leads.map(l => <option key={l._id} value={l._id}>{l.companyName}</option>)}
-            </select>
+          {/* Customer Section */}
+          <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 space-y-3">
+            <p className="text-xs font-semibold text-violet-700 uppercase tracking-wide">Customer</p>
+            <div>
+              <label className="label">Customer *</label>
+              <select required className="input-field" value={createForm.leadId} onChange={(e) => setCreateForm(f => ({...f, leadId: e.target.value}))}>
+                <option value="">Select customer</option>
+                {leads.map(l => <option key={l._id} value={l._id}>{l.companyName}</option>)}
+              </select>
+            </div>
+            {selectedLead && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Contact Person</label>
+                  <input readOnly className="input-field bg-white text-gray-600" value={selectedLead.contactPersonName || '—'} />
+                </div>
+                <div>
+                  <label className="label">Customer Email</label>
+                  <input readOnly className="input-field bg-white text-gray-600" value={selectedLead.email || '—'} />
+                </div>
+              </div>
+            )}
           </div>
+
+          {/* Vendor Section */}
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 space-y-3">
+            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Vendor (PO will be sent to this email)</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Vendor Name</label>
+                <input className="input-field" placeholder="Vendor company name" value={createForm.vendorName} onChange={(e) => setCreateForm(f => ({...f, vendorName: e.target.value}))} />
+              </div>
+              <div>
+                <label className="label">Vendor Email</label>
+                <input type="email" className="input-field" placeholder="vendor@example.com" value={createForm.vendorEmail} onChange={(e) => setCreateForm(f => ({...f, vendorEmail: e.target.value}))} />
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">Amount (₹) *</label>
@@ -348,17 +396,9 @@ export default function PurchasesPage() {
               <label className="label">Received Date *</label>
               <input required type="date" className="input-field" value={createForm.receivedDate} onChange={(e) => setCreateForm(f => ({...f, receivedDate: e.target.value}))} />
             </div>
-            <div>
+            <div className="col-span-2">
               <label className="label">Product</label>
               <input className="input-field" placeholder="e.g. Siemens PLC S7-1200" value={createForm.product} onChange={(e) => setCreateForm(f => ({...f, product: e.target.value}))} />
-            </div>
-            <div>
-              <label className="label">Vendor Name</label>
-              <input className="input-field" placeholder="Vendor company name" value={createForm.vendorName} onChange={(e) => setCreateForm(f => ({...f, vendorName: e.target.value}))} />
-            </div>
-            <div className="col-span-2">
-              <label className="label">Vendor Email</label>
-              <input type="email" className="input-field" placeholder="vendor@example.com" value={createForm.vendorEmail} onChange={(e) => setCreateForm(f => ({...f, vendorEmail: e.target.value}))} />
             </div>
           </div>
           <div>
@@ -379,6 +419,40 @@ export default function PurchasesPage() {
       {/* Edit PO Modal */}
       <Modal isOpen={!!editTarget} onClose={() => setEditTarget(null)} title={`Edit PO — ${editTarget?.poNumber}`}>
         <form onSubmit={handleEdit} className="space-y-4">
+          {/* Customer info (read-only) */}
+          <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 space-y-2">
+            <p className="text-xs font-semibold text-violet-700 uppercase tracking-wide">Customer</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Company</label>
+                <input readOnly className="input-field bg-white text-gray-600" value={(editTarget?.leadId as Lead)?.companyName || '—'} />
+              </div>
+              <div>
+                <label className="label">Contact Person</label>
+                <input readOnly className="input-field bg-white text-gray-600" value={(editTarget?.leadId as Lead)?.contactPersonName || '—'} />
+              </div>
+              <div className="col-span-2">
+                <label className="label">Customer Email</label>
+                <input readOnly className="input-field bg-white text-gray-600" value={(editTarget?.leadId as Lead)?.email || '—'} />
+              </div>
+            </div>
+          </div>
+
+          {/* Vendor fields (editable) */}
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 space-y-3">
+            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Vendor (PO will be sent to this email)</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Vendor Name</label>
+                <input className="input-field" value={editForm.vendorName} onChange={(e) => setEditForm(f => ({...f, vendorName: e.target.value}))} />
+              </div>
+              <div>
+                <label className="label">Vendor Email</label>
+                <input type="email" className="input-field" placeholder="vendor@example.com" value={editForm.vendorEmail} onChange={(e) => setEditForm(f => ({...f, vendorEmail: e.target.value}))} />
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">Amount (₹) *</label>
@@ -387,14 +461,6 @@ export default function PurchasesPage() {
             <div>
               <label className="label">Product</label>
               <input className="input-field" value={editForm.product} onChange={(e) => setEditForm(f => ({...f, product: e.target.value}))} />
-            </div>
-            <div>
-              <label className="label">Vendor Name</label>
-              <input className="input-field" value={editForm.vendorName} onChange={(e) => setEditForm(f => ({...f, vendorName: e.target.value}))} />
-            </div>
-            <div>
-              <label className="label">Vendor Email</label>
-              <input type="email" className="input-field" value={editForm.vendorEmail} onChange={(e) => setEditForm(f => ({...f, vendorEmail: e.target.value}))} />
             </div>
           </div>
           <div>
@@ -425,6 +491,36 @@ export default function PurchasesPage() {
           <div className="flex gap-3 justify-end">
             <button type="button" onClick={() => setConvertTarget(null)} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={converting} className="btn-primary">{converting ? 'Converting…' : 'Convert to Account'}</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Send to Vendor Modal */}
+      <Modal isOpen={!!sendTarget} onClose={() => { setSendTarget(null); setSendVendorEmail(''); }} title={`Send PO to Vendor — ${sendTarget?.poNumber}`}>
+        <form onSubmit={handleSendToVendor} className="space-y-4">
+          <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-sm text-violet-700">
+            <p><strong>Customer:</strong> {(sendTarget?.leadId as Lead)?.companyName}</p>
+            <p className="mt-1"><strong>Product:</strong> {sendTarget?.product || '—'}</p>
+            <p className="mt-1"><strong>Amount:</strong> {sendTarget ? formatCurrency(sendTarget.amount) : '—'}</p>
+          </div>
+          <div>
+            <label className="label">Vendor Email *</label>
+            <input
+              required
+              type="email"
+              autoFocus
+              className="input-field"
+              placeholder="Enter vendor email to send PO"
+              value={sendVendorEmail}
+              onChange={(e) => setSendVendorEmail(e.target.value)}
+            />
+            <p className="text-xs text-gray-400 mt-1">The PO will be sent to this email address.</p>
+          </div>
+          <div className="flex gap-3 justify-end">
+            <button type="button" onClick={() => { setSendTarget(null); setSendVendorEmail(''); }} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={sending} className="btn-primary flex items-center gap-2">
+              <Send size={14} />{sending ? 'Sending…' : 'Send to Vendor'}
+            </button>
           </div>
         </form>
       </Modal>
