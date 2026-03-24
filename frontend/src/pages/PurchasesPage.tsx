@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, Search, Send, Building2, Pencil, CheckCircle } from 'lucide-react';
+import { Plus, Search, Send, Building2, Pencil, CheckCircle, RefreshCw } from 'lucide-react';
 import { purchasesApi } from '@/api/purchases';
 import { leadsApi } from '@/api/leads';
+import api from '@/api/axios'; // Add this import for the API call
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
 import { formatDate, formatCurrency } from '@/utils/formatters';
@@ -17,7 +18,7 @@ export default function PurchasesPage() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [leads, setLeads] = useState<Lead[]>([]);
-
+  const [syncing, setSyncing] = useState(false); // Add this state
 
   // Create modal
   const [showCreate, setShowCreate] = useState(false);
@@ -40,6 +41,20 @@ export default function PurchasesPage() {
   const [converting, setConverting] = useState(false);
 
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // Add this function for syncing emails
+  const handleSyncEmails = async () => {
+    setSyncing(true);
+    try {
+      const { data } = await api.post('/purchase-orders/sync-emails');
+      alert(`Sync completed: ${data.data.created.length} created, ${data.data.updated.length} updated, ${data.data.skipped.length} skipped`);
+      await load(); // Refresh the list
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Failed to sync emails');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -136,11 +151,21 @@ export default function PurchasesPage() {
           <h1 className="page-header">Purchase Orders</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} total</p>
         </div>
-        {activeTab === 'customer' && (
-          <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-            <Plus size={16} /> Add PO
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={handleSyncEmails} 
+            disabled={syncing}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
+            {syncing ? 'Syncing...' : 'Sync Emails'}
           </button>
-        )}
+          {activeTab === 'customer' && (
+            <button onClick={openCreate} className="btn-primary flex items-center gap-2">
+              <Plus size={16} /> Add PO
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
@@ -199,109 +224,109 @@ export default function PurchasesPage() {
         </div>
       ) : (
         <>
-      <div className="relative max-w-xs">
-        <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
-        <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search…" className="input-field pl-9" />
-      </div>
+          <div className="relative max-w-xs">
+            <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
+            <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search…" className="input-field pl-9" />
+          </div>
 
-      <div className="glass-card !p-0 overflow-hidden">
-        {loading ? <LoadingSpinner className="h-48" /> : orders.length === 0 ? (
-          <div className="text-center text-gray-400 py-16">No purchase orders found</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-100">
-                <tr>
-                  <th className="table-header">PO Number</th>
-                  <th className="table-header">Lead</th>
-                  <th className="table-header">Product</th>
-                  <th className="table-header">Vendor</th>
-                  <th className="table-header">Amount</th>
-                  <th className="table-header">Received</th>
-                  <th className="table-header">Status</th>
-                  <th className="table-header">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {orders.map((po) => (
-                  <tr key={po._id} className="hover:bg-violet-50/20 transition-colors">
-                    <td className="table-cell font-mono font-medium text-violet-700">{po.poNumber}</td>
-                    <td className="table-cell font-medium">{(po.leadId as Lead)?.companyName}</td>
-                    <td className="table-cell text-gray-500">{po.product || '—'}</td>
-                    <td className="table-cell">
-                      {po.vendorName ? (
-                        <div>
-                          <p className="text-sm text-gray-700">{po.vendorName}</p>
-                          {po.vendorEmail && <p className="text-xs text-gray-400">{po.vendorEmail}</p>}
-                        </div>
-                      ) : <span className="text-gray-300">—</span>}
-                    </td>
-                    <td className="table-cell font-semibold text-green-700">{formatCurrency(po.amount)}</td>
-                    <td className="table-cell text-gray-400">{formatDate(po.receivedDate)}</td>
-                    <td className="table-cell">
-                      {po.vendorEmailSent ? (
-                        <span className="badge text-xs bg-emerald-100 text-emerald-700">Sent to Vendor</span>
-                      ) : (
-                        <span className="badge text-xs bg-gray-100 text-gray-500">Pending</span>
-                      )}
-                    </td>
-                    <td className="table-cell">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {/* Edit — only if not yet sent */}
-                        {!po.vendorEmailSent && (
-                          <button
-                            title="Edit PO"
-                            onClick={() => openEdit(po)}
-                            className="p-1.5 rounded-lg bg-gray-50 text-gray-500 hover:bg-gray-100 transition-colors"
-                          >
-                            <Pencil size={13} />
-                          </button>
-                        )}
-                        {/* Send to Vendor */}
-                        {!po.vendorEmailSent && (
-                          <button
-                            title={po.vendorEmail ? 'Send to Vendor' : 'Add vendor email first'}
-                            disabled={actionLoading === po._id + 'send'}
-                            onClick={() => handleSendToVendor(po)}
-                            className={`p-1.5 rounded-lg transition-colors ${po.vendorEmail ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' : 'bg-gray-50 text-gray-300 cursor-not-allowed'}`}
-                          >
-                            <Send size={13} />
-                          </button>
-                        )}
-                        {/* Convert to Account */}
-                        {po.vendorEmailSent && !(po as any).converted && (
-                          <button
-                            title="Convert to Account"
-                            onClick={() => openConvert(po)}
-                            className="p-1.5 rounded-lg bg-violet-50 text-violet-600 hover:bg-violet-100 transition-colors"
-                          >
-                            <Building2 size={13} />
-                          </button>
-                        )}
-                        {(po as any).converted && (
-                          <span title="Converted to Account">
-                            <CheckCircle size={14} className="text-emerald-500" />
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="glass-card !p-0 overflow-hidden">
+            {loading ? <LoadingSpinner className="h-48" /> : orders.length === 0 ? (
+              <div className="text-center text-gray-400 py-16">No purchase orders found</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                      <th className="table-header">PO Number</th>
+                      <th className="table-header">Lead</th>
+                      <th className="table-header">Product</th>
+                      <th className="table-header">Vendor</th>
+                      <th className="table-header">Amount</th>
+                      <th className="table-header">Received</th>
+                      <th className="table-header">Status</th>
+                      <th className="table-header">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {orders.map((po) => (
+                      <tr key={po._id} className="hover:bg-violet-50/20 transition-colors">
+                        <td className="table-cell font-mono font-medium text-violet-700">{po.poNumber}</td>
+                        <td className="table-cell font-medium">{(po.leadId as Lead)?.companyName}</td>
+                        <td className="table-cell text-gray-500">{po.product || '—'}</td>
+                        <td className="table-cell">
+                          {po.vendorName ? (
+                            <div>
+                              <p className="text-sm text-gray-700">{po.vendorName}</p>
+                              {po.vendorEmail && <p className="text-xs text-gray-400">{po.vendorEmail}</p>}
+                            </div>
+                          ) : <span className="text-gray-300">—</span>}
+                        </td>
+                        <td className="table-cell font-semibold text-green-700">{formatCurrency(po.amount)}</td>
+                        <td className="table-cell text-gray-400">{formatDate(po.receivedDate)}</td>
+                        <td className="table-cell">
+                          {po.vendorEmailSent ? (
+                            <span className="badge text-xs bg-emerald-100 text-emerald-700">Sent to Vendor</span>
+                          ) : (
+                            <span className="badge text-xs bg-gray-100 text-gray-500">Pending</span>
+                          )}
+                        </td>
+                        <td className="table-cell">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {/* Edit — only if not yet sent */}
+                            {!po.vendorEmailSent && (
+                              <button
+                                title="Edit PO"
+                                onClick={() => openEdit(po)}
+                                className="p-1.5 rounded-lg bg-gray-50 text-gray-500 hover:bg-gray-100 transition-colors"
+                              >
+                                <Pencil size={13} />
+                              </button>
+                            )}
+                            {/* Send to Vendor */}
+                            {!po.vendorEmailSent && (
+                              <button
+                                title={po.vendorEmail ? 'Send to Vendor' : 'Add vendor email first'}
+                                disabled={actionLoading === po._id + 'send'}
+                                onClick={() => handleSendToVendor(po)}
+                                className={`p-1.5 rounded-lg transition-colors ${po.vendorEmail ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' : 'bg-gray-50 text-gray-300 cursor-not-allowed'}`}
+                              >
+                                <Send size={13} />
+                              </button>
+                            )}
+                            {/* Convert to Account */}
+                            {po.vendorEmailSent && !(po as any).converted && (
+                              <button
+                                title="Convert to Account"
+                                onClick={() => openConvert(po)}
+                                className="p-1.5 rounded-lg bg-violet-50 text-violet-600 hover:bg-violet-100 transition-colors"
+                              >
+                                <Building2 size={13} />
+                              </button>
+                            )}
+                            {(po as any).converted && (
+                              <span title="Converted to Account">
+                                <CheckCircle size={14} className="text-emerald-500" />
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {total > 15 && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
+                <p className="text-sm text-gray-500">Page {page} of {Math.ceil(total / 15)}</p>
+                <div className="flex gap-2">
+                  <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="btn-secondary py-1 px-3 text-sm">Prev</button>
+                  <button disabled={page >= Math.ceil(total / 15)} onClick={() => setPage(p => p + 1)} className="btn-secondary py-1 px-3 text-sm">Next</button>
+                </div>
+              </div>
+            )}
           </div>
-        )}
-        {total > 15 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-            <p className="text-sm text-gray-500">Page {page} of {Math.ceil(total / 15)}</p>
-            <div className="flex gap-2">
-              <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="btn-secondary py-1 px-3 text-sm">Prev</button>
-              <button disabled={page >= Math.ceil(total / 15)} onClick={() => setPage(p => p + 1)} className="btn-secondary py-1 px-3 text-sm">Next</button>
-            </div>
-          </div>
-        )}
-      </div>
-      </>
+        </>
       )}
 
       {/* Create PO Modal */}

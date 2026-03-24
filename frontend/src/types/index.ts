@@ -134,20 +134,21 @@ export interface Quotation {
 
 export interface PurchaseOrder {
   _id: string;
-  leadId: Lead;
+  leadId: Lead | string;
   poNumber: string;
   amount: number;
   product?: string;
   vendorName?: string;
   vendorEmail?: string;
-  documentPath?: string;
   receivedDate: string;
   notes?: string;
-  isSubmitted?: boolean;
-  vendorEmailSent?: boolean;
+  vendorEmailSent: boolean;
   vendorEmailSentAt?: string;
-  createdBy: User;
+  converted: boolean;
+  uploadedBy: User | string;
+  isArchived: boolean;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface Installation {

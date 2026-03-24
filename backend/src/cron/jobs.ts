@@ -8,6 +8,30 @@ import logger from '../utils/logger';
 import sendEmail, { sendOEMExpiryReminder, sendInvoiceReminder, sendTicketClosureNotification } from '../services/email.service';
 import { OEM_EXPIRY_REMINDER_DAYS, TICKET_AUTO_CLOSE_DAYS, INVOICE_DUE_REMINDER_DAYS } from '../config/constants';
 import { syncEmailsForDRF } from '../services/emailInbox.service';
+import { syncPurchaseOrderEmails } from '../services/emailInboxPurchase.service';
+
+// Add this function before startCronJobs
+async function syncPurchaseOrderEmailsJob() {
+  try {
+    const result = await syncPurchaseOrderEmails();
+    if (result.created.length || result.updated.length) {
+      logger.info(`PO Email sync: ${result.created.length} created, ${result.updated.length} updated, ${result.skipped.length} skipped, ${result.errors.length} errors`);
+
+      // Log details for monitoring
+      if (result.created.length) {
+        logger.info(`Created POs: ${result.created.join(', ')}`);
+      }
+      if (result.updated.length) {
+        logger.info(`Updated POs: ${result.updated.join(', ')}`);
+      }
+      if (result.errors.length) {
+        logger.error(`PO sync errors: ${result.errors.join(', ')}`);
+      }
+    }
+  } catch (e) {
+    logger.error('PO email sync cron error:', e);
+  }
+}
 
 export const startCronJobs = (): void => {
   // Auto-expire OEM approvals — every hour
@@ -151,6 +175,17 @@ export const startCronJobs = (): void => {
       }
     } catch (e) { logger.error('DRF email sync cron:', e); }
   });
+
+
+  // Purchase order email sync — every 5 minutes
+  cron.schedule('*/5 * * * *', async () => {
+    await syncPurchaseOrderEmailsJob();
+  });
+
+  // Also run once on startup
+  setTimeout(() => {
+    syncPurchaseOrderEmailsJob().catch(e => logger.error('Initial PO sync failed:', e));
+  }, 30000); // Run 30 seconds after startup
 
   logger.info('All cron jobs started');
 };

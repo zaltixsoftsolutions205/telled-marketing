@@ -7,6 +7,8 @@ import Account from '../models/Account';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, generatePONumber } from '../utils/helpers';
 import sendEmail from '../services/email.service';
+import { syncPurchaseOrderEmails } from '../services/emailInboxPurchase.service';
+import logger from '../utils/logger';
 
 const router = Router();
 router.use(authenticate);
@@ -97,6 +99,37 @@ router.post('/:id/convert', authorize('admin', 'sales'), async (req: AuthRequest
     await PurchaseOrder.findByIdAndUpdate(req.params.id, { converted: true });
     sendSuccess(res, account, 'Converted to account', 201);
   } catch { sendError(res, 'Failed to convert', 500); }
+});
+
+// Update this route to allow admin and sales
+router.post('/sync-emails', authorize('admin', 'sales'), async (req: AuthRequest, res: Response) => {
+  try {
+    logger.info('Manual PO email sync triggered by user:', req.user?.email);
+    const result = await syncPurchaseOrderEmails();
+
+    // Log detailed results
+    logger.info(`PO sync results:`, {
+      created: result.created,
+      updated: result.updated,
+      skipped: result.skipped,
+      errors: result.errors,
+      scanned: result.scanned,
+      processed: result.processed
+    });
+
+    sendSuccess(res, {
+      created: result.created,
+      updated: result.updated,
+      skipped: result.skipped,
+      errors: result.errors,
+      scanned: result.scanned,
+      processed: result.processed,
+      summary: `${result.created.length} created, ${result.updated.length} updated, ${result.skipped.length} skipped`
+    }, 'PO email sync completed');
+  } catch (error) {
+    logger.error('Manual PO email sync failed:', error);
+    sendError(res, 'Failed to sync PO emails', 500);
+  }
 });
 
 export default router;

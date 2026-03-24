@@ -29,4 +29,9 @@ export const purchasesApi = {
     const { data } = await api.post(`/purchase-orders/${poId}/convert`, body);
     return data.data;
   },
+  // Add this to purchasesApi object
+  syncEmails: async () => {
+    const { data } = await api.post('/purchase-orders/sync-emails');
+    return data.data;
+  },
 };
