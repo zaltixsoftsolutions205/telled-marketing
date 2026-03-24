@@ -12,7 +12,12 @@ export const getTickets = async (req: AuthRequest, res: Response): Promise<void>
     if (req.query.status) filter.status = req.query.status;
     if (req.query.priority) filter.priority = req.query.priority;
     if (req.query.accountId) filter.accountId = req.query.accountId;
-    if (req.user!.role === 'engineer') filter.assignedEngineer = req.user!.id;
+    if (req.user!.role === 'engineer') {
+      filter.$or = [
+        { assignedEngineer: new mongoose.Types.ObjectId(req.user!.id) },
+        { createdBy: new mongoose.Types.ObjectId(req.user!.id) },
+      ];
+    }
     const [tickets, total] = await Promise.all([
       SupportTicket.find(filter).populate('accountId', 'companyName').populate('assignedEngineer', 'name').sort({ createdAt: -1 }).skip(skip).limit(limit),
       SupportTicket.countDocuments(filter),

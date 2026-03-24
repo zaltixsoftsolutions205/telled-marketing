@@ -82,28 +82,28 @@ export default function EngineerDashboard() {
       {/* Stat Cards — 2 cols on mobile, 3 on tablet, 5 on desktop */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
         <StatCard
-          title="My Accounts" value={stats.accounts.total}
-          sub={`${stats.accounts.active} active`}
+          title="My Accounts" value={stats.accounts?.total ?? 0}
+          sub={`${stats.accounts?.active ?? 0} active`}
           icon={Building2} color="text-teal-700" bg="bg-teal-50" border="border-teal-400"
         />
         <StatCard
-          title="Open Tickets" value={stats.tickets.open}
-          sub={`${stats.tickets.critical} critical`}
+          title="Open Tickets" value={stats.tickets?.open ?? 0}
+          sub={`${stats.tickets?.critical ?? 0} critical`}
           icon={Headphones} color="text-rose-600" bg="bg-rose-50" border="border-rose-400"
         />
         <StatCard
-          title="Installations" value={stats.installations.scheduled + stats.installations.inProgress}
-          sub={`${stats.installations.scheduled} sched.`}
+          title="Installations" value={stats.installations?.scheduled ?? 0 + stats.installations?.inProgress ?? 0}
+          sub={`${stats.installations?.scheduled ?? 0} sched.`}
           icon={Wrench} color="text-violet-700" bg="bg-violet-50" border="border-violet-400"
         />
         <StatCard
-          title="Pending Claims" value={stats.visits.pending}
-          sub={`${stats.visits.total} total`}
+          title="Pending Claims" value={stats.visits?.pending ?? 0}
+          sub={`${stats.visits?.total ?? 0} total`}
           icon={CalendarCheck} color="text-amber-700" bg="bg-amber-50" border="border-amber-400"
         />
         <StatCard
-          title="Resolved" value={stats.tickets.resolved}
-          sub={`${stats.tickets.open} open`}
+          title="Resolved" value={stats.tickets?.resolved ?? 0}
+          sub={`${stats.tickets?.open ?? 0} open`}
           icon={CheckCircle2} color="text-emerald-700" bg="bg-emerald-50" border="border-emerald-400"
         />
       </div>
@@ -121,14 +121,14 @@ export default function EngineerDashboard() {
               View all <ArrowRight size={13} />
             </Link>
           </div>
-          {stats.recentInstallations.length === 0 ? (
+          {stats.recentInstallations?.length === 0 ? (
             <div className="px-6 py-10 text-center">
               <CheckCircle2 size={30} className="mx-auto text-gray-300 mb-2" />
               <p className="text-sm text-gray-400">No active installations</p>
             </div>
           ) : (
             <div className="divide-y divide-gray-50">
-              {stats.recentInstallations.map((inst: any) => (
+              {stats.recentInstallations?.map((inst: any) => (
                 <div key={inst._id} className="px-4 py-3 sm:px-6 sm:py-4 hover:bg-gray-50/50 transition-colors">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
@@ -160,14 +160,14 @@ export default function EngineerDashboard() {
               View all <ArrowRight size={13} />
             </Link>
           </div>
-          {stats.recentTickets.length === 0 ? (
+          {stats.recentTickets?.length === 0 ? (
             <div className="px-6 py-10 text-center">
               <CheckCircle2 size={30} className="mx-auto text-gray-300 mb-2" />
               <p className="text-sm text-gray-400">No open tickets assigned</p>
             </div>
           ) : (
             <div className="divide-y divide-gray-50">
-              {stats.recentTickets.map((ticket: any) => (
+              {stats.recentTickets?.map((ticket: any) => (
                 <div key={ticket._id} className="px-4 py-3 sm:px-6 sm:py-4 hover:bg-gray-50/50 transition-colors">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
@@ -190,7 +190,7 @@ export default function EngineerDashboard() {
       </div>
 
       {/* Recent Visit Claims */}
-      {stats.recentVisits.length > 0 && (
+      {stats.recentVisits?.length > 0 && (
         <div className="card !p-0 overflow-hidden">
           <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-100 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -213,7 +213,7 @@ export default function EngineerDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {stats.recentVisits.map((visit: any) => (
+                {stats.recentVisits?.map((visit: any) => (
                   <tr key={visit._id} className="hover:bg-amber-50/20 transition-colors">
                     <td className="table-cell font-semibold text-gray-900">{visit.purpose}</td>
                     <td className="table-cell text-gray-500">{visit.accountId?.accountName ?? '—'}</td>

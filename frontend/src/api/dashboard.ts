@@ -2,14 +2,8 @@ import api from './axios';
 
 export const dashboardApi = {
   getAdminStats: async () => {
-    try {
-      const { data } = await api.get('/dashboard/admin');
-      return data.data;
-    } catch {
-      // fallback — admin role also allowed on /dashboard/sales for now
-      const { data } = await api.get('/dashboard/sales');
-      return data.data;
-    }
+    const { data } = await api.get('/dashboard/admin');
+    return data.data;
   },
   getSalesStats: async (userId: string) => {
     const { data } = await api.get('/dashboard/sales', { params: { userId } });

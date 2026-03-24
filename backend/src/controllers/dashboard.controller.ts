@@ -148,14 +148,14 @@ export const getEngineerDashboard = async (req: AuthRequest, res: Response): Pro
     const userId = new mongoose.Types.ObjectId(req.user!.id);
 
     const [
-      myAccounts, activeAccounts,
+      totalAccounts, activeAccounts,
       openTickets, criticalTickets, resolvedTickets,
       scheduledInstalls, inProgressInstalls,
       myVisits, pendingVisits,
       recentInstallations, recentTickets, recentVisits,
     ] = await Promise.all([
-      Account.countDocuments({ assignedEngineer: userId }),
-      Account.countDocuments({ assignedEngineer: userId, status: 'Active' }),
+      Account.countDocuments({ isArchived: false }),
+      Account.countDocuments({ isArchived: false, status: 'Active' }),
       SupportTicket.countDocuments({ assignedEngineer: userId, status: { $in: ['Open', 'In Progress'] } }),
       SupportTicket.countDocuments({ assignedEngineer: userId, priority: 'Critical', status: { $in: ['Open', 'In Progress'] } }),
       SupportTicket.countDocuments({ assignedEngineer: userId, status: 'Closed' }),
@@ -169,7 +169,7 @@ export const getEngineerDashboard = async (req: AuthRequest, res: Response): Pro
     ]);
 
     sendSuccess(res, {
-      accounts:      { total: myAccounts, active: activeAccounts },
+      accounts:      { total: totalAccounts, active: activeAccounts },
       tickets:       { open: openTickets, critical: criticalTickets, resolved: resolvedTickets },
       installations: { scheduled: scheduledInstalls, inProgress: inProgressInstalls, total: scheduledInstalls + inProgressInstalls },
       visits:        { total: myVisits, pending: pendingVisits },

@@ -78,23 +78,23 @@ export default function HRDashboard() {
       {/* Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
         <StatCard
-          title="Revenue Collected" value={formatCurrency(stats.invoices.totalRevenue)}
-          sub={`out of ${stats.invoices.total} invoices`}
+          title="Revenue Collected" value={formatCurrency(stats.invoices?.totalRevenue ?? 0)}
+          sub={`out of ${stats.invoices?.total ?? 0} invoices`}
           icon={TrendingUp} color="text-emerald-700" bg="bg-emerald-50" border="border-emerald-400"
         />
         <StatCard
-          title="Pending Invoices" value={stats.invoices.unpaid + stats.invoices.overdue}
-          sub={`${stats.invoices.overdue} overdue · ${stats.invoices.partialPaid} partial`}
+          title="Pending Invoices" value={stats.invoices?.unpaid ?? 0 + stats.invoices?.overdue ?? 0}
+          sub={`${stats.invoices?.overdue ?? 0} overdue · ${stats.invoices?.partialPaid ?? 0} partial`}
           icon={Receipt} color="text-red-600" bg="bg-red-50" border="border-red-400"
         />
         <StatCard
-          title="Visit Approvals" value={stats.visits.pending}
-          sub={`${stats.visits.total} total visits`}
+          title="Visit Approvals" value={stats.visits?.pending ?? 0}
+          sub={`${stats?.visits?.total ?? 0} total visits`}
           icon={CalendarCheck} color="text-amber-700" bg="bg-amber-50" border="border-amber-400"
         />
         <StatCard
-          title="Salary Pending" value={stats.salaries.pending}
-          sub={`${stats.salaries.paid} paid · ₹${(stats.salaries.totalPaid / 1000).toFixed(0)}k disbursed`}
+          title="Salary Pending" value={stats.salaries?.pending ?? 0}
+          sub={`${stats.salaries?.paid ?? 0} paid · ₹${(stats.salaries?.totalPaid ?? 0 / 1000).toFixed(0)}k disbursed`}
           icon={DollarSign} color="text-violet-700" bg="bg-violet-50" border="border-violet-400"
         />
       </div>
@@ -124,7 +124,7 @@ export default function HRDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {stats.allInvoices.map((inv: any) => (
+                {stats.allInvoices?.map((inv: any) => (
                   <tr key={inv._id} className="hover:bg-emerald-50/20 transition-colors">
                     <td className="table-cell font-semibold text-gray-900 text-xs">{inv.invoiceNumber}</td>
                     <td className="table-cell text-gray-500 text-xs truncate max-w-[90px]">{inv.accountId?.accountName}</td>
@@ -153,14 +153,14 @@ export default function HRDashboard() {
               View all <ArrowRight size={13} />
             </Link>
           </div>
-          {stats.pendingVisitsList.length === 0 ? (
+          {stats.pendingVisitsList?.length === 0 ? (
             <div className="px-6 py-10 text-center">
               <CheckCircle2 size={30} className="mx-auto text-gray-300 mb-2" />
               <p className="text-sm text-gray-400">All visits reviewed</p>
             </div>
           ) : (
             <div className="divide-y divide-gray-50">
-              {stats.pendingVisitsList.map((visit: any) => (
+              {stats.pendingVisitsList?.map((visit: any) => (
                 <div key={visit._id} className="px-4 py-3 sm:px-6 sm:py-4 hover:bg-amber-50/20 transition-colors">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
@@ -186,7 +186,7 @@ export default function HRDashboard() {
       </div>
 
       {/* Salary Records */}
-      {stats.recentSalaries.length > 0 && (
+      {stats.recentSalaries?.length > 0 && (
         <div className="card !p-0 overflow-hidden">
           <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-100 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -210,7 +210,7 @@ export default function HRDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {stats.recentSalaries.map((sal: any) => (
+                {stats.recentSalaries?.map((sal: any) => (
                   <tr key={sal._id} className="hover:bg-violet-50/20 transition-colors">
                     <td className="table-cell font-semibold text-gray-900">{sal.employeeId?.name}</td>
                     <td className="table-cell text-gray-500">{sal.month}/{sal.year}</td>
