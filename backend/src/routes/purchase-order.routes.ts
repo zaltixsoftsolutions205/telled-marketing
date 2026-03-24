@@ -120,9 +120,9 @@ router.post('/:id/convert', authorize('admin', 'sales', 'engineer', 'hr_finance'
     await Lead.findByIdAndUpdate(lead._id, { stage: 'Converted' });
     await PurchaseOrder.findByIdAndUpdate(req.params.id, { converted: true });
     sendSuccess(res, account, 'Converted to account', 201);
-  } catch (err) {
+  } catch (err: any) {
     logger.error('Convert to account error:', err);
-    sendError(res, 'Failed to convert', 500);
+    sendError(res, err?.message || 'Failed to convert', 500);
   }
 });
 

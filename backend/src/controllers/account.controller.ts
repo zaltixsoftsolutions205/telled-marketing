@@ -12,7 +12,7 @@ export const getAccounts = async (req: AuthRequest, res: Response): Promise<void
     const filter: Record<string, unknown> = { isArchived: false };
     if (status) filter.status = status;
     if (assignedEngineer) filter.assignedEngineer = assignedEngineer;
-    if (req.user!.role === 'engineer') filter.assignedEngineer = req.user!.id;
+    // engineers see all accounts (they get assigned later)
     if (search) filter.$or = [
       { companyName: { $regex: sanitizeQuery(search as string), $options: 'i' } },
       { contactName: { $regex: sanitizeQuery(search as string), $options: 'i' } },
@@ -38,12 +38,21 @@ export const convertLeadToAccount = async (req: AuthRequest, res: Response): Pro
     const { leadId } = req.body;
     const lead = await Lead.findById(leadId);
     if (!lead) { sendError(res, 'Lead not found', 404); return; }
-    if (lead.stage !== 'PO Received') { sendError(res, 'Lead must have PO received before converting', 400); return; }
-    if (await Account.findOne({ leadId })) { sendError(res, 'Lead already converted', 409); return; }
-    const account = await new Account({ leadId, companyName: req.body.accountName || lead.companyName, contactName: lead.contactName || lead.contactPersonName || '', contactEmail: lead.email, phone: lead.phone, assignedSales: lead.assignedTo, ...req.body }).save();
+    const existing = await Account.findOne({ leadId });
+    if (existing) { sendSuccess(res, existing, 'Account already exists for this lead'); return; }
+    const account = await new Account({
+      leadId,
+      companyName: req.body.accountName || lead.companyName,
+      contactName: lead.contactName || lead.contactPersonName || lead.companyName,
+      contactEmail: lead.email || '',
+      phone: String(lead.phone || ''),
+      assignedSales: lead.assignedTo || req.user!.id,
+      notes: req.body.notes,
+      status: 'Active',
+    }).save();
     await Lead.findByIdAndUpdate(leadId, { stage: 'Converted' });
     sendSuccess(res, account, 'Lead converted to account', 201);
-  } catch { sendError(res, 'Failed to convert lead', 500); }
+  } catch (err: any) { sendError(res, err?.message || 'Failed to convert lead', 500); }
 };
 
 export const updateAccount = async (req: AuthRequest, res: Response): Promise<void> => {
