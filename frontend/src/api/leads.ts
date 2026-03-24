@@ -21,6 +21,10 @@ export const leadsApi = {
     const { data } = await api.patch(`/leads/${id}/archive`);
     return data.data;
   },
+  delete: async (id: string) => {
+    const { data } = await api.delete(`/leads/${id}`);
+    return data;
+  },
   importLeads: async (rows: Array<Record<string, string>>) => {
     const { data } = await api.post('/leads/import', { rows });
     return data.data; // { imported }

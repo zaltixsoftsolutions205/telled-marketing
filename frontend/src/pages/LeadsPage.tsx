@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Search, ExternalLink, Archive, Upload, X, CheckCircle } from 'lucide-react';
+import { Plus, Search, ExternalLink, Archive, Upload, X, CheckCircle, Trash2 } from 'lucide-react';
 import { leadsApi } from '@/api/leads';
 import { usersApi } from '@/api/users';
 import { useAuthStore } from '@/store/authStore';
@@ -43,6 +43,7 @@ export default function LeadsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [salesUsers, setSalesUsers] = useState<User[]>([]);
   const [form, setForm] = useState({
     companyName: '', contactPersonName: '', email: '', phone: '',
@@ -104,6 +105,13 @@ export default function LeadsPage() {
     if (!archiveTarget) return;
     await leadsApi.archive(archiveTarget);
     setArchiveTarget(null);
+    load();
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    await leadsApi.delete(deleteTarget);
+    setDeleteTarget(null);
     load();
   };
 
@@ -216,10 +224,13 @@ export default function LeadsPage() {
                           <ExternalLink size={15} />
                         </Link>
                         {user?.role === 'admin' && (
-                          <button onClick={() => setArchiveTarget(lead._id)} className="p-1 hover:text-red-500 text-gray-400">
+                          <button onClick={() => setArchiveTarget(lead._id)} className="p-1 hover:text-orange-500 text-gray-400" title="Archive">
                             <Archive size={15} />
                           </button>
                         )}
+                        <button onClick={() => setDeleteTarget(lead._id)} className="p-1 hover:text-red-600 text-gray-400" title="Delete permanently">
+                          <Trash2 size={15} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -357,6 +368,16 @@ export default function LeadsPage() {
         title="Archive Lead"
         message="Are you sure you want to archive this lead?"
         confirmLabel="Archive"
+        danger
+      />
+
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
+        title="Delete Lead Permanently"
+        message="This will permanently delete the lead and cannot be undone. Are you sure?"
+        confirmLabel="Delete"
         danger
       />
     </div>

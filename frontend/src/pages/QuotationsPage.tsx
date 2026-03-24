@@ -24,7 +24,6 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function QuotationsPage() {
-  const [activeTab, setActiveTab] = useState<'customer' | 'vendor'>('customer');
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -312,9 +311,7 @@ export default function QuotationsPage() {
     return buttons;
   };
 
-  const customerQuotations = quotations.filter(q => q.status !== 'Final');
-  const vendorQuotations = quotations.filter(q => q.status === 'Final');
-  const displayed = activeTab === 'customer' ? customerQuotations : vendorQuotations;
+  const displayed = quotations;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -325,28 +322,8 @@ export default function QuotationsPage() {
           <h1 className="page-header">Quotations</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} total quotations</p>
         </div>
-        {activeTab === 'customer' && (
-          <button onClick={openCreateModal} className="btn-primary flex items-center gap-2">
-            <Plus size={16} /> New Quotation
-          </button>
-        )}
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-        <button
-          onClick={() => { setActiveTab('customer'); setPage(1); }}
-          className={`px-5 py-1.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'customer' ? 'bg-white text-violet-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-        >
-          Customer Quotations
-          <span className="ml-2 text-xs bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full">{customerQuotations.length}</span>
-        </button>
-        <button
-          onClick={() => { setActiveTab('vendor'); setPage(1); }}
-          className={`px-5 py-1.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'vendor' ? 'bg-white text-amber-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-        >
-          Vendor Quotations
-          <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{vendorQuotations.length}</span>
+        <button onClick={openCreateModal} className="btn-primary flex items-center gap-2">
+          <Plus size={16} /> New Quotation
         </button>
       </div>
 
@@ -373,11 +350,8 @@ export default function QuotationsPage() {
         {loading ? (
           <LoadingSpinner className="h-48" />
         ) : displayed.length === 0 ? (
-          <div className="text-center text-gray-400 py-16">
-            {activeTab === 'customer' ? 'No customer quotations found' : 'No vendor quotations yet — send a customer quotation to vendor first'}
-          </div>
-        ) : activeTab === 'customer' ? (
-          /* Customer Quotations Table */
+          <div className="text-center text-gray-400 py-16">No quotations found</div>
+        ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100">
@@ -414,48 +388,6 @@ export default function QuotationsPage() {
                     </td>
                     <td className="table-cell">
                       <div className="flex items-center gap-1.5 flex-wrap">{getActionButtons(q)}</div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          /* Vendor Quotations Table */
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-amber-50 border-b border-amber-100">
-                <tr>
-                  <th className="table-header">Quotation #</th>
-                  <th className="table-header">Customer</th>
-                  <th className="table-header">Ver.</th>
-                  <th className="table-header">Original Total</th>
-                  <th className="table-header">Final Amount (Vendor)</th>
-                  <th className="table-header">Sent to Vendor</th>
-                  <th className="table-header">PDF</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {displayed.map((q) => (
-                  <tr key={q._id} className="hover:bg-amber-50/20 transition-colors">
-                    <td className="table-cell font-mono font-medium text-amber-700">{q.quotationNumber}</td>
-                    <td className="table-cell font-medium">{(q.leadId as Lead)?.companyName || '—'}</td>
-                    <td className="table-cell text-center">
-                      <span className="badge text-xs bg-gray-100 text-gray-500">v{q.version}</span>
-                    </td>
-                    <td className="table-cell text-gray-500">{formatCurrency(q.total)}</td>
-                    <td className="table-cell font-bold text-amber-700 text-base">
-                      {q.finalAmount ? formatCurrency(q.finalAmount) : <span className="text-gray-400">—</span>}
-                    </td>
-                    <td className="table-cell text-gray-400">
-                      {(q as any).vendorSentAt ? formatDate((q as any).vendorSentAt) : '—'}
-                    </td>
-                    <td className="table-cell">
-                      <button title={q.pdfPath ? 'Download PDF' : 'Generate PDF'}
-                        onClick={() => handleAction('generatePDF', q._id)}
-                        className={`p-1.5 rounded-lg transition-colors ${q.pdfPath ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>
-                        {q.pdfPath ? <Download size={13} /> : <FileText size={13} />}
-                      </button>
                     </td>
                   </tr>
                 ))}
@@ -642,51 +574,9 @@ export default function QuotationsPage() {
               onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))} />
           </div>
 
-          {/* Vendor section */}
-          <div className="border border-amber-200 rounded-xl p-4 bg-amber-50 space-y-3">
-            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Send to Vendor</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label">Vendor Email</label>
-                <input type="email" className="input-field" placeholder="vendor@company.com"
-                  value={vendorForm.vendorEmail}
-                  onChange={(e) => setVendorForm(f => ({ ...f, vendorEmail: e.target.value }))} />
-              </div>
-              <div>
-                <label className="label">Final Amount (₹)</label>
-                <input type="number" className="input-field" min="0" step="0.01"
-                  value={vendorForm.finalAmount}
-                  onChange={(e) => setVendorForm(f => ({ ...f, finalAmount: Number(e.target.value) }))} />
-              </div>
-            </div>
-          </div>
-
           <div className="flex gap-3 justify-end sticky bottom-0 bg-white pt-2">
             <button type="button" onClick={() => { setShowEditModal(false); setSelectedQuotation(null); }} className="btn-secondary">
               Cancel
-            </button>
-            <button
-              type="button"
-              disabled={saving || !vendorForm.vendorEmail}
-              onClick={async () => {
-                if (!selectedQuotation) return;
-                setSaving(true);
-                try {
-                  await quotationsApi.sendToVendor(selectedQuotation._id, {
-                    vendorEmail: vendorForm.vendorEmail,
-                    finalAmount: vendorForm.finalAmount,
-                  });
-                  setShowEditModal(false);
-                  setSelectedQuotation(null);
-                  load();
-                  setToast({ message: 'Sent to vendor successfully', type: 'success' });
-                } catch (err: any) {
-                  setToast({ message: err?.response?.data?.message || 'Failed to send to vendor', type: 'error' });
-                } finally { setSaving(false); }
-              }}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium disabled:opacity-50 transition-colors"
-            >
-              <Send size={14} /> Send to Vendor
             </button>
             <button type="submit" disabled={saving} className="btn-primary">
               {saving ? 'Saving...' : 'Save Changes'}

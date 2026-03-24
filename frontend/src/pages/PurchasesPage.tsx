@@ -8,12 +8,16 @@ import { formatDate, formatCurrency } from '@/utils/formatters';
 import type { PurchaseOrder, Lead } from '@/types';
 
 export default function PurchasesPage() {
+  const [activeTab, setActiveTab] = useState<'customer' | 'vendor'>('customer');
+
+  // Customer POs
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [leads, setLeads] = useState<Lead[]>([]);
+
 
   // Create modal
   const [showCreate, setShowCreate] = useState(false);
@@ -132,11 +136,69 @@ export default function PurchasesPage() {
           <h1 className="page-header">Purchase Orders</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} total</p>
         </div>
-        <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-          <Plus size={16} /> Add PO
+        {activeTab === 'customer' && (
+          <button onClick={openCreate} className="btn-primary flex items-center gap-2">
+            <Plus size={16} /> Add PO
+          </button>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+        <button
+          onClick={() => setActiveTab('customer')}
+          className={`px-5 py-1.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'customer' ? 'bg-white text-violet-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+        >
+          Customer POs
+          <span className="ml-2 text-xs bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full">{total}</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('vendor')}
+          className={`px-5 py-1.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'vendor' ? 'bg-white text-amber-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+        >
+          Vendor POs
+          <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{orders.filter(o => o.vendorEmailSent).length}</span>
         </button>
       </div>
 
+      {activeTab === 'vendor' ? (
+        /* Vendor POs Table — POs sent to vendor */
+        <div className="glass-card !p-0 overflow-hidden">
+          {loading ? <LoadingSpinner className="h-48" /> : orders.filter(o => o.vendorEmailSent).length === 0 ? (
+            <div className="text-center text-gray-400 py-16">No vendor POs yet — send a PO to vendor first</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-amber-50 border-b border-amber-100">
+                  <tr>
+                    <th className="table-header">PO Number</th>
+                    <th className="table-header">Customer</th>
+                    <th className="table-header">Product</th>
+                    <th className="table-header">Vendor Name</th>
+                    <th className="table-header">Vendor Email</th>
+                    <th className="table-header">Amount</th>
+                    <th className="table-header">Sent On</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {orders.filter(o => o.vendorEmailSent).map((po) => (
+                    <tr key={po._id} className="hover:bg-amber-50/20 transition-colors">
+                      <td className="table-cell font-mono font-medium text-amber-700">{po.poNumber}</td>
+                      <td className="table-cell font-medium">{(po.leadId as Lead)?.companyName || '—'}</td>
+                      <td className="table-cell text-gray-500">{po.product || '—'}</td>
+                      <td className="table-cell text-gray-700">{po.vendorName || '—'}</td>
+                      <td className="table-cell text-gray-500 text-sm">{po.vendorEmail || '—'}</td>
+                      <td className="table-cell font-semibold text-amber-700">{formatCurrency(po.amount)}</td>
+                      <td className="table-cell text-gray-400">{(po as any).vendorEmailSentAt ? formatDate((po as any).vendorEmailSentAt) : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
       <div className="relative max-w-xs">
         <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
         <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search…" className="input-field pl-9" />
@@ -239,6 +301,8 @@ export default function PurchasesPage() {
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Create PO Modal */}
       <Modal isOpen={showCreate} onClose={() => setShowCreate(false)} title="Add Purchase Order" size="lg">

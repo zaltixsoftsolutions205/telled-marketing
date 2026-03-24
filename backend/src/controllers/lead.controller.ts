@@ -190,3 +190,11 @@ export const archiveLead = async (req: AuthRequest, res: Response): Promise<void
     sendSuccess(res, lead, 'Lead archived');
   } catch { sendError(res, 'Failed to archive lead', 500); }
 };
+
+export const deleteLead = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const lead = await Lead.findByIdAndDelete(req.params.id);
+    if (!lead) { sendError(res, 'Lead not found', 404); return; }
+    sendSuccess(res, null, 'Lead deleted permanently');
+  } catch { sendError(res, 'Failed to delete lead', 500); }
+};

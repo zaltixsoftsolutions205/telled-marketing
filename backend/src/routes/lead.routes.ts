@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getLeads, getLeadById, createLead, updateLead, archiveLead, importLeads } from '../controllers/lead.controller';
+import { getLeads, getLeadById, createLead, updateLead, archiveLead, deleteLead, importLeads } from '../controllers/lead.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { authorize } from '../middleware/role.middleware';
 
@@ -10,5 +10,6 @@ router.get('/:id', authorize('admin', 'sales'), getLeadById);
 router.post('/', authorize('admin', 'sales'), createLead);
 router.put('/:id', authorize('admin', 'sales'), updateLead);
 router.patch('/:id/archive', authorize('admin'), archiveLead);
+router.delete('/:id', authorize('admin', 'sales'), deleteLead);
 router.post('/import', authorize('admin', 'sales'), importLeads);
 export default router;
