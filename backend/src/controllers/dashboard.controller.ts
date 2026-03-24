@@ -78,8 +78,8 @@ export const getSalesDashboard = async (req: AuthRequest, res: Response): Promis
       Lead.find({ assignedTo: userId, isArchived: false }).lean(),
       Account.find({ assignedSales: userId }).lean(),
       Quotation.find({ createdBy: userId }).lean(),
-      PurchaseOrder.find({ createdBy: userId }).lean(),
-      PurchaseOrder.find({}).populate('createdBy', 'name').lean(),
+      PurchaseOrder.find({ uploadedBy: userId }).lean(),
+      PurchaseOrder.find({}).populate('uploadedBy', 'name').lean(),
       Lead.find({ assignedTo: userId, isArchived: false }).sort({ createdAt: -1 }).limit(5).lean(),
     ]);
 
@@ -106,8 +106,8 @@ export const getSalesDashboard = async (req: AuthRequest, res: Response): Promis
 
     const leaderMap: Record<string, { name: string; revenue: number; deals: number }> = {};
     allOrgPOs.forEach((po: any) => {
-      const uid = po.createdBy?._id?.toString() || 'unknown';
-      if (!leaderMap[uid]) leaderMap[uid] = { name: po.createdBy?.name || 'Unknown', revenue: 0, deals: 0 };
+      const uid = po.uploadedBy?._id?.toString() || 'unknown';
+      if (!leaderMap[uid]) leaderMap[uid] = { name: po.uploadedBy?.name || 'Unknown', revenue: 0, deals: 0 };
       leaderMap[uid].revenue += po.amount || 0;
       leaderMap[uid].deals += 1;
     });
