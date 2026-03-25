@@ -105,5 +105,132 @@ export const sendTicketClosureNotification = (to: string, ticketId: string, subj
 export const sendPayslip = (to: string, name: string, month: string, year: number) =>
   send(to, `Payslip for ${month} ${year}`,
     base(`<h2>Payslip Ready</h2><p>Dear ${name}, your payslip for <b>${month} ${year}</b> is ready. Login to download.</p>`, 'Monthly Payslip'));
+// backend/src/services/email.service.ts - Add these functions at the end
 
+export const sendTicketStatusUpdate = async (
+  to: string,
+  ticketId: string,
+  subject: string,
+  oldStatus: string,
+  newStatus: string,
+  engineerName: string,
+  note?: string
+) => {
+  const statusColors: Record<string, string> = {
+    'Open': '#f59e0b',
+    'In Progress': '#3b82f6',
+    'Resolved': '#10b981',
+    'Closed': '#6b7280',
+  };
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #4f2d7f; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; background: #f9f9f9; }
+        .status-badge { display: inline-block; padding: 4px 12px; border-radius: 4px; color: white; }
+        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h2>Support Ticket Status Update</h2>
+        </div>
+        <div class="content">
+          <p>Dear Customer,</p>
+          <p>Your support ticket <strong>${ticketId}</strong> has been updated by <strong>${engineerName}</strong>.</p>
+          
+          <table style="width: 100%; margin: 20px 0;">
+            <tr>
+              <td style="padding: 8px; background: #f0eaf9;"><strong>Ticket ID</strong></td>
+              <td style="padding: 8px;">${ticketId}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; background: #f0eaf9;"><strong>Subject</strong></td>
+              <td style="padding: 8px;">${subject}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; background: #f0eaf9;"><strong>Status</strong></td>
+              <td style="padding: 8px;">
+                <span style="background: ${statusColors[oldStatus]}; padding: 4px 8px; border-radius: 4px; color: white;">${oldStatus}</span>
+                →
+                <span style="background: ${statusColors[newStatus]}; padding: 4px 8px; border-radius: 4px; color: white;">${newStatus}</span>
+              </td>
+            </tr>
+            ${note ? `
+            <tr>
+              <td style="padding: 8px; background: #f0eaf9;"><strong>Engineer's Note</strong></td>
+              <td style="padding: 8px;">${note}</td>
+            </tr>
+            ` : ''}
+          </table>
+          
+          <p>You can view the full ticket details by logging into the Telled CRM portal.</p>
+        </div>
+        <div class="footer">
+          <p>This is an automated notification from Telled CRM. Please do not reply to this email.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  await send(to, `Support Ticket ${ticketId} - Status Updated to ${newStatus}`, html);
+};
+
+export const sendTicketAssignmentNotification = async (
+  to: string,
+  ticketId: string,
+  subject: string,
+  engineerName: string
+) => {
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #4f2d7f; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; background: #f9f9f9; }
+        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h2>New Support Ticket Assigned</h2>
+        </div>
+        <div class="content">
+          <p>Dear ${engineerName},</p>
+          <p>A new support ticket has been assigned to you:</p>
+          
+          <table style="width: 100%; margin: 20px 0;">
+            <tr>
+              <td style="padding: 8px; background: #f0eaf9;"><strong>Ticket ID</strong></td>
+              <td style="padding: 8px;">${ticketId}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; background: #f0eaf9;"><strong>Subject</strong></td>
+              <td style="padding: 8px;">${subject}</td>
+            </tr>
+          </table>
+          
+          <p>Please log into the Telled CRM system to view and respond to this ticket.</p>
+        </div>
+        <div class="footer">
+          <p>This is an automated notification from Telled CRM.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  await send(to, `New Support Ticket Assigned: ${ticketId}`, html);
+};
 export default send;

@@ -1,3 +1,4 @@
+// backend/src/cron/jobs.ts
 import cron from 'node-cron';
 import OEMApprovalAttempt from '../models/OEMApprovalAttempt';
 import Lead from '../models/Lead';
@@ -9,6 +10,7 @@ import sendEmail, { sendOEMExpiryReminder, sendInvoiceReminder, sendTicketClosur
 import { OEM_EXPIRY_REMINDER_DAYS, TICKET_AUTO_CLOSE_DAYS, INVOICE_DUE_REMINDER_DAYS } from '../config/constants';
 import { syncEmailsForDRF } from '../services/emailInbox.service';
 import { syncPurchaseOrderEmails } from '../services/emailInboxPurchase.service';
+import { syncSupportEmails } from '../services/emailInboxSupport.service';
 
 // Add this function before startCronJobs
 async function syncPurchaseOrderEmailsJob() {
@@ -30,6 +32,27 @@ async function syncPurchaseOrderEmailsJob() {
     }
   } catch (e) {
     logger.error('PO email sync cron error:', e);
+  }
+}
+
+async function syncSupportEmailsJob() {
+  try {
+    const result = await syncSupportEmails();
+    if (result.created.length || result.failed.length) {
+      logger.info(`Support Email sync: ${result.created.length} tickets created, ${result.failed.length} failed, ${result.errors.length} errors`);
+      
+      if (result.created.length) {
+        logger.info(`Created tickets from emails: ${result.created.join(', ')}`);
+      }
+      if (result.failed.length) {
+        logger.warn(`Failed to process emails: ${result.failed.join(', ')}`);
+      }
+      if (result.errors.length) {
+        logger.error(`Support sync errors: ${result.errors.join(', ')}`);
+      }
+    }
+  } catch (e) {
+    logger.error('Support email sync cron error:', e);
   }
 }
 
@@ -176,16 +199,24 @@ export const startCronJobs = (): void => {
     } catch (e) { logger.error('DRF email sync cron:', e); }
   });
 
-
   // Purchase order email sync — every 5 minutes
   cron.schedule('*/5 * * * *', async () => {
     await syncPurchaseOrderEmailsJob();
+  });
+
+  // Support email to ticket sync — every 5 minutes
+  cron.schedule('*/5 * * * *', async () => {
+    await syncSupportEmailsJob();
   });
 
   // Also run once on startup
   setTimeout(() => {
     syncPurchaseOrderEmailsJob().catch(e => logger.error('Initial PO sync failed:', e));
   }, 30000); // Run 30 seconds after startup
+
+  setTimeout(() => {
+    syncSupportEmailsJob().catch(e => logger.error('Initial support email sync failed:', e));
+  }, 60000); // Run 60 seconds after startup
 
   logger.info('All cron jobs started');
 };

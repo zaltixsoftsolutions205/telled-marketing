@@ -31,6 +31,8 @@ import trainingRoutes from './routes/training.routes';
 import dashboardRoutes from './routes/dashboard.routes';
 import attendanceRoutes from './routes/attendance.routes';
 import leaveRoutes from './routes/leave.routes';
+import supportEmailRoutes from './routes/supportEmail.routes';
+
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -62,6 +64,7 @@ app.use('/api/training', trainingRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/leaves', leaveRoutes);
+app.use('/api/support-email', supportEmailRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
