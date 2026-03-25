@@ -6,13 +6,13 @@ import { syncSupportEmails } from '../services/emailInboxSupport.service';
 
 export const syncSupportEmailsManually = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    // Only admin can trigger manual sync
-    if (req.user?.role !== 'admin') {
-      sendError(res, 'Only admin can trigger email sync', 403);
+    // Allow both admin AND engineer to trigger manual sync
+    if (req.user?.role !== 'admin' && req.user?.role !== 'engineer') {
+      sendError(res, 'Only admin or engineer can trigger email sync', 403);
       return;
     }
     
-    console.log('🔄 Manual support email sync triggered by:', req.user?.email);
+    console.log(`🔄 Manual support email sync triggered by: ${req.user?.email} (${req.user?.role})`);
     const result = await syncSupportEmails();
     
     sendSuccess(res, {
@@ -30,7 +30,7 @@ export const syncSupportEmailsManually = async (req: AuthRequest, res: Response)
     
   } catch (error) {
     console.error('Manual sync error:', error);
-    sendError(res, 'Failed to sync emails: ' + error.message, 500);
+    sendError(res, 'Failed to sync emails: ' + (error as Error).message, 500);
   }
 };
 
