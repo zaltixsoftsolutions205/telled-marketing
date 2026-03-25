@@ -188,8 +188,14 @@ export async function syncSupportEmails(): Promise<SupportEmailSyncResult> {
 
           console.log(`✅ Found account: ${account.accountName}`);
 
-          // Get engineer
-          const engineer = await getFirstEngineer();
+          // Get engineer — prefer account's assignedEngineer, fallback to first engineer
+          let engineer = null;
+          if (account.assignedEngineer) {
+            engineer = await User.findById(account.assignedEngineer).lean();
+          }
+          if (!engineer) {
+            engineer = await getFirstEngineer();
+          }
           if (!engineer) {
             console.log('❌ No engineer found');
             result.failed.push('No engineer available');
