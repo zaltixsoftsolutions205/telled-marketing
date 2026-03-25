@@ -368,7 +368,7 @@ export default function SupportPage() {
             </div>
           </div>
           <div className="flex gap-3 justify-end pt-4">
-            <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 border border-gray-300 rounded-lg">
+            <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 border  border-gray-300 rounded-lg">
               Cancel
             </button>
             <button type="submit" disabled={saving} className="px-4 py-2 bg-violet-600 text-white rounded-lg">
