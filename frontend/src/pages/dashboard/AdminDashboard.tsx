@@ -107,7 +107,7 @@ export default function AdminDashboard() {
         />
         <StatCard
           title="Open Tickets" value={stats.tickets?.open ?? 0}
-          sub={`${stats.tickets?.critical ?? 0} critical`}
+          sub={`${stats.tickets?.critical ?? 0} critical · ${stats.tickets?.resolved ?? 0} resolved`}
           icon={Headphones} color="text-rose-600" bg="bg-rose-50" border="border-rose-400"
         />
       </div>

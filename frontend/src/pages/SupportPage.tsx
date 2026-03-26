@@ -236,15 +236,17 @@ export default function SupportPage() {
         <div className="flex gap-3">
           {/* Sync Emails Button - Available for both Admin and Engineer */}
           {(user?.role === 'admin' || user?.role === 'engineer') && (
-            <button
-              onClick={handleManualSync}
-              disabled={syncing}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-              title="Check emails and create tickets"
-            >
-              <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
-              {syncing ? 'Syncing...' : 'Sync Emails'}
-            </button>
+            <>
+              <button
+                onClick={handleManualSync}
+                disabled={syncing}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                title="Check emails and create tickets"
+              >
+                <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
+                {syncing ? 'Syncing...' : 'Sync Emails'}
+              </button>
+            </>
           )}
           <button
             onClick={openCreate}
@@ -369,7 +371,7 @@ export default function SupportPage() {
                         <StatusBadge status={ticket.status} />
                       )}
                     </td>
-                    <td className="px-4 py-3 text-sm">{(ticket.assignedTo as User)?.name || 'Unassigned'}</td>
+                    <td className="px-4 py-3 text-sm">{(ticket.assignedEngineer as User)?.name || (ticket.assignedTo as User)?.name || 'Unassigned'}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">{formatDateTime(ticket.createdAt)}</td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">

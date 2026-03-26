@@ -368,7 +368,12 @@ export async function syncPurchaseOrderEmails(): Promise<PurchaseOrderEmailResul
   });
 
   client.on('error', (err: Error) => {
-    logger.error('ImapFlow socket error (PO sync):', err.message);
+    // Hostinger IMAP drops idle connections — harmless, next sync reconnects
+    if (err.message && (err.message.includes('socket') || err.message.includes('ECONNRESET') || err.message.includes('closed') || err.message.includes('EPIPE'))) {
+      logger.warn('IMAP connection closed by server (harmless)');
+    } else {
+      logger.error('ImapFlow PO sync error:', err.message);
+    }
   });
 
   try {

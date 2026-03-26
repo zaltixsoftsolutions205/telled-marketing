@@ -10,7 +10,7 @@ import sendEmail, { sendOEMExpiryReminder, sendInvoiceReminder, sendTicketClosur
 import { OEM_EXPIRY_REMINDER_DAYS, TICKET_AUTO_CLOSE_DAYS, INVOICE_DUE_REMINDER_DAYS } from '../config/constants';
 import { syncEmailsForDRF } from '../services/emailInbox.service';
 import { syncPurchaseOrderEmails } from '../services/emailInboxPurchase.service';
-import { syncSupportEmails } from '../services/emailInboxSupport.service';
+import { syncSupportEmails, patchUnassignedTickets } from '../services/emailInboxSupport.service';
 
 // Add this function before startCronJobs
 async function syncPurchaseOrderEmailsJob() {
@@ -51,8 +51,12 @@ async function syncSupportEmailsJob() {
         logger.error(`Support sync errors: ${result.errors.join(', ')}`);
       }
     }
-  } catch (e) {
-    logger.error('Support email sync cron error:', e);
+  } catch (e: any) {
+    if (e?.message && (e.message.includes('socket') || e.message.includes('ECONNRESET') || e.message.includes('closed'))) {
+      logger.warn('Support IMAP socket closed by server (harmless)');
+    } else {
+      logger.error('Support email sync cron error:', e);
+    }
   }
 }
 
@@ -217,6 +221,11 @@ export const startCronJobs = (): void => {
   setTimeout(() => {
     syncSupportEmailsJob().catch(e => logger.error('Initial support email sync failed:', e));
   }, 60000); // Run 60 seconds after startup
+
+  // Fix unassigned tickets on startup
+  setTimeout(() => {
+    patchUnassignedTickets().catch(e => logger.error('patchUnassignedTickets failed:', e));
+  }, 5000);
 
   logger.info('All cron jobs started');
 };

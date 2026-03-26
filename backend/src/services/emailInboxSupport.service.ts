@@ -104,6 +104,29 @@ async function findAccountByEmail(email: string): Promise<any | null> {
   return account;
 }
 
+export async function patchUnassignedTickets(): Promise<number> {
+  let patched = 0;
+  try {
+    // Get all active accounts that have an assignedEngineer
+    const accounts = await Account.find({ assignedEngineer: { $exists: true, $ne: null }, isArchived: false }).lean() as any[];
+    for (const account of accounts) {
+      // Force-update ALL tickets for this account to use account's assignedEngineer
+      const result = await SupportTicket.updateMany(
+        { accountId: account._id, isArchived: false },
+        { $set: { assignedEngineer: account.assignedEngineer } }
+      );
+      patched += result.modifiedCount;
+      if (result.modifiedCount > 0) {
+        console.log(`🔧 Updated ${result.modifiedCount} tickets for account ${account.companyName}`);
+      }
+    }
+    console.log(`✅ Patched ${patched} tickets total`);
+  } catch (err) {
+    console.error('⚠️ patchUnassignedTickets error:', err);
+  }
+  return patched;
+}
+
 async function getFirstEngineer(): Promise<any | null> {
   const engineer = await User.findOne({ role: 'engineer', isActive: true });
   if (!engineer) {
@@ -139,6 +162,17 @@ export async function syncSupportEmails(): Promise<SupportEmailSyncResult> {
     logger: false,
     tls: { rejectUnauthorized: false },
     connectionTimeout: 30000,
+    socketTimeout: 60000,
+    greetingTimeout: 15000,
+  });
+
+  client.on('error', (err: Error) => {
+    // Hostinger IMAP drops idle connections between syncs — harmless
+    if (err.message && (err.message.includes('socket') || err.message.includes('ECONNRESET') || err.message.includes('closed') || err.message.includes('EPIPE'))) {
+      // silently ignore
+    } else {
+      logger.error('ImapFlow support sync error:', err.message);
+    }
   });
 
   try {
@@ -253,10 +287,19 @@ export async function syncSupportEmails(): Promise<SupportEmailSyncResult> {
     console.log(`   Failed: ${result.failed.length}`);
     console.log(`   Errors: ${result.errors.length}`);
 
-  } catch (err) {
-    console.error('❌ IMAP connection error:', err);
-    result.errors.push(`Connection error: ${err.message}`);
+  } catch (err: any) {
+    // Suppress noisy socket errors from Hostinger IMAP dropping idle connections
+    if (err?.message && (err.message.includes('socket') || err.message.includes('ECONNRESET') || err.message.includes('closed'))) {
+      console.warn('⚠️ IMAP socket closed (harmless, connection dropped by server)');
+    } else {
+      console.error('❌ IMAP connection error:', err?.message || err);
+      result.errors.push(`Connection error: ${err?.message}`);
+    }
+    try { client.close(); } catch (_) {}
   }
+
+  // Patch ALL tickets that have no engineer — assign from account's assignedEngineer
+  await patchUnassignedTickets();
 
   return result;
 }

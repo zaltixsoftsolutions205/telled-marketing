@@ -2,7 +2,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError } from '../utils/response';
-import { syncSupportEmails } from '../services/emailInboxSupport.service';
+import { syncSupportEmails, patchUnassignedTickets } from '../services/emailInboxSupport.service';
 
 export const syncSupportEmailsManually = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -31,6 +31,15 @@ export const syncSupportEmailsManually = async (req: AuthRequest, res: Response)
   } catch (error) {
     console.error('Manual sync error:', error);
     sendError(res, 'Failed to sync emails: ' + (error as Error).message, 500);
+  }
+};
+
+export const fixUnassignedTickets = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const patched = await patchUnassignedTickets();
+    sendSuccess(res, { patched }, `Fixed ${patched} unassigned tickets`);
+  } catch (error) {
+    sendError(res, 'Failed to fix tickets', 500);
   }
 };
 
