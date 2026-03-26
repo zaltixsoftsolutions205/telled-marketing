@@ -6,6 +6,6 @@ import { authorize } from '../middleware/role.middleware';
 const router = Router();
 router.use(authenticate);
 router.get('/', getInstallations);
-router.post('/', authorize('admin'), createInstallation);
+router.post('/', authorize('admin', 'engineer'), createInstallation);
 router.put('/:id', authorize('admin', 'engineer'), updateInstallation);
 export default router;
