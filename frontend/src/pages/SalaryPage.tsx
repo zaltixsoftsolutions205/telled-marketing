@@ -53,17 +53,17 @@ export default function SalaryPage() {
 
   const openCalc = async () => {
     try {
-      const engs = await usersApi.getEngineers();
-      setEngineers(engs || []);
+      const res = await usersApi.getAll({ limit: 200, isActive: true });
+      setEngineers(res.data || []);
     } catch (err) { console.error('openCalc:', err); }
     setForm({ employeeId: '', month: now.getMonth() + 1, year: now.getFullYear(), baseSalary: '', incentives: '', deductions: '', travelAllowance: '' });
     setShowCalc(true);
   };
 
-  // Load engineers for filter
+  // Load all employees for filter
   useEffect(() => {
     if (isHR) {
-      usersApi.getEngineers().then(e => setEngineers(e || [])).catch(() => {});
+      usersApi.getAll({ limit: 200 }).then(r => setEngineers(r.data || [])).catch(() => {});
     }
   }, [isHR]);
 
@@ -130,7 +130,7 @@ export default function SalaryPage() {
             className="input-field w-auto"
           >
             <option value="">All Employees</option>
-            {engineers.map(e => <option key={e._id} value={e._id}>{e.name}</option>)}
+            {engineers.map(e => <option key={e._id} value={e._id}>{e.name} ({e.role})</option>)}
           </select>
         )}
       </div>
@@ -207,10 +207,10 @@ export default function SalaryPage() {
       <Modal isOpen={showCalc} onClose={() => setShowCalc(false)} title="Calculate Salary">
         <form onSubmit={handleCalculate} className="space-y-4">
           <div>
-            <label className="label">Employee *</label>
+            <label className="label">Employee (HR / Sales / Engineer) *</label>
             <select required className="input-field" value={form.employeeId} onChange={(e) => setForm(f => ({...f, employeeId: e.target.value}))}>
-              <option value="">Select engineer</option>
-              {engineers.map(e => <option key={e._id} value={e._id}>{e.name}</option>)}
+              <option value="">Select employee</option>
+              {engineers.map(e => <option key={e._id} value={e._id}>{e.name} ({e.role})</option>)}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-4">
