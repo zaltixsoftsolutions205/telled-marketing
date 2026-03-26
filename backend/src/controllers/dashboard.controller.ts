@@ -155,17 +155,17 @@ export const getEngineerDashboard = async (req: AuthRequest, res: Response): Pro
       myVisits, pendingVisits,
       recentInstallations, recentTickets, recentVisits,
     ] = await Promise.all([
-      Account.countDocuments({ isArchived: false }),
-      Account.countDocuments({ isArchived: false, status: 'Active' }),
-      SupportTicket.countDocuments({ assignedEngineer: userId, status: { $in: ['Open', 'In Progress'] } }),
-      SupportTicket.countDocuments({ assignedEngineer: userId, priority: 'Critical', status: { $in: ['Open', 'In Progress'] } }),
-      SupportTicket.countDocuments({ assignedEngineer: userId, status: { $in: ['Resolved', 'Closed'] } }),
+      Account.countDocuments({ isArchived: false, assignedEngineer: userId }),
+      Account.countDocuments({ isArchived: false, status: 'Active', assignedEngineer: userId }),
+      SupportTicket.countDocuments({ $or: [{ assignedEngineer: userId }, { createdBy: userId }], status: { $in: ['Open', 'In Progress'] } }),
+      SupportTicket.countDocuments({ $or: [{ assignedEngineer: userId }, { createdBy: userId }], priority: 'Critical', status: { $in: ['Open', 'In Progress'] } }),
+      SupportTicket.countDocuments({ $or: [{ assignedEngineer: userId }, { createdBy: userId }], status: { $in: ['Resolved', 'Closed'] } }),
       Installation.countDocuments({ engineerId: userId, status: 'Scheduled' }),
       Installation.countDocuments({ engineerId: userId, status: 'In Progress' }),
       EngineerVisit.countDocuments({ engineerId: userId }),
       EngineerVisit.countDocuments({ engineerId: userId, hrStatus: 'Pending' }),
       Installation.find({ engineerId: userId }).sort({ scheduledDate: -1 }).limit(5).populate('accountId', 'companyName').lean(),
-      SupportTicket.find({ assignedEngineer: userId, status: { $in: ['Open', 'In Progress'] } }).sort({ createdAt: -1 }).limit(5).populate('accountId', 'companyName').lean(),
+      SupportTicket.find({ $or: [{ assignedEngineer: userId }, { createdBy: userId }], status: { $in: ['Open', 'In Progress'] } }).sort({ createdAt: -1 }).limit(5).populate('accountId', 'companyName').lean(),
       EngineerVisit.find({ engineerId: userId }).sort({ visitDate: -1 }).limit(5).populate('accountId', 'companyName').lean(),
     ]);
 

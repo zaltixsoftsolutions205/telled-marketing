@@ -110,14 +110,12 @@ export default function EngineerVisitsPage() {
   useEffect(() => { load(); }, [load]);
 
   const openSchedule = async () => {
-    try {
-      const [accRes, engRes] = await Promise.all([
-        accountsApi.getAll({ limit: 100 }),
-        usersApi.getEngineers(),
-      ]);
-      setAccounts(accRes.data || []);
-      setEngineers(engRes || []);
-    } catch {}
+    const [accRes, engRes] = await Promise.allSettled([
+      accountsApi.getAll({ limit: 100 }),
+      usersApi.getEngineers(),
+    ]);
+    setAccounts(accRes.status === 'fulfilled' ? accRes.value.data || [] : []);
+    setEngineers(engRes.status === 'fulfilled' ? engRes.value || [] : []);
     setScheduleForm({ visitType: 'Support', scheduledDate: '', accountId: '', engineerId: user?._id || '', notes: '' });
     setShowSchedule(true);
   };

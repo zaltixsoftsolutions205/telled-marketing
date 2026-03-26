@@ -5,7 +5,7 @@ import { authorize } from '../middleware/role.middleware';
 
 const router = Router();
 router.use(authenticate);
-router.get('/', authorize('admin', 'hr_finance'), getUsers);
+router.get('/', authorize('admin', 'hr_finance', 'sales', 'engineer'), getUsers);
 router.post('/', authorize('admin'), createUser);
 router.put('/:id', authorize('admin'), updateUser);
 router.patch('/:id/toggle-status', authorize('admin'), toggleUserStatus);
