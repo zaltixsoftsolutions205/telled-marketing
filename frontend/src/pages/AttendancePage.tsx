@@ -294,44 +294,85 @@ export default function AttendancePage() {
 
       {/* Calendar View (for employee self-view) */}
       {isEmployee && (
-        <div className="card">
-          <h2 className="text-sm font-bold text-gray-700 mb-4">{MONTHS[filterMonth - 1]} {filterYear} — Attendance Calendar</h2>
-          <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-gray-400 mb-2">
-            {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <div key={d}>{d}</div>)}
-          </div>
-          <div className="grid grid-cols-7 gap-1">
-            {Array.from({ length: firstDayOfMonth }).map((_, i) => <div key={`e-${i}`} />)}
-            {Array.from({ length: daysInMonth }).map((_, i) => {
-              const day = i + 1;
-              const rec = calendarMap[day];
-              const isToday = isCurrentMonth && day === todayDate;
-              const dot = rec ? calendarDotColor[rec.status] : '';
-              return (
-                <div
-                  key={day}
-                  title={rec ? `${rec.status}${rec.checkIn ? ` · In: ${formatTime(rec.checkIn)}` : ''}${rec.checkOut ? ` · Out: ${formatTime(rec.checkOut)}` : ''}` : 'No record'}
-                  className={`relative flex flex-col items-center justify-center h-10 rounded-lg text-sm font-medium transition-colors
-                    ${isToday ? 'ring-2 ring-violet-400 bg-violet-50' : ''}
-                    ${rec ? 'cursor-default' : 'text-gray-300'}
-                    ${rec?.status === 'Present' ? 'bg-green-50 text-green-800' : ''}
-                    ${rec?.status === 'Absent' ? 'bg-red-50 text-red-700' : ''}
-                    ${rec?.status === 'Half Day' ? 'bg-amber-50 text-amber-700' : ''}
-                    ${rec?.status === 'Leave' ? 'bg-blue-50 text-blue-700' : ''}
-                    ${rec?.status === 'Holiday' ? 'bg-gray-50 text-gray-600' : ''}
-                    ${!rec ? 'text-gray-400' : ''}
-                  `}
-                >
-                  {day}
-                  {dot && <span className={`absolute bottom-1 w-1.5 h-1.5 rounded-full ${dot}`} />}
+        <div className="card !p-0 overflow-hidden">
+          {/* Calendar Header */}
+          <div className="bg-gradient-to-r from-violet-600 to-violet-500 px-6 py-4 flex items-center justify-between">
+            <div>
+              <p className="text-violet-200 text-xs font-semibold uppercase tracking-widest">{filterYear}</p>
+              <h2 className="text-white text-xl font-bold">{MONTHS[filterMonth - 1]}</h2>
+            </div>
+            {/* Summary pills */}
+            <div className="flex gap-2">
+              {[
+                { label: 'Present', count: Object.values(calendarMap).filter(r => r.status === 'Present').length, color: 'bg-green-400/30 text-green-100' },
+                { label: 'Absent', count: Object.values(calendarMap).filter(r => r.status === 'Absent').length, color: 'bg-red-400/30 text-red-100' },
+                { label: 'Leave', count: Object.values(calendarMap).filter(r => r.status === 'Leave' || r.status === 'Half Day').length, color: 'bg-blue-400/30 text-blue-100' },
+              ].map(({ label, count, color }) => (
+                <div key={label} className={`px-3 py-1 rounded-full text-xs font-semibold ${color}`}>
+                  {count} {label}
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
+
+          <div className="p-4">
+            {/* Day headers */}
+            <div className="grid grid-cols-7 mb-1">
+              {['S','M','T','W','T','F','S'].map((d, i) => (
+                <div key={i} className="text-center text-[11px] font-bold text-gray-400 py-1">{d}</div>
+              ))}
+            </div>
+
+            {/* Day cells */}
+            <div className="grid grid-cols-7 gap-y-1">
+              {Array.from({ length: firstDayOfMonth }).map((_, i) => <div key={`e-${i}`} />)}
+              {Array.from({ length: daysInMonth }).map((_, i) => {
+                const day = i + 1;
+                const rec = calendarMap[day];
+                const isToday = isCurrentMonth && day === todayDate;
+
+                const cellStyle: Record<string, string> = {
+                  Present:    'bg-green-500 text-white shadow-sm shadow-green-200',
+                  Absent:     'bg-red-500 text-white shadow-sm shadow-red-200',
+                  'Half Day': 'bg-amber-400 text-white shadow-sm shadow-amber-200',
+                  Leave:      'bg-blue-500 text-white shadow-sm shadow-blue-200',
+                  Holiday:    'bg-gray-300 text-gray-700',
+                };
+
+                return (
+                  <div key={day} className="flex items-center justify-center py-0.5">
+                    <div
+                      title={rec
+                        ? `${rec.status}${rec.checkIn ? ` · In: ${formatTime(rec.checkIn)}` : ''}${rec.checkOut ? ` · Out: ${formatTime(rec.checkOut)}` : ''}`
+                        : 'No record'}
+                      className={`
+                        w-9 h-9 flex items-center justify-center rounded-full text-sm font-semibold cursor-default transition-all
+                        ${rec ? cellStyle[rec.status] : 'text-gray-400 hover:bg-gray-100'}
+                        ${isToday && !rec ? 'ring-2 ring-violet-500 ring-offset-1 text-violet-700 font-bold' : ''}
+                        ${isToday && rec ? 'ring-2 ring-violet-400 ring-offset-1' : ''}
+                      `}
+                    >
+                      {day}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Legend */}
-          <div className="flex flex-wrap gap-3 mt-4 text-xs text-gray-500">
-            {Object.entries(calendarDotColor).map(([status, color]) => (
-              <span key={status} className="flex items-center gap-1">
-                <span className={`w-2 h-2 rounded-full ${color}`} /> {status}
+          <div className="border-t border-gray-100 px-5 py-3 flex flex-wrap gap-4 bg-gray-50/50">
+            {[
+              { label: 'Present', color: 'bg-green-500' },
+              { label: 'Absent',  color: 'bg-red-500' },
+              { label: 'Half Day',color: 'bg-amber-400' },
+              { label: 'Leave',   color: 'bg-blue-500' },
+              { label: 'Holiday', color: 'bg-gray-300' },
+              { label: 'Today',   color: 'ring-2 ring-violet-500 ring-offset-1 bg-white' },
+            ].map(({ label, color }) => (
+              <span key={label} className="flex items-center gap-1.5 text-xs text-gray-500">
+                <span className={`w-4 h-4 rounded-full inline-block ${color}`} />
+                {label}
               </span>
             ))}
           </div>
