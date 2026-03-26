@@ -54,7 +54,7 @@ export default function SalaryPage() {
   const openCalc = async () => {
     try {
       const res = await usersApi.getAll({ limit: 200, isActive: true });
-      setEngineers(res.data || []);
+      setEngineers((res.data || []).filter((u: User) => u.role !== 'admin'));
     } catch (err) { console.error('openCalc:', err); }
     setForm({ employeeId: '', month: now.getMonth() + 1, year: now.getFullYear(), baseSalary: '', incentives: '', deductions: '', travelAllowance: '' });
     setShowCalc(true);
@@ -63,7 +63,7 @@ export default function SalaryPage() {
   // Load all employees for filter
   useEffect(() => {
     if (isHR) {
-      usersApi.getAll({ limit: 200 }).then(r => setEngineers(r.data || [])).catch(() => {});
+      usersApi.getAll({ limit: 200 }).then(r => setEngineers((r.data || []).filter((u: User) => u.role !== 'admin'))).catch(() => {});
     }
   }, [isHR]);
 
