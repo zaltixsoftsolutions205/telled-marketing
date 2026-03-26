@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import EngineerVisit from '../models/EngineerVisit';
+import Salary from '../models/Salary';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams } from '../utils/helpers';
@@ -46,7 +47,24 @@ export const approveVisit = async (req: AuthRequest, res: Response): Promise<voi
       { new: true }
     ).populate('engineerId', 'name email').populate('accountId', 'companyName');
     if (!visit) { sendError(res, 'Visit not found', 404); return; }
-    sendSuccess(res, visit, 'Visit approved');
+
+    // Auto-update salary record for this engineer's month/year
+    const visitDate = visit.visitDate || visit.scheduledDate || new Date();
+    const month = visitDate.getMonth() + 1;
+    const year = visitDate.getFullYear();
+    const engineerId = (visit.engineerId as any)?._id || visit.engineerId;
+    const amount = visit.totalAmount || 0;
+
+    if (amount > 0 && engineerId) {
+      const existing = await Salary.findOne({ employeeId: engineerId, month, year });
+      if (existing && !existing.isPaid) {
+        existing.visitChargesTotal = (existing.visitChargesTotal || 0) + amount;
+        await existing.save(); // pre-save hook recalculates finalSalary
+      }
+      // If no salary record yet, it will be included when HR calculates salary for this period
+    }
+
+    sendSuccess(res, visit, 'Visit approved and salary updated');
   } catch { sendError(res, 'Failed', 500); }
 };
 

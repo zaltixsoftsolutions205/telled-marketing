@@ -47,7 +47,7 @@ export default function EngineerVisitsPage() {
   const [visits, setVisits] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [tab, setTab] = useState<Tab>('all');
+  const [tab, setTab] = useState<Tab>(user?.role === 'hr_finance' ? 'hr' : 'all');
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [loading, setLoading] = useState(true);
@@ -258,6 +258,16 @@ export default function EngineerVisitsPage() {
         </select>
       </div>
 
+      {/* HR Pending Claims Banner */}
+      {tab === 'hr' && isHR && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-center gap-2">
+          <Clock size={15} className="text-amber-600 flex-shrink-0" />
+          <p className="text-sm text-amber-800 font-medium">
+            {visits.filter(v => v.hrStatus === 'Pending').length} pending claim(s) awaiting your approval. Approved amounts are auto-added to the engineer's salary.
+          </p>
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         {loading ? (
@@ -265,7 +275,7 @@ export default function EngineerVisitsPage() {
         ) : visits.length === 0 ? (
           <div className="text-center text-gray-400 py-12">
             <CalendarCheck size={32} className="mx-auto mb-2 opacity-30" />
-            <p className="text-sm">No visits found</p>
+            <p className="text-sm">{tab === 'hr' ? 'No pending claims' : 'No visits found'}</p>
           </div>
         ) : (
           <>
@@ -289,7 +299,7 @@ export default function EngineerVisitsPage() {
                     const typeInfo = VISIT_TYPE_STYLE[vt] ?? VISIT_TYPE_STYLE.Support;
                     const TypeIcon = typeInfo.icon;
                     const canComplete = isEngineer && (visit.status === 'Scheduled' || visit.status === 'In Progress');
-                    const canApproveHR = isHR && visit.status === 'Completed' && visit.hrStatus === 'Pending';
+                    const canApproveHR = isHR && visit.hrStatus === 'Pending' && (visit.status === 'Completed' || visit.totalAmount > 0);
 
                     return (
                       <tr key={visit._id} className="hover:bg-gray-50 transition-colors text-sm">
@@ -347,17 +357,17 @@ export default function EngineerVisitsPage() {
                               <>
                                 <button
                                   onClick={() => handleApprove(visit)}
-                                  className="p-1 text-emerald-600 hover:text-emerald-800"
-                                  title="Approve"
+                                  className="px-2.5 py-1 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-700 flex items-center gap-1 font-medium"
+                                  title="Approve claim"
                                 >
-                                  <CheckCircle size={15} />
+                                  <CheckCircle size={11} /> Approve
                                 </button>
                                 <button
                                   onClick={() => { setRejectTarget(visit); setRejectReason(''); }}
-                                  className="p-1 text-red-500 hover:text-red-700"
-                                  title="Reject"
+                                  className="px-2.5 py-1 text-xs bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100 flex items-center gap-1 font-medium"
+                                  title="Reject claim"
                                 >
-                                  <XCircle size={15} />
+                                  <XCircle size={11} /> Reject
                                 </button>
                               </>
                             )}
