@@ -84,7 +84,9 @@ export default function AttendancePage() {
 
   useEffect(() => {
     if (isHR) {
-      usersApi.getEngineers().then(e => setEmployees(e || [])).catch(() => {});
+      usersApi.getAll({ limit: 200 })
+        .then(r => setEmployees((r.data || []).filter((u: User) => u.role !== 'admin')))
+        .catch(() => {});
     }
   }, [isHR]);
 
@@ -206,7 +208,7 @@ export default function AttendancePage() {
             className="input-field w-auto"
           >
             <option value="">All Employees</option>
-            {employees.map(emp => <option key={emp._id} value={emp._id}>{emp.name}</option>)}
+            {employees.map(emp => <option key={emp._id} value={emp._id}>{emp.name} ({emp.role})</option>)}
           </select>
         )}
         <select
@@ -317,7 +319,7 @@ export default function AttendancePage() {
                 onChange={(e) => setForm(f => ({ ...f, employeeId: e.target.value }))}
               >
                 <option value="">Select employee</option>
-                {employees.map(emp => <option key={emp._id} value={emp._id}>{emp.name}</option>)}
+                {employees.map(emp => <option key={emp._id} value={emp._id}>{emp.name} ({emp.role})</option>)}
               </select>
             </div>
           )}

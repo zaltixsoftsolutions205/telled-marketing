@@ -9,7 +9,8 @@ export const getAttendance = async (req: AuthRequest, res: Response): Promise<vo
     const { page, limit, skip } = getPaginationParams(req);
     const filter: Record<string, any> = {};
 
-    if (req.user!.role === 'engineer') {
+    const role = req.user!.role;
+    if (role === 'engineer' || role === 'sales') {
       filter.employeeId = req.user!.id;
     } else if (req.query.employeeId) {
       filter.employeeId = req.query.employeeId;
@@ -108,7 +109,8 @@ export const getAttendanceSummary = async (req: AuthRequest, res: Response): Pro
     const end = new Date(y, m, 0, 23, 59, 59);
 
     const filter: Record<string, any> = { date: { $gte: start, $lte: end } };
-    if (req.user!.role === 'engineer') {
+    const role = req.user!.role;
+    if (role === 'engineer' || role === 'sales') {
       filter.employeeId = req.user!.id;
     } else if (employeeId) {
       filter.employeeId = employeeId;
