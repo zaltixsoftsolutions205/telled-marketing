@@ -11,13 +11,15 @@ export const getVisits = async (req: AuthRequest, res: Response): Promise<void> 
     const filter: Record<string, unknown> = { isArchived: false };
     if (req.query.engineerId) filter.engineerId = req.query.engineerId;
     if (req.query.hrStatus) filter.hrStatus = req.query.hrStatus;
+    if (req.query.status) filter.status = req.query.status;
+    if (req.query.visitType) filter.visitType = req.query.visitType;
     if (req.user!.role === 'engineer') filter.engineerId = req.user!.id;
     if (req.query.month && req.query.year) {
       const m = parseInt(req.query.month as string), y = parseInt(req.query.year as string);
       filter.visitDate = { $gte: new Date(y, m - 1, 1), $lte: new Date(y, m, 0) };
     }
     const [visits, total] = await Promise.all([
-      EngineerVisit.find(filter).populate('engineerId', 'name email').populate('accountId', 'companyName').sort({ visitDate: -1 }).skip(skip).limit(limit),
+      EngineerVisit.find(filter).populate('engineerId', 'name email').populate('accountId', 'companyName').sort({ scheduledDate: -1, visitDate: -1 }).skip(skip).limit(limit),
       EngineerVisit.countDocuments(filter),
     ]);
     sendPaginated(res, visits, total, page, limit);
