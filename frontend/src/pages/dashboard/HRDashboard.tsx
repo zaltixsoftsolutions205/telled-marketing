@@ -83,7 +83,7 @@ export default function HRDashboard() {
           icon={TrendingUp} color="text-emerald-700" bg="bg-emerald-50" border="border-emerald-400"
         />
         <StatCard
-          title="Pending Invoices" value={stats.invoices?.unpaid ?? 0 + stats.invoices?.overdue ?? 0}
+          title="Pending Invoices" value={(stats.invoices?.unpaid ?? 0) + (stats.invoices?.overdue ?? 0)}
           sub={`${stats.invoices?.overdue ?? 0} overdue · ${stats.invoices?.partialPaid ?? 0} partial`}
           icon={Receipt} color="text-red-600" bg="bg-red-50" border="border-red-400"
         />
@@ -94,7 +94,7 @@ export default function HRDashboard() {
         />
         <StatCard
           title="Salary Pending" value={stats.salaries?.pending ?? 0}
-          sub={`${stats.salaries?.paid ?? 0} paid · ₹${(stats.salaries?.totalPaid ?? 0 / 1000).toFixed(0)}k disbursed`}
+          sub={`${stats.salaries?.paid ?? 0} paid · ₹${((stats.salaries?.totalPaid ?? 0) / 1000).toFixed(0)}k disbursed`}
           icon={DollarSign} color="text-violet-700" bg="bg-violet-50" border="border-violet-400"
         />
       </div>
@@ -112,34 +112,41 @@ export default function HRDashboard() {
               View all <ArrowRight size={13} />
             </Link>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[420px]">
-              <thead className="bg-gray-50/60">
-                <tr>
-                  <th className="table-header">Invoice</th>
-                  <th className="table-header">Account</th>
-                  <th className="table-header">Amount</th>
-                  <th className="table-header">Due</th>
-                  <th className="table-header">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {stats.allInvoices?.map((inv: any) => (
-                  <tr key={inv._id} className="hover:bg-emerald-50/20 transition-colors">
-                    <td className="table-cell font-semibold text-gray-900 text-xs">{inv.invoiceNumber}</td>
-                    <td className="table-cell text-gray-500 text-xs truncate max-w-[90px]">{inv.accountId?.accountName}</td>
-                    <td className="table-cell font-bold text-gray-900 text-xs tabular-nums">{formatCurrency(inv.amount)}</td>
-                    <td className="table-cell text-gray-400 text-xs">{formatDate(inv.dueDate)}</td>
-                    <td className="table-cell">
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${invoiceStatusStyle[inv.status] ?? ''}`}>
-                        {inv.status}
-                      </span>
-                    </td>
+          {!stats.allInvoices?.length ? (
+            <div className="px-6 py-10 text-center">
+              <CheckCircle2 size={30} className="mx-auto text-gray-300 mb-2" />
+              <p className="text-sm text-gray-400">No invoices yet</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[420px]">
+                <thead className="bg-gray-50/60">
+                  <tr>
+                    <th className="table-header">Invoice</th>
+                    <th className="table-header">Account</th>
+                    <th className="table-header">Amount</th>
+                    <th className="table-header">Due</th>
+                    <th className="table-header">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {stats.allInvoices?.map((inv: any) => (
+                    <tr key={inv._id} className="hover:bg-emerald-50/20 transition-colors">
+                      <td className="table-cell font-semibold text-gray-900 text-xs">{inv.invoiceNumber}</td>
+                      <td className="table-cell text-gray-500 text-xs truncate max-w-[90px]">{inv.accountId?.companyName || inv.accountId?.accountName}</td>
+                      <td className="table-cell font-bold text-gray-900 text-xs tabular-nums">{formatCurrency(inv.amount)}</td>
+                      <td className="table-cell text-gray-400 text-xs">{formatDate(inv.dueDate)}</td>
+                      <td className="table-cell">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${invoiceStatusStyle[inv.status] ?? ''}`}>
+                          {inv.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Pending Visit Approvals */}
@@ -165,7 +172,7 @@ export default function HRDashboard() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-gray-900 text-sm">{visit.engineerId?.name}</p>
-                      <p className="text-xs text-gray-400 mt-0.5 truncate">{visit.purpose} · {visit.accountId?.accountName ?? 'No account'}</p>
+                      <p className="text-xs text-gray-400 mt-0.5 truncate">{visit.purpose} · {visit.accountId?.companyName || visit.accountId?.accountName || 'No account'}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="font-extrabold text-gray-900 text-sm tabular-nums">{formatCurrency(visit.totalAmount)}</p>
