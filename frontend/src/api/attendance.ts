@@ -16,4 +16,16 @@ export const attendanceApi = {
     const { data } = await api.get('/attendance/summary', { params });
     return data.data;
   },
+  getTodayStatus: async () => {
+    const { data } = await api.get('/attendance/today');
+    return data.data;
+  },
+  checkIn: async () => {
+    const { data } = await api.post('/attendance/checkin');
+    return data.data;
+  },
+  checkOut: async () => {
+    const { data } = await api.post('/attendance/checkout');
+    return data.data;
+  },
 };

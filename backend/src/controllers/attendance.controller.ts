@@ -99,6 +99,49 @@ export const updateAttendance = async (req: AuthRequest, res: Response): Promise
   }
 };
 
+export const checkIn = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const employeeId = req.user!.id;
+    const now = new Date();
+    const today = new Date(now); today.setHours(0, 0, 0, 0);
+
+    const existing = await Attendance.findOne({ employeeId, date: today });
+    if (existing?.checkIn) { sendError(res, 'Already checked in today', 400); return; }
+
+    const record = await Attendance.findOneAndUpdate(
+      { employeeId, date: today },
+      { $set: { employeeId, date: today, checkIn: now, status: 'Present', markedBy: employeeId } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).populate('employeeId', 'name email');
+    sendSuccess(res, record, 'Checked in successfully');
+  } catch { sendError(res, 'Failed to check in', 500); }
+};
+
+export const checkOut = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const employeeId = req.user!.id;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+
+    const record = await Attendance.findOne({ employeeId, date: today });
+    if (!record) { sendError(res, 'No check-in found for today', 400); return; }
+    if (record.checkOut) { sendError(res, 'Already checked out today', 400); return; }
+
+    record.checkOut = new Date();
+    await record.save();
+    await record.populate('employeeId', 'name email');
+    sendSuccess(res, record, 'Checked out successfully');
+  } catch { sendError(res, 'Failed to check out', 500); }
+};
+
+export const getTodayStatus = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const employeeId = req.user!.id;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const record = await Attendance.findOne({ employeeId, date: today });
+    sendSuccess(res, record || null, 'Today status fetched');
+  } catch { sendError(res, 'Failed', 500); }
+};
+
 export const getAttendanceSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { employeeId, month, year } = req.query;
