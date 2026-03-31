@@ -23,7 +23,6 @@ const salesNav = [
   { to: '/drfs',        label: 'DRF Management',  icon: FileBadge },
   { to: '/quotations',  label: 'Quotations',       icon: FileText },
   { to: '/purchases',   label: 'Purchase Orders',  icon: ShoppingCart },
-  { to: '/support',     label: 'Support',          icon: Headphones },
   { to: '/accounts',    label: 'Accounts',         icon: Building2 },
 ];
 

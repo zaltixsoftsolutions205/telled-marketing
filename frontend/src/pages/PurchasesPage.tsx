@@ -410,7 +410,7 @@ export default function PurchasesPage() {
                           {po.vendorEmailSent ? (
                             <span className="badge text-xs bg-emerald-100 text-emerald-700">Sent to Vendor</span>
                           ) : (
-                            <span className="badge text-xs bg-gray-100 text-gray-500">Pending</span>
+                            <span className="badge text-xs bg-blue-100 text-blue-600">Received</span>
                           )}
                         </td>
                         <td className="table-cell">
