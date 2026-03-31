@@ -45,34 +45,53 @@ export const sendDRFEmail = async (
     contactName: string;
     oemName: string;
     salesName: string;
-  },
-  pdfPath: string
+    salesEmail?: string;
+    salesPhone?: string;
+    address?: string;
+    website?: string;
+    annualTurnover?: string;
+    designation?: string;
+    contactNo?: string;
+    email?: string;
+    channelPartner?: string;
+    interestedModules?: string;
+    expectedClosure?: string;
+  }
 ) => {
-  const html = base(`
-    <h2 style="color:#4f2d7f">Dealer Registration Form — ${data.drfNumber}</h2>
-    <p>Dear <b>${data.contactName}</b>,</p>
-    <p>
-      Your lead <b>${data.companyName}</b> has been <span style="color:#16a34a;font-weight:bold">Qualified</span>
-      and a Dealer Registration Form (DRF) has been automatically raised on your behalf.
-    </p>
-    <table>
-      <tr><td style="background:#f0eaf9;font-weight:bold">DRF Number</td><td>${data.drfNumber}</td></tr>
-      <tr><td style="background:#f0eaf9;font-weight:bold">Version</td><td>v${data.version}</td></tr>
-      <tr><td style="background:#f0eaf9;font-weight:bold">Company</td><td>${data.companyName}</td></tr>
-      <tr><td style="background:#f0eaf9;font-weight:bold">OEM / Brand</td><td>${data.oemName || '—'}</td></tr>
-      <tr><td style="background:#f0eaf9;font-weight:bold">Sales Executive</td><td>${data.salesName}</td></tr>
-      <tr><td style="background:#f0eaf9;font-weight:bold">Status</td><td><span style="color:#d97706;font-weight:bold">Pending Review</span></td></tr>
-    </table>
-    <p style="margin-top:16px">
-      Please find the DRF document attached. The form is now under review by the admin team.
-      You will be notified once it is <b>Approved</b> or <b>Rejected</b>.
-    </p>
-    <p style="color:#888;font-size:12px">This is an auto-generated email from Telled CRM.</p>
-  `, `DRF Raised — ${data.companyName}`);
+  const row = (label: string, value: string) =>
+    `<tr>
+      <td style="padding:8px 12px;border:1px solid #ddd;background:#f5f3ff;font-weight:bold;width:45%;vertical-align:top">${label}</td>
+      <td style="padding:8px 12px;border:1px solid #ddd;vertical-align:top">${value || '—'}</td>
+    </tr>`;
 
-  await send(to, `DRF ${data.drfNumber} — ${data.companyName} (Qualified)`, html, [
-    { filename: `DRF-${data.drfNumber}.pdf`, path: pdfPath },
-  ]);
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:20px">
+      <p>Dear Sir,</p>
+      <p>Please find the below account for DRF approval.</p>
+
+      <table style="border-collapse:collapse;width:100%;margin:16px 0">
+        ${row('Account Name & Group Name', data.companyName)}
+        ${row('Address & Location', data.address || '')}
+        ${row('Web site', data.website || '')}
+        ${row('Annual Turnover', data.annualTurnover || '')}
+        ${row('Contact Person', data.contactName ? `Mr./Ms. ${data.contactName}` : '')}
+        ${row('Designation', data.designation || '')}
+        ${row('Contact No.', data.contactNo || '')}
+        ${row('E-mail', data.email || '')}
+        ${row('Partner Sales Rep', data.salesName)}
+        ${row('Channel Partner', data.channelPartner || 'Telled Marketing')}
+        ${row('Potential / Interested Modules', data.interestedModules || data.oemName || '')}
+        ${row('Expected Closure', data.expectedClosure || '')}
+      </table>
+
+      <p>Regards,</p>
+      <p style="margin:0"><strong>${data.salesName}</strong></p>
+      ${data.salesPhone ? `<p style="margin:4px 0">P: ${data.salesPhone}</p>` : ''}
+      ${data.salesEmail ? `<p style="margin:4px 0">E: ${data.salesEmail}</p>` : ''}
+    </div>
+  `;
+
+  await send(to, `Requesting for the approval of DRF - ${data.companyName}`, html);
 };
 
 export const sendOEMApprovalRequest = (to: string, company: string, oem: string, attempt: number, drfNumber: string) =>

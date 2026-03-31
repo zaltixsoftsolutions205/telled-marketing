@@ -25,6 +25,10 @@ export const drfApi = {
     const { data } = await api.patch(`/oem/${id}/reject`, { reason: body.rejectionReason });
     return data.data;
   },
+  resetToPending: async (id: string) => {
+    const { data } = await api.patch(`/oem/${id}/reset`);
+    return data.data;
+  },
   extend: async (id: string, body: { newExpiry: string; reason: string }) => {
     const { data } = await api.patch(`/oem/${id}/extend`, body);
     return data.data;
@@ -36,6 +40,9 @@ export const drfApi = {
   getAnalytics: async () => {
     const { data } = await api.get('/oem/analytics');
     return data.data;
+  },
+  delete: async (id: string) => {
+    await api.delete(`/oem/${id}`);
   },
   syncEmails: async () => {
     const { data } = await api.post('/oem/sync-emails');

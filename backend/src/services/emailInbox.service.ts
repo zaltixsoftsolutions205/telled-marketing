@@ -3,21 +3,10 @@ import OEMApprovalAttempt from '../models/OEMApprovalAttempt';
 import Lead from '../models/Lead';
 import logger from '../utils/logger';
 
-
-const IMAP_USER = process.env.SMTP_USER || '';
-const IMAP_PASS = process.env.SMTP_PASS || '';
-
-const APPROVE_KEYWORDS = [
-  'approved', 'approval', 'approve', 'accepted', 'accept',
-  'confirmed', 'confirm', 'granted', 'authorized', 'authorised',
-  'proceed', 'go ahead', 'cleared', 'sanctioned',
-];
-
-const REJECT_KEYWORDS = [
-  'rejected', 'reject', 'declined', 'decline', 'denied', 'deny',
-  'not approved', 'not accepted', 'refused', 'refuse',
-  'cannot approve', 'unable to approve', 'regret',
-];
+const IMAP_USER = process.env.SUPPORT_EMAIL_USER || process.env.SMTP_USER || '';
+const IMAP_PASS = process.env.SUPPORT_EMAIL_PASS || process.env.SMTP_PASS || '';
+const IMAP_HOST = process.env.SUPPORT_EMAIL_HOST || 'imap.hostinger.com';
+const IMAP_PORT = Number(process.env.SUPPORT_EMAIL_PORT || 993);
 
 export interface EmailSyncResult {
   scanned: number;
@@ -28,87 +17,86 @@ export interface EmailSyncResult {
   errors: string[];
 }
 
+/** Detect Approved / Rejected from fresh reply text only */
 function detectDecision(text: string): 'Approved' | 'Rejected' | null {
   const lower = text.toLowerCase();
-  for (const kw of REJECT_KEYWORDS) {
-    if (lower.includes(kw)) return 'Rejected';
-  }
-  for (const kw of APPROVE_KEYWORDS) {
-    if (lower.includes(kw)) return 'Approved';
-  }
+  const hasApproved = /\bapproved\b/.test(lower);
+  const hasRejected = /\brejected\b/.test(lower);
+  if (hasApproved && hasRejected) return null; // ambiguous
+  if (hasApproved) return 'Approved';
+  if (hasRejected) return 'Rejected';
   return null;
 }
 
-function extractDRFNumbers(text: string): string[] {
-  const found = new Set<string>();
-  // Matches: DRF-20260318-2294 | DRF-20260318-001 | DRF 20260318 2294 | DRF/20260318/001
-  const re = /DRF[-\/\s]?(\d{8})[-\/\s]?(\d{3,})/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    found.add(`DRF-${m[1]}-${m[2]}`);
-  }
-  return [...found];
+/**
+ * Extract expiry date from text like "Valid till 10-05-2026" or "valid till 10/05/2026"
+ * Returns ISO date string or null.
+ */
+function extractExpiryDate(text: string): Date | null {
+  // Pattern: valid till / valid until / validity / expiry + date
+  const m = text.match(/valid\s+(?:till|until|upto|up to|through)[:\s]+(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i);
+  if (!m) return null;
+  const parts = m[1].split(/[-\/\.]/);
+  if (parts.length !== 3) return null;
+  let day = parseInt(parts[0], 10);
+  let month = parseInt(parts[1], 10);
+  let year = parseInt(parts[2], 10);
+  if (year < 100) year += 2000;
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return isNaN(d.getTime()) ? null : d;
 }
 
+/**
+ * Extract company name from DRF email subject.
+ * Subject format: "RE: Requesting for the approval of DRF - {companyName}"
+ * or "FW: Requesting for the approval of DRF - {companyName}"
+ */
+function extractCompanyFromSubject(subject: string): string | null {
+  const m = subject.match(/(?:RE|FW|FWD)?:?\s*Requesting for the approval of DRF\s*[-–]\s*(.+)/i);
+  return m ? m[1].trim() : null;
+}
+
+/** Convert raw email buffer to plain text */
 function rawEmailToText(source: Buffer): string {
   let text = source.toString('utf8');
-  // strip quoted-printable soft line breaks
   text = text.replace(/=\r?\n/g, '');
-  // decode common QP chars
   text = text.replace(/=[0-9A-Fa-f]{2}/g, ' ');
-  // strip HTML tags
   text = text.replace(/<[^>]+>/g, ' ');
-  // collapse whitespace
   text = text.replace(/\s+/g, ' ');
   return text;
 }
 
-/**
- * Strip quoted reply content so we only analyse what the replier actually wrote.
- * Removes: lines starting with ">", "On ... wrote:" blocks, forwarded headers.
- */
+/** Strip quoted/forwarded content — only analyse what the replier wrote */
 function stripQuotedContent(text: string): string {
-  // Split into lines and drop everything from the first quoted line onward
   const lines = text.split(/\r?\n/);
   const freshLines: string[] = [];
   for (const line of lines) {
     const trimmed = line.trim();
-    // Gmail/Outlook "On <date> ... wrote:" separator
     if (/^On .{5,100} wrote:/i.test(trimmed)) break;
-    // Standard quote prefix
     if (trimmed.startsWith('>')) break;
-    // Forwarded message header
     if (/^-{3,}\s*(Forwarded|Original)/i.test(trimmed)) break;
-    // "From:" line in forwarded blocks
     if (/^From:\s+/i.test(trimmed) && freshLines.length > 2) break;
     freshLines.push(line);
   }
   return freshLines.join(' ');
 }
 
-async function findAttemptByDRFNumber(drfNumber: string): Promise<{ type: 'oem'; doc: any } | { type: 'lead'; doc: any } | null> {
-  // 1. Try OEMApprovalAttempt (3-digit attempt number style)
-  const parts = drfNumber.split('-');
-  if (parts.length === 3) {
-    const datePart   = parts[1];
-    const attemptNum = parseInt(parts[2], 10);
-    const y  = parseInt(datePart.slice(0, 4), 10);
-    const mo = parseInt(datePart.slice(4, 6), 10) - 1;
-    const d  = parseInt(datePart.slice(6, 8), 10);
-    const dayStartExt = new Date(Date.UTC(y, mo, d, 0, 0, 0) - 24 * 60 * 60 * 1000);
-    const dayEndExt   = new Date(Date.UTC(y, mo, d, 23, 59, 59, 999) + 24 * 60 * 60 * 1000);
-    const oem = await OEMApprovalAttempt.findOne({
-      attemptNumber: attemptNum,
-      sentDate: { $gte: dayStartExt, $lte: dayEndExt },
-      status: 'Pending',
-    });
-    if (oem) return { type: 'oem', doc: oem };
+/**
+ * Find a pending OEM attempt by company name (case-insensitive, partial match).
+ * Used when OEM reply subject contains company name but no DRF number.
+ */
+async function findAttemptByCompanyName(companyName: string): Promise<any | null> {
+  // Find lead with matching companyName that has a pending OEM attempt
+  const leads = await Lead.find({
+    companyName: { $regex: companyName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' },
+    isArchived: false,
+  }).select('_id companyName');
+
+  for (const lead of leads) {
+    const attempt = await OEMApprovalAttempt.findOne({ leadId: lead._id, status: 'Pending' })
+      .sort({ sentDate: -1 });
+    if (attempt) return { attempt, lead };
   }
-
-  // 2. Try Lead with matching drfNumber field (4-digit random style)
-  const lead = await Lead.findOne({ drfNumber, isArchived: false });
-  if (lead) return { type: 'lead', doc: lead };
-
   return null;
 }
 
@@ -119,13 +107,13 @@ export async function syncEmailsForDRF(): Promise<EmailSyncResult> {
   };
 
   if (!IMAP_USER || !IMAP_PASS) {
-    result.errors.push('IMAP credentials not configured (SMTP_USER / SMTP_PASS)');
+    result.errors.push('IMAP credentials not configured (SUPPORT_EMAIL_USER / SUPPORT_EMAIL_PASS)');
     return result;
   }
 
   const client = new ImapFlow({
-    host: 'imap.gmail.com',
-    port: 993,
+    host: IMAP_HOST,
+    port: IMAP_PORT,
     secure: true,
     auth: { user: IMAP_USER, pass: IMAP_PASS },
     logger: false,
@@ -135,7 +123,6 @@ export async function syncEmailsForDRF(): Promise<EmailSyncResult> {
     socketTimeout: 30000,
   });
 
-  // Prevent unhandled 'error' event from crashing the Node process
   client.on('error', (err: Error) => {
     logger.error('ImapFlow socket error:', err.message);
   });
@@ -149,13 +136,8 @@ export async function syncEmailsForDRF(): Promise<EmailSyncResult> {
 
   const lock = await client.getMailboxLock('INBOX');
   try {
-    // ── 1. Search ALL messages in last 60 days (read or unread) ─────────────
-    // We don't filter by seen:false because the user may have already read the
-    // email in Gmail. Duplicate processing is safe — findAttemptByDRFNumber
-    // only matches Pending DRFs, so already-approved/rejected ones are skipped.
     const since = new Date();
     since.setDate(since.getDate() - 60);
-
     const uids: number[] = await (client as any).search({ since }, { uid: true });
 
     if (!uids || uids.length === 0) {
@@ -165,78 +147,69 @@ export async function syncEmailsForDRF(): Promise<EmailSyncResult> {
       return result;
     }
 
-    logger.info(`Email sync: found ${uids.length} unread messages`);
+    logger.info(`Email sync: found ${uids.length} messages`);
 
-    // ── 2. Fetch each message ────────────────────────────────────────────────
     for await (const msg of client.fetch(uids, { envelope: true, source: true }, { uid: true })) {
       result.scanned++;
       try {
         const subject  = msg.envelope?.subject || '';
-        const fromAddr = msg.envelope?.from?.[0]?.address || 'unknown';
+        const fromAddr = (msg.envelope?.from?.[0]?.address || 'unknown').toLowerCase();
+
+        // Skip bounces and system emails
+        const isSystemSender = /mailer-daemon|postmaster|no-reply|noreply|bounce|delivery|mail-daemon|notification@|alerts@/i.test(fromAddr);
+        const isBounceSubject = /undelivered|delivery.*(failed|failure|status|notification)|bounce|mail delivery|returned mail|failure notice/i.test(subject);
+        if (isSystemSender || isBounceSubject) continue;
+
+        // Only process replies to OUR DRF emails
+        const isDRFReply = /requesting for the approval of DRF/i.test(subject);
+        if (!isDRFReply) continue;
+
         const rawText  = rawEmailToText(msg.source || Buffer.alloc(0));
-        const fullText = subject + ' ' + rawText;
+        const freshText = subject + ' ' + stripQuotedContent(rawText);
+        const decision  = detectDecision(freshText);
 
-        // Extract DRF numbers from full email (incl. quoted parts — number may be in thread)
-        const drfNumbers = extractDRFNumbers(fullText);
-
-        if (!drfNumbers.length) {
-          // No DRF number — skip silently (don't pollute skipped list)
+        if (!decision) {
+          result.skipped.push(`"${subject.slice(0, 60)}" — no approval/rejection keyword found`);
           continue;
         }
 
-        // Detect decision ONLY from the fresh reply, not quoted original content
-        const freshText = subject + ' ' + stripQuotedContent(rawText);
-        const decision = detectDecision(freshText);
-
-        for (const drfNumber of drfNumbers) {
-          if (!decision) {
-            result.skipped.push(`${drfNumber} — found in email from ${fromAddr} but no approval/rejection keyword`);
-            continue;
-          }
-
-          const found = await findAttemptByDRFNumber(drfNumber);
-          if (!found) {
-            result.skipped.push(`${drfNumber} — DRF not found in DB`);
-            continue;
-          }
-
-          if (found.type === 'oem') {
-            const attempt = found.doc;
-            if (decision === 'Approved') {
-              attempt.status       = 'Approved';
-              attempt.approvedDate = new Date();
-              attempt.approvedBy   = `Auto (${fromAddr})`;
-              await attempt.save();
-              await Lead.findByIdAndUpdate(attempt.leadId, { stage: 'OEM Approved' });
-              result.approved.push(drfNumber);
-              logger.info(`DRF ${drfNumber} (OEM attempt) auto-approved via email from ${fromAddr}`);
-            } else {
-              attempt.status          = 'Rejected';
-              attempt.rejectedDate    = new Date();
-              attempt.rejectionReason = `Auto (${fromAddr}): "${subject.slice(0, 120)}"`;
-              await attempt.save();
-              await Lead.findByIdAndUpdate(attempt.leadId, { stage: 'OEM Rejected' });
-              result.rejected.push(drfNumber);
-              logger.info(`DRF ${drfNumber} (OEM attempt) auto-rejected via email from ${fromAddr}`);
-            }
-          } else {
-            // Lead-based DRF
-            const lead = found.doc;
-            if (decision === 'Approved') {
-              await Lead.findByIdAndUpdate(lead._id, { stage: 'OEM Approved' });
-              result.approved.push(drfNumber);
-              logger.info(`DRF ${drfNumber} (Lead) auto-approved via email from ${fromAddr}`);
-            } else {
-              await Lead.findByIdAndUpdate(lead._id, { stage: 'OEM Rejected' });
-              result.rejected.push(drfNumber);
-              logger.info(`DRF ${drfNumber} (Lead) auto-rejected via email from ${fromAddr}`);
-            }
-          }
-          result.processed++;
+        // Extract company name from subject
+        const companyName = extractCompanyFromSubject(subject);
+        if (!companyName) {
+          result.skipped.push(`"${subject.slice(0, 60)}" — could not extract company name`);
+          continue;
         }
 
-        // No need to mark as read — duplicate scans are safe because
-        // findAttemptByDRFNumber only matches Pending DRFs.
+        const found = await findAttemptByCompanyName(companyName);
+        if (!found) {
+          result.skipped.push(`"${companyName}" — no pending DRF found in DB`);
+          continue;
+        }
+
+        const { attempt, lead } = found;
+        const label = `${lead.companyName} (${attempt.drfNumber || attempt._id})`;
+
+        if (decision === 'Approved') {
+          // Extract expiry date from email body if present
+          const expiryDate = extractExpiryDate(freshText) || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+          attempt.status       = 'Approved';
+          attempt.approvedDate = new Date();
+          attempt.approvedBy   = `Auto (${fromAddr})`;
+          attempt.expiryDate   = expiryDate;
+          await attempt.save();
+          await Lead.findByIdAndUpdate(lead._id, { stage: 'OEM Approved' });
+          result.approved.push(label);
+          logger.info(`DRF auto-approved for "${lead.companyName}" via email from ${fromAddr}, expiry: ${expiryDate.toISOString()}`);
+        } else {
+          attempt.status          = 'Rejected';
+          attempt.rejectedDate    = new Date();
+          attempt.rejectionReason = `Auto (${fromAddr}): "${subject.slice(0, 120)}"`;
+          await attempt.save();
+          await Lead.findByIdAndUpdate(lead._id, { stage: 'OEM Rejected' });
+          result.rejected.push(label);
+          logger.info(`DRF auto-rejected for "${lead.companyName}" via email from ${fromAddr}`);
+        }
+        result.processed++;
 
       } catch (msgErr) {
         result.errors.push(`uid ${msg.uid}: ${(msgErr as Error).message}`);
@@ -250,7 +223,7 @@ export async function syncEmailsForDRF(): Promise<EmailSyncResult> {
     lock.release();
   }
 
-  try { await client.logout(); } catch { /* ignore logout errors */ }
+  try { await client.logout(); } catch { /* ignore */ }
 
   return result;
 }

@@ -5,10 +5,11 @@ import { quotationsApi } from '@/api/quotations';
 import { usersApi } from '@/api/users';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { formatDate, formatCurrency } from '@/utils/formatters';
 import { useAuthStore } from '@/store/authStore';
 import {
-  FileBadge, CheckCircle2, XCircle, Clock, AlertTriangle, Filter, UserCheck, FileText, Plus, Trash2, Mail, RefreshCw,
+  FileBadge, CheckCircle2, XCircle, Clock, AlertTriangle, Filter, UserCheck, FileText, Plus, Trash2, Mail, RefreshCw, RotateCcw,
 } from 'lucide-react';
 import type { User } from '@/types';
 
@@ -70,11 +71,43 @@ export default function DRFPage() {
   const [page, setPage]                 = useState(1);
   const [activeFilterTitle, setActiveFilterTitle] = useState<string>('');
 
+  // Quick approve/reject/reset state (admin only)
+  const [quickAction, setQuickAction] = useState<{ drf: any; type: 'approve' | 'reject' | 'reset' } | null>(null);
+  const [quickReason, setQuickReason] = useState('');
+  const [quickSaving, setQuickSaving] = useState(false);
+  const [quickError, setQuickError] = useState('');
+
+  const handleQuickAction = async () => {
+    if (!quickAction) return;
+    setQuickSaving(true); setQuickError('');
+    try {
+      if (quickAction.type === 'approve') {
+        await drfApi.approve(quickAction.drf._id, { expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] });
+      } else if (quickAction.type === 'reject') {
+        if (!quickReason.trim()) { setQuickError('Reason is required'); setQuickSaving(false); return; }
+        await drfApi.reject(quickAction.drf._id, { rejectionReason: quickReason });
+      } else {
+        await drfApi.resetToPending(quickAction.drf._id);
+      }
+      setQuickAction(null); setQuickReason('');
+      load();
+    } catch { setQuickError('Action failed'); } finally { setQuickSaving(false); }
+  };
+
   // Reassignment state (admin only)
   const [reassignTarget, setReassignTarget] = useState<any>(null);
   const [newOwnerId, setNewOwnerId]         = useState('');
   const [reassigning, setReassigning]       = useState(false);
   const [reassignError, setReassignError]   = useState('');
+
+  // Delete state (admin only)
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const handleDeleteDRF = async () => {
+    if (!deleteTarget) return;
+    await drfApi.delete(deleteTarget);
+    setDeleteTarget(null);
+    load();
+  };
 
   // Email sync state
   const [syncing, setSyncing] = useState(false);
@@ -227,15 +260,17 @@ export default function DRFPage() {
           <p className="text-sm text-gray-500">Document Request Forms — {total} records</p>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={handleSyncEmails}
-            disabled={syncing}
-            className="inline-flex items-center gap-2 px-3 py-2 text-sm border border-violet-200 text-violet-700 bg-violet-50 rounded-lg hover:bg-violet-100 disabled:opacity-60 transition-colors"
-            title="Read inbox emails and auto-update DRF statuses"
-          >
-            {syncing ? <RefreshCw size={14} className="animate-spin" /> : <Mail size={14} />}
-            {syncing ? 'Syncing…' : 'Sync Emails'}
-          </button>
+          {isSales && !isAdmin && (
+            <button
+              onClick={handleSyncEmails}
+              disabled={syncing}
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm border border-violet-200 text-violet-700 bg-violet-50 rounded-lg hover:bg-violet-100 disabled:opacity-60 transition-colors"
+              title="Read inbox emails and auto-update DRF statuses"
+            >
+              {syncing ? <RefreshCw size={14} className="animate-spin" /> : <Mail size={14} />}
+              {syncing ? 'Syncing…' : 'Sync Emails'}
+            </button>
+          )}
           {activeFilterTitle && (
             <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 flex items-center gap-2">
               <Filter size={14} className="text-violet-600" />
@@ -400,6 +435,33 @@ export default function DRFPage() {
                               Send Quotation
                             </button>
                           )}
+                          {isAdmin && drf.status === 'Rejected' && (
+                            <button
+                              onClick={() => { setQuickAction({ drf, type: 'reset' }); setQuickReason(''); setQuickError(''); }}
+                              title="Reset to Pending"
+                              className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-md hover:bg-amber-100 transition-colors"
+                            >
+                              <RotateCcw size={12} /> Reset
+                            </button>
+                          )}
+                          {isAdmin && drf.status === 'Pending' && (
+                            <>
+                              <button
+                                onClick={() => { setQuickAction({ drf, type: 'approve' }); setQuickReason(''); setQuickError(''); }}
+                                title="Approve"
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md hover:bg-emerald-100 transition-colors"
+                              >
+                                <CheckCircle2 size={12} /> Approve
+                              </button>
+                              <button
+                                onClick={() => { setQuickAction({ drf, type: 'reject' }); setQuickReason(''); setQuickError(''); }}
+                                title="Reject"
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-red-50 text-red-700 border border-red-200 rounded-md hover:bg-red-100 transition-colors"
+                              >
+                                <XCircle size={12} /> Reject
+                              </button>
+                            </>
+                          )}
                           {isAdmin && (
                             <button
                               onClick={() => { setReassignTarget(drf); setNewOwnerId(''); setReassignError(''); }}
@@ -409,6 +471,13 @@ export default function DRFPage() {
                               <UserCheck size={16} />
                             </button>
                           )}
+                          <button
+                            onClick={() => setDeleteTarget(drf._id)}
+                            title="Delete DRF"
+                            className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -429,6 +498,67 @@ export default function DRFPage() {
           </>
         )}
       </div>
+
+      {/* Quick Approve / Reject / Reset Modal */}
+      <Modal
+        isOpen={!!quickAction}
+        onClose={() => { setQuickAction(null); setQuickReason(''); setQuickError(''); }}
+        title={quickAction?.type === 'approve' ? 'Approve DRF' : quickAction?.type === 'reject' ? 'Reject DRF' : 'Reset to Pending'}
+        size="sm"
+      >
+        {quickAction && (
+          <div className="space-y-4">
+            <div className="p-3 bg-gray-50 rounded-lg">
+              <p className="text-xs text-gray-500 mb-1">DRF</p>
+              <p className="text-sm font-semibold text-gray-800">{quickAction.drf.drfNumber}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{quickAction.drf.leadId?.companyName}</p>
+            </div>
+            {quickAction.type === 'reject' && (
+              <div>
+                <label className="text-xs font-medium text-gray-700 block mb-1">Rejection Reason *</label>
+                <textarea
+                  className="input-field text-sm py-1.5 resize-none"
+                  rows={3}
+                  placeholder="Enter reason for rejection..."
+                  value={quickReason}
+                  onChange={(e) => setQuickReason(e.target.value)}
+                />
+              </div>
+            )}
+            {quickAction.type === 'reset' && (
+              <p className="text-sm text-gray-600">This will reset the DRF status back to <strong>Pending</strong> and update the lead stage to <strong>OEM Submitted</strong>.</p>
+            )}
+            {quickAction.type === 'approve' && (
+              <p className="text-sm text-gray-600">This will mark the DRF as <strong>Approved</strong> and update the lead stage to <strong>OEM Approved</strong>.</p>
+            )}
+            {quickError && <p className="text-xs text-red-600">{quickError}</p>}
+            <div className="flex gap-3 justify-end">
+              <button type="button" onClick={() => setQuickAction(null)} className="px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50">Cancel</button>
+              <button
+                onClick={handleQuickAction}
+                disabled={quickSaving}
+                className={`px-3 py-1.5 text-sm text-white rounded-md disabled:opacity-50 ${
+                  quickAction.type === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' :
+                  quickAction.type === 'reject'  ? 'bg-red-600 hover:bg-red-700' :
+                  'bg-amber-600 hover:bg-amber-700'
+                }`}
+              >
+                {quickSaving ? 'Saving…' : quickAction.type === 'approve' ? 'Approve' : quickAction.type === 'reject' ? 'Reject' : 'Reset to Pending'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteDRF}
+        title="Delete DRF"
+        message="This will permanently delete this DRF record. This cannot be undone."
+        confirmLabel="Delete"
+        danger
+      />
 
       {/* Reassign Modal */}
       <Modal isOpen={!!reassignTarget} onClose={() => { setReassignTarget(null); setNewOwnerId(''); setReassignError(''); }} title="Reassign DRF Ownership" size="sm">

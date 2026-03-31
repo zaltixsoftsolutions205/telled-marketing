@@ -15,6 +15,11 @@ export interface ILead extends Document {
   assignedTo?: mongoose.Types.ObjectId;
   status: 'New' | 'Contacted' | 'Qualified' | 'Not Qualified';
   stage: string;
+  website?: string;
+  annualTurnover?: string;
+  designation?: string;
+  channelPartner?: string;
+  expectedClosure?: string;
   notes?: string;
   isArchived: boolean;
   archivedAt?: Date;
@@ -56,6 +61,11 @@ const LeadSchema = new Schema<ILead>(
       ],
       default: 'New',
     },
+    website:         { type: String },
+    annualTurnover:  { type: String },
+    designation:     { type: String },
+    channelPartner:  { type: String, default: 'Telled Marketing' },
+    expectedClosure: { type: String },
     notes:      { type: String },
     isArchived: { type: Boolean, default: false },
     archivedAt: { type: Date },

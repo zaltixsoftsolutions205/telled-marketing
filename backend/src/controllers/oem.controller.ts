@@ -71,8 +71,8 @@ export const approveAttempt = async (req: AuthRequest, res: Response): Promise<v
   try {
     const attempt = await OEMApprovalAttempt.findById(req.params.id);
     if (!attempt) { sendError(res, 'Attempt not found', 404); return; }
-    if (attempt.status !== 'Pending') { sendError(res, 'Only pending attempts can be approved', 400); return; }
     attempt.status = 'Approved'; attempt.approvedDate = new Date(); attempt.approvedBy = req.body.approvedBy || req.user!.name;
+    attempt.rejectedDate = undefined; attempt.rejectionReason = undefined;
     await attempt.save();
     await Lead.findByIdAndUpdate(attempt.leadId, { stage: 'OEM Approved' });
     sendSuccess(res, attempt, 'OEM approved');
@@ -85,13 +85,27 @@ export const rejectAttempt = async (req: AuthRequest, res: Response): Promise<vo
     if (!reason) { sendError(res, 'Rejection reason required', 400); return; }
     const attempt = await OEMApprovalAttempt.findById(req.params.id);
     if (!attempt) { sendError(res, 'Attempt not found', 404); return; }
-    if (attempt.status !== 'Pending') { sendError(res, 'Only pending attempts can be rejected', 400); return; }
     attempt.status = 'Rejected'; attempt.rejectedDate = new Date(); attempt.rejectionReason = reason;
     await attempt.save();
     const lead = await Lead.findByIdAndUpdate(attempt.leadId, { stage: 'OEM Rejected' }, { new: true });
     if (lead) await sendOEMRejectionNotification(lead.email, lead.companyName, reason, attempt.attemptNumber);
     sendSuccess(res, attempt, 'OEM rejected');
   } catch { sendError(res, 'Failed to reject', 500); }
+};
+
+export const resetToPending = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const attempt = await OEMApprovalAttempt.findById(req.params.id);
+    if (!attempt) { sendError(res, 'Attempt not found', 404); return; }
+    attempt.status = 'Pending';
+    attempt.rejectedDate = undefined;
+    attempt.rejectionReason = undefined;
+    attempt.approvedDate = undefined;
+    attempt.approvedBy = undefined;
+    await attempt.save();
+    await Lead.findByIdAndUpdate(attempt.leadId, { stage: 'OEM Submitted' });
+    sendSuccess(res, attempt, 'Reset to Pending');
+  } catch { sendError(res, 'Failed to reset', 500); }
 };
 
 export const extendExpiry = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -141,4 +155,13 @@ export const reassignDRF = async (req: AuthRequest, res: Response): Promise<void
 
     sendSuccess(res, { drfId: attempt._id, newOwner: { id: newOwner._id, name: newOwner.name } }, 'DRF ownership reassigned');
   } catch { sendError(res, 'Failed to reassign DRF', 500); }
+};
+
+export const deleteDRF = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const attempt = await OEMApprovalAttempt.findById(req.params.id);
+    if (!attempt) { sendError(res, 'DRF not found', 404); return; }
+    await attempt.deleteOne();
+    sendSuccess(res, null, 'DRF deleted');
+  } catch { sendError(res, 'Failed to delete DRF', 500); }
 };

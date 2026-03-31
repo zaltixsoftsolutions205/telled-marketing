@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getAllDRFs, getDRFAnalytics, getAttemptsByLead, createAttempt, approveAttempt, rejectAttempt, extendExpiry, reassignDRF, syncDRFEmails } from '../controllers/oem.controller';
+import { getAllDRFs, getDRFAnalytics, getAttemptsByLead, createAttempt, approveAttempt, rejectAttempt, resetToPending, extendExpiry, reassignDRF, syncDRFEmails, deleteDRF } from '../controllers/oem.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { authorize } from '../middleware/role.middleware';
 
@@ -11,7 +11,9 @@ router.get('/lead/:leadId',    authorize('admin', 'sales'),          getAttempts
 router.post('/lead/:leadId',   authorize('admin', 'sales'),          createAttempt);
 router.patch('/:id/approve',   authorize('admin'),                   approveAttempt);
 router.patch('/:id/reject',    authorize('admin'),                   rejectAttempt);
+router.patch('/:id/reset',     authorize('admin'),                   resetToPending);
 router.patch('/:id/extend',    authorize('admin'),                   extendExpiry);
 router.patch('/:id/reassign',  authorize('admin'),                   reassignDRF);
 router.post('/sync-emails',    authorize('admin', 'sales'),          syncDRFEmails);
+router.delete('/:id',          authorize('admin', 'sales'),          deleteDRF);
 export default router;

@@ -53,6 +53,11 @@ export interface Lead {
   status: LeadStatus;
   stage: LeadStage;
   assignedTo?: User;
+  website?: string;
+  annualTurnover?: string;
+  designation?: string;
+  channelPartner?: string;
+  expectedClosure?: string;
   notes?: string;
   isArchived: boolean;
   archivedAt?: string;

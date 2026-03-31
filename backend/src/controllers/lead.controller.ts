@@ -1,16 +1,12 @@
 import { Response } from 'express';
-import path from 'path';
 import Lead from '../models/Lead';
 import OEMApprovalAttempt from '../models/OEMApprovalAttempt';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, sanitizeQuery } from '../utils/helpers';
-import { generateDRFPDF } from '../services/pdf.service';
 import { sendDRFEmail } from '../services/email.service';
 import logger from '../utils/logger';
 import { notifyUser, notifyRole } from '../utils/notify';
-
-const uploadDir = process.env.UPLOAD_PATH || './uploads';
 
 // Generate a DRF number: DRF-YYYYMMDD-XXXX
 const genDRFNumber = () => {
@@ -165,46 +161,52 @@ export const sendDRF = async (req: AuthRequest, res: Response): Promise<void> =>
     if (!lead) { sendError(res, 'Lead not found', 404); return; }
     if (lead.status !== 'Qualified') { sendError(res, 'Lead must be Qualified to send DRF', 400); return; }
 
+    // Use form values from request body, fall back to lead fields
+    const {
+      accountName, address, website, annualTurnover,
+      contactPerson, designation, contactNo, email,
+      partnerSalesRep, channelPartner, interestedModules,
+      expectedClosure, oemEmail: bodyOemEmail, notes,
+    } = req.body;
+
     const assignedUser = lead.assignedTo as any;
-    const { drfNumber, rand } = genDRFNumber();
-    const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-    const pdfFile = await generateDRFPDF({
-      drfNumber, version: 1, date: today,
-      companyName: lead.companyName,
-      contactName: lead.contactName || lead.contactPersonName || '',
-      email: lead.email, phone: lead.phone,
-      city: lead.city, state: lead.state,
-      oemName: lead.oemName, source: lead.source,
-      salesName: assignedUser?.name || 'Telled Sales',
-      salesEmail: assignedUser?.email || process.env.SMTP_USER || '',
-      notes: lead.notes,
-    });
+    // Sequential attempt number for this lead (v1, v2, v3...)
+    const existingCount = await OEMApprovalAttempt.countDocuments({ leadId: lead._id });
+    const attemptNumber = existingCount + 1;
+    const { drfNumber } = genDRFNumber();
 
-    const pdfAbsPath = path.join(process.cwd(), uploadDir, pdfFile);
-    const oemEmail = (lead as any).oemEmail || lead.email;
+    const oemEmail = bodyOemEmail || (lead as any).oemEmail || lead.email;
+    if (!oemEmail) { sendError(res, 'OEM email is required', 400); return; }
+
     const recipients = [oemEmail];
     if (assignedUser?.email && assignedUser.email !== oemEmail) recipients.push(assignedUser.email);
 
     await sendDRFEmail(recipients.join(','), {
-      drfNumber, version: 1,
-      companyName: lead.companyName,
-      contactName: lead.contactName || lead.contactPersonName || '',
-      oemName: lead.oemName || '',
-      salesName: assignedUser?.name || 'Telled Sales',
-    }, pdfAbsPath);
+      drfNumber, version: attemptNumber,
+      companyName: accountName || lead.companyName,
+      contactName: contactPerson || lead.contactPersonName || lead.contactName || '',
+      oemName: interestedModules || lead.oemName || '',
+      salesName: partnerSalesRep || assignedUser?.name || 'Telled Sales',
+      salesEmail: assignedUser?.email || '',
+      address, website, annualTurnover,
+      designation, contactNo: contactNo || lead.phone,
+      email: email || lead.email,
+      channelPartner, interestedModules: interestedModules || lead.oemName,
+      expectedClosure,
+    });
 
     await new OEMApprovalAttempt({
-      leadId: lead._id, attemptNumber: rand, status: 'Pending',
+      leadId: lead._id, attemptNumber, status: 'Pending',
       sentDate: new Date(), expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       createdBy: req.user!.id,
     }).save();
 
     await Lead.findByIdAndUpdate(lead._id, { drfNumber, drfEmailSent: true, drfEmailSentAt: new Date() });
-    logger.info(`DRF sent manually for lead ${lead._id} (${lead.companyName}) — ${drfNumber}`);
+    logger.info(`DRF sent for lead ${lead._id} (${lead.companyName}) → ${oemEmail} — ${drfNumber}`);
     notifyRole(['admin'], {
       title: 'DRF Submitted for OEM Approval',
-      message: `DRF ${drfNumber} sent to OEM for "${lead.companyName}"`,
+      message: `DRF ${drfNumber} sent to OEM for "${accountName || lead.companyName}"`,
       type: 'general', link: '/oem',
     });
     sendSuccess(res, { drfNumber }, 'DRF sent successfully');

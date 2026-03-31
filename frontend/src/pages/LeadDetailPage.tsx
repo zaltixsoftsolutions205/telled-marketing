@@ -6,6 +6,7 @@ import { drfApi } from '@/api/drf';
 import { quotationsApi } from '@/api/quotations';
 import { purchasesApi } from '@/api/purchases';
 import { useAuthStore } from '@/store/authStore';
+import { usePageTitleStore } from '@/store/pageTitleStore';
 import StatusBadge from '@/components/common/StatusBadge';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
@@ -41,6 +42,7 @@ export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
+  const setSubtitle = usePageTitleStore((s) => s.setSubtitle);
   const [lead, setLead] = useState<Lead | null>(null);
   const [drfs, setDRFs] = useState<DRF[]>([]);
   const [quotations, setQuotations] = useState<Quotation[]>([]);
@@ -58,7 +60,12 @@ export default function LeadDetailPage() {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [showExtendModal, setShowExtendModal] = useState(false);
   const [selectedDRF, setSelectedDRF] = useState<DRF | null>(null);
-  const [drfForm, setDRFForm] = useState({ notes: '' });
+  const [drfForm, setDRFForm] = useState({
+    accountName: '', address: '', website: '', annualTurnover: '',
+    contactPerson: '', designation: '', contactNo: '', email: '',
+    partnerSalesRep: '', channelPartner: 'Telled Marketing',
+    interestedModules: '', expectedClosure: '', oemEmail: '', notes: '',
+  });
   const [approveForm, setApproveForm] = useState({ expiryDate: '', notes: '' });
   const [rejectForm, setRejectForm] = useState({ rejectionReason: '' });
   const [extendForm, setExtendForm] = useState({ newExpiry: '', reason: '' });
@@ -74,21 +81,24 @@ export default function LeadDetailPage() {
     if (!id) return;
     setLoading(true);
     try {
-      const [leadData, drfData, quoteData, poData] = await Promise.all([
+      const [leadRaw, drfData, quoteData, poData] = await Promise.all([
         leadsApi.getById(id),
         drfApi.getByLead(id).catch(() => []),
         quotationsApi.getByLead(id).catch(() => []),
         purchasesApi.getByLead(id).catch(() => []),
       ]);
-      setLead(leadData as Lead);
-      setForm(leadData as Lead);
+      // Backend returns { lead, oemAttempts } — extract the lead object
+      const leadData = ((leadRaw as any)?.lead ?? leadRaw) as Lead;
+      setLead(leadData);
+      setSubtitle(leadData.companyName || null);
+      setForm(leadData);
       setDRFs((drfData || []) as DRF[]);
       setQuotations((quoteData || []) as Quotation[]);
       setPOs((poData || []) as PurchaseOrder[]);
     } catch (err) { console.error('LeadDetailPage load:', err); } finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => { load(); return () => setSubtitle(null); }, [id]);
 
   if (loading) return <LoadingSpinner className="h-64" />;
   if (!lead) return <div className="text-center text-gray-500 mt-20">Lead not found</div>;
@@ -98,6 +108,7 @@ export default function LeadDetailPage() {
     try {
       const updated = await leadsApi.update(id!, form);
       setLead(updated as Lead);
+      setSubtitle((updated as Lead).companyName || null);
       setEditMode(false);
     } finally { setSaving(false); }
   };
@@ -123,13 +134,12 @@ export default function LeadDetailPage() {
     setDRFSaving(true);
     setDRFError('');
     try {
-      await drfApi.create({ leadId: id, notes: drfForm.notes, createdBy: user?._id });
+      await leadsApi.sendDrf(id!, drfForm);
       setShowDRFModal(false);
-      setDRFForm({ notes: '' });
       load();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setDRFError(msg || 'Failed to create DRF');
+      setDRFError(msg || 'Failed to send DRF');
     } finally { setDRFSaving(false); }
   };
 
@@ -198,7 +208,9 @@ export default function LeadDetailPage() {
         </button>
         <div className="flex-1">
           <h1 className="page-header">{lead.companyName}</h1>
-          <p className="text-sm text-gray-500">{lead.contactPersonName || lead.contactName} • {lead.email}</p>
+          <p className="text-sm text-gray-500">
+            {[lead.contactPersonName || lead.contactName, lead.email].filter(Boolean).join(' • ')}
+          </p>
         </div>
         <StatusBadge status={lead.stage} />
         {!editMode && (
@@ -249,17 +261,23 @@ export default function LeadDetailPage() {
           <h2 className="section-title">Lead Information</h2>
           <div className="grid grid-cols-2 gap-4">
             {[
-              { label: 'Company Name', key: 'companyName' },
+              { label: 'Account Name & Group Name', key: 'companyName' },
               { label: 'Contact Person', key: 'contactPersonName' },
-              { label: 'Email', key: 'email' },
-              { label: 'Phone', key: 'phone' },
-              { label: 'OEM Name', key: 'oemName' },
+              { label: 'Address & Location', key: 'address' },
+              { label: 'Web Site', key: 'website' },
+              { label: 'Annual Turnover', key: 'annualTurnover' },
+              { label: 'Designation', key: 'designation' },
+              { label: 'Contact No.', key: 'phone' },
+              { label: 'E-mail', key: 'email' },
+              { label: 'Channel Partner', key: 'channelPartner' },
+              { label: 'Potential / Interested Modules', key: 'oemName' },
               { label: 'OEM Email', key: 'oemEmail' },
+              { label: 'Expected Closure', key: 'expectedClosure' },
               { label: 'City', key: 'city' },
               { label: 'State', key: 'state' },
               { label: 'Source', key: 'source' },
             ].map(({ label, key }) => (
-              <div key={key}>
+              <div key={label}>
                 <label className="label">{label}</label>
                 {editMode ? (
                   <input className="input-field" value={(form as Record<string, string>)[key] || ''} onChange={(e) => setForm(f => ({...f, [key]: e.target.value}))} />
@@ -268,6 +286,11 @@ export default function LeadDetailPage() {
                 )}
               </div>
             ))}
+            {/* Partner Sales Rep — read-only from assigned user */}
+            <div>
+              <label className="label">Partner Sales Rep</label>
+              <p className="text-sm text-gray-800">{(lead.assignedTo as User)?.name || <span className="text-gray-300">—</span>}</p>
+            </div>
             <div>
               <label className="label">Stage</label>
               {editMode ? (
@@ -319,22 +342,15 @@ export default function LeadDetailPage() {
             </div>
           </div>
 
-          {/* DRF Actions */}
-          <div className="glass-card">
-            <h2 className="section-title !mb-3">DRF Actions</h2>
-            <div className="space-y-2">
-              {canCreateDRF && (
-                <button onClick={() => { setDRFError(''); setShowDRFModal(true); }} className="btn-primary w-full text-sm flex items-center justify-center gap-2">
-                  <Plus size={15} /> Submit New DRF
-                </button>
-              )}
-              {pendingDRFs.length > 0 && (
-                <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
-                  {pendingDRFs.length} DRF{pendingDRFs.length > 1 ? 's' : ''} pending review
-                </p>
-              )}
+          {/* DRF Status */}
+          {pendingDRFs.length > 0 && (
+            <div className="glass-card">
+              <h2 className="section-title !mb-3">DRF Status</h2>
+              <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+                {pendingDRFs.length} DRF{pendingDRFs.length > 1 ? 's' : ''} pending review
+              </p>
               {pendingDRFs.map(drf => user?.role === 'admin' && (
-                <div key={drf._id} className="border border-amber-200 rounded-lg p-3 space-y-2">
+                <div key={drf._id} className="border border-amber-200 rounded-lg p-3 space-y-2 mt-2">
                   <p className="text-xs font-semibold text-gray-700">{drf.drfNumber} v{drf.version}</p>
                   <div className="flex gap-2">
                     <button onClick={() => { setSelectedDRF(drf); setShowApproveModal(true); }}
@@ -345,7 +361,7 @@ export default function LeadDetailPage() {
                 </div>
               ))}
             </div>
-          </div>
+          )}
 
           {/* Convert to Account */}
           {canConvert && !isConverted && (
@@ -485,25 +501,6 @@ export default function LeadDetailPage() {
           </div>
         </div>
       )}
-
-      {/* Submit DRF Modal */}
-      <Modal isOpen={showDRFModal} onClose={() => setShowDRFModal(false)} title="Submit DRF">
-        <form onSubmit={handleSubmitDRF} className="space-y-4">
-          <div className="bg-violet-50 rounded-lg p-3 text-sm text-violet-700">
-            <p className="font-medium">{lead.companyName} — {lead.oemName}</p>
-            <p className="text-xs text-violet-500 mt-0.5">Contact: {lead.contactPersonName || lead.contactName}</p>
-          </div>
-          {drfError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">{drfError}</div>}
-          <div>
-            <label className="label">Notes (optional)</label>
-            <textarea rows={3} className="input-field" value={drfForm.notes} onChange={(e) => setDRFForm(f => ({...f, notes: e.target.value}))} placeholder="Any notes…" />
-          </div>
-          <div className="flex gap-3 justify-end">
-            <button type="button" onClick={() => setShowDRFModal(false)} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={drfSaving} className="btn-primary">{drfSaving ? 'Submitting…' : 'Submit DRF'}</button>
-          </div>
-        </form>
-      </Modal>
 
       {/* Approve DRF Modal */}
       <Modal isOpen={showApproveModal} onClose={() => setShowApproveModal(false)} title={`Approve DRF — ${selectedDRF?.drfNumber}`}>

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Search, ExternalLink, Archive, Upload, X, CheckCircle, Trash2, Send } from 'lucide-react';
+import { Plus, Search, ExternalLink, Upload, X, CheckCircle, Trash2, Send, Mail, Pencil } from 'lucide-react';
 import { leadsApi } from '@/api/leads';
 import { usersApi } from '@/api/users';
 import { useAuthStore } from '@/store/authStore';
@@ -20,7 +20,6 @@ const STATUS_COLORS: Record<LeadStatus, string> = {
 
 const STATUS_TABS: Array<LeadStatus | 'All'> = ['All', 'New', 'Contacted', 'Qualified', 'Not Qualified'];
 
-// Parse CSV text into rows
 function parseCSV(text: string): Array<Record<string, string>> {
   const lines = text.trim().split('\n').filter(Boolean);
   if (lines.length < 2) return [];
@@ -33,6 +32,23 @@ function parseCSV(text: string): Array<Record<string, string>> {
   });
 }
 
+const emptyForm = {
+  companyName: '', contactPersonPrefix: 'Mr.', contactPersonName: '',
+  designation: '', email: '', phone: '',
+  address: '', website: '', annualTurnover: '',
+  oemName: '', oemEmail: '', channelPartner: 'Telled Marketing',
+  expectedClosure: '', source: '', city: '', state: '',
+  assignedTo: '', status: 'New' as LeadStatus, notes: '',
+};
+
+const emptyDrfForm = {
+  accountName: '', contactPersonPrefix: 'Mr.', contactPerson: '',
+  designation: '', contactNo: '', email: '',
+  address: '', website: '', annualTurnover: '',
+  interestedModules: '', oemEmail: '', channelPartner: 'Telled Marketing',
+  expectedClosure: '', partnerSalesRep: '',
+};
+
 export default function LeadsPage() {
   const user = useAuthStore((s) => s.user);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -42,19 +58,67 @@ export default function LeadsPage() {
   const [statusTab, setStatusTab] = useState<LeadStatus | 'All'>('All');
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [archiveTarget, setArchiveTarget] = useState<string | null>(null);
-  const [sendingDrf, setSendingDrf] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [salesUsers, setSalesUsers] = useState<User[]>([]);
-  const [form, setForm] = useState({
-    companyName: '', contactPersonName: '', email: '', phone: '',
-    oemName: '', oemEmail: '', city: '', state: '', source: '', notes: '', assignedTo: '',
-    status: 'New' as LeadStatus,
-  });
+  const [form, setForm] = useState({ ...emptyForm });
   const [saving, setSaving] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
 
-  // Excel/CSV import state
+  // Edit modal
+  const [editTarget, setEditTarget] = useState<Lead | null>(null);
+  const [editForm, setEditForm] = useState({ ...emptyForm });
+  const [editSaving, setEditSaving] = useState(false);
+
+  const openEditModal = (lead: Lead) => {
+    const cp = (lead.contactPersonName || lead.contactName || '');
+    const prefix = cp.startsWith('Ms.') ? 'Ms.' : cp.startsWith('Dr.') ? 'Dr.' : 'Mr.';
+    const name = cp.replace(/^(Mr\.|Ms\.|Dr\.)\s*/, '');
+    setEditForm({
+      companyName: lead.companyName || '',
+      contactPersonPrefix: prefix,
+      contactPersonName: name,
+      designation: (lead as any).designation || '',
+      email: lead.email || '',
+      phone: lead.phone || '',
+      address: (lead as any).address || lead.address || '',
+      website: (lead as any).website || '',
+      annualTurnover: (lead as any).annualTurnover || '',
+      oemName: lead.oemName || '',
+      oemEmail: (lead as any).oemEmail || lead.oemEmail || '',
+      channelPartner: (lead as any).channelPartner || 'Telled Marketing',
+      expectedClosure: (lead as any).expectedClosure || '',
+      source: (lead as any).source || '',
+      city: lead.city || '',
+      state: lead.state || '',
+      assignedTo: (lead.assignedTo as User)?._id || '',
+      status: lead.status || 'New',
+      notes: lead.notes || '',
+    });
+    setEditTarget(lead);
+  };
+
+  const handleEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTarget) return;
+    setEditSaving(true);
+    try {
+      const { contactPersonPrefix, ...rest } = editForm;
+      const updated = await leadsApi.update(editTarget._id, {
+        ...rest,
+        contactPersonName: `${contactPersonPrefix} ${editForm.contactPersonName}`.trim(),
+      });
+      setLeads(prev => prev.map(l => l._id === editTarget._id ? { ...l, ...updated } : l));
+      setEditTarget(null);
+    } finally { setEditSaving(false); }
+  };
+
+  // Send DRF modal
+  const [drfTarget, setDrfTarget] = useState<Lead | null>(null);
+  const [drfForm, setDrfForm] = useState({ ...emptyDrfForm });
+  const [drfSaving, setDrfSaving] = useState(false);
+  const [drfError, setDrfError] = useState('');
+
+  // CSV import
   const [showImport, setShowImport] = useState(false);
   const [importRows, setImportRows] = useState<Array<Record<string, string>>>([]);
   const [importing, setImporting] = useState(false);
@@ -71,7 +135,7 @@ export default function LeadsPage() {
       const res = await leadsApi.getAll(params);
       setLeads(res.data || []);
       setTotal(res.pagination?.total ?? 0);
-    } catch (err) { console.error('LeadsPage load:', err); setLeads([]); setTotal(0); } finally { setLoading(false); }
+    } catch { setLeads([]); setTotal(0); } finally { setLoading(false); }
   }, [page, search, statusTab, user]);
 
   useEffect(() => { load(); }, [load]);
@@ -83,9 +147,13 @@ export default function LeadsPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      await leadsApi.create(form);
+      const { contactPersonPrefix, ...rest } = form;
+      await leadsApi.create({
+        ...rest,
+        contactPersonName: `${contactPersonPrefix} ${form.contactPersonName}`.trim(),
+      });
       setShowModal(false);
-      setForm({ companyName:'', contactPersonName:'', email:'', phone:'', oemName:'', oemEmail:'', city:'', state:'', source:'', notes:'', assignedTo:'', status: 'New' });
+      setForm({ ...emptyForm });
       load();
     } finally { setSaving(false); }
   };
@@ -95,24 +163,57 @@ export default function LeadsPage() {
     try {
       await leadsApi.update(leadId, { status: newStatus });
       setLeads(prev => prev.map(l => l._id === leadId ? { ...l, status: newStatus } : l));
-    } catch { /* ignore */ } finally { setUpdatingStatus(null); }
+    } catch { } finally { setUpdatingStatus(null); }
   };
 
-  const handleSendDrf = async (leadId: string) => {
-    setSendingDrf(leadId);
+  const openDrfModal = (lead: Lead) => {
+    const assignedUser = lead.assignedTo as User;
+    setDrfForm({
+      accountName: lead.companyName || '',
+      contactPersonPrefix: 'Mr.',
+      contactPerson: lead.contactPersonName || lead.contactName || '',
+      designation: (lead as any).designation || '',
+      contactNo: lead.phone || '',
+      email: lead.email || '',
+      address: (lead as any).address || '',
+      website: (lead as any).website || '',
+      annualTurnover: (lead as any).annualTurnover || '',
+      interestedModules: lead.oemName || '',
+      oemEmail: (lead as any).oemEmail || '',
+      channelPartner: (lead as any).channelPartner || 'Telled Marketing',
+      expectedClosure: (lead as any).expectedClosure || '',
+      partnerSalesRep: assignedUser?.name || user?.name || '',
+    });
+    setDrfError('');
+    setDrfTarget(lead);
+  };
+
+  const handleSendDrf = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!drfTarget) return;
+    if (!drfForm.oemEmail) { setDrfError('OEM Email is required'); return; }
+    setDrfSaving(true); setDrfError('');
     try {
-      await leadsApi.sendDrf(leadId);
-      setLeads(prev => prev.map(l => l._id === leadId ? { ...l, drfEmailSent: true } : l));
+      await leadsApi.sendDrf(drfTarget._id, {
+        accountName: drfForm.accountName,
+        contactPerson: `${drfForm.contactPersonPrefix} ${drfForm.contactPerson}`.trim(),
+        designation: drfForm.designation,
+        contactNo: drfForm.contactNo,
+        email: drfForm.email,
+        address: drfForm.address,
+        website: drfForm.website,
+        annualTurnover: drfForm.annualTurnover,
+        interestedModules: drfForm.interestedModules,
+        oemEmail: drfForm.oemEmail,
+        channelPartner: drfForm.channelPartner,
+        expectedClosure: drfForm.expectedClosure,
+        partnerSalesRep: drfForm.partnerSalesRep,
+      });
+      setLeads(prev => prev.map(l => l._id === drfTarget._id ? { ...l, drfEmailSent: true } as any : l));
+      setDrfTarget(null);
     } catch (err: any) {
-      alert(err?.response?.data?.message || 'Failed to send DRF');
-    } finally { setSendingDrf(null); }
-  };
-
-  const handleArchive = async () => {
-    if (!archiveTarget) return;
-    await leadsApi.archive(archiveTarget);
-    setArchiveTarget(null);
-    load();
+      setDrfError(err?.response?.data?.message || 'Failed to send DRF');
+    } finally { setDrfSaving(false); }
   };
 
   const handleDelete = async () => {
@@ -126,11 +227,7 @@ export default function LeadsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target?.result as string;
-      setImportRows(parseCSV(text));
-      setImportDone(0);
-    };
+    reader.onload = (ev) => { setImportRows(parseCSV(ev.target?.result as string)); setImportDone(0); };
     reader.readAsText(file);
   };
 
@@ -145,41 +242,46 @@ export default function LeadsPage() {
     } finally { setImporting(false); }
   };
 
+  const f = (field: keyof typeof form, val: string) => setForm(p => ({ ...p, [field]: val }));
+  const df = (field: keyof typeof drfForm, val: string) => setDrfForm(p => ({ ...p, [field]: val }));
+  const ef = (field: keyof typeof emptyForm, val: string) => setEditForm(p => ({ ...p, [field]: val }));
+
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 animate-fade-in">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="page-header">Leads</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} total leads</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => { setShowImport(true); setImportDone(0); setImportRows([]); }} className="btn-secondary flex items-center gap-2">
-            <Upload size={15} /> Import CSV
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={() => { setShowImport(true); setImportDone(0); setImportRows([]); }} className="btn-secondary flex items-center gap-2 text-sm">
+            <Upload size={14} /> <span className="hidden sm:inline">Import CSV</span><span className="sm:hidden">Import</span>
           </button>
-          <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2">
-            <Plus size={16} /> New Lead
+          <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 text-sm">
+            <Plus size={15} /> <span className="hidden sm:inline">New Lead</span><span className="sm:hidden">New</span>
           </button>
         </div>
       </div>
 
       {/* Status Tabs */}
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit flex-wrap">
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl flex-wrap">
         {STATUS_TABS.map((tab) => (
           <button key={tab} onClick={() => { setStatusTab(tab); setPage(1); }}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${statusTab === tab ? 'bg-white text-violet-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${statusTab === tab ? 'bg-white text-violet-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
             {tab}
           </button>
         ))}
       </div>
 
       {/* Search */}
-      <div className="relative max-w-sm">
+      <div className="relative w-full sm:max-w-sm">
         <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
         <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search leads…" className="input-field pl-9" />
       </div>
 
-      {/* Table */}
-      <div className="glass-card !p-0 overflow-hidden">
+      {/* Desktop Table */}
+      <div className="glass-card !p-0 overflow-hidden hidden md:block">
         {loading ? <LoadingSpinner className="h-48" /> : leads.length === 0 ? (
           <div className="text-center text-gray-400 py-16">No leads found</div>
         ) : (
@@ -189,24 +291,33 @@ export default function LeadsPage() {
                 <tr>
                   <th className="table-header">Company</th>
                   <th className="table-header">Contact Person</th>
-                  <th className="table-header">OEM</th>
+                  <th className="table-header">Designation</th>
                   <th className="table-header">Phone</th>
+                  <th className="table-header">E-mail</th>
+                  <th className="table-header">OEM / Modules</th>
+                  <th className="table-header">OEM Email</th>
+                  <th className="table-header">Channel Partner</th>
+                  <th className="table-header">Expected Closure</th>
                   <th className="table-header">Status</th>
                   <th className="table-header">Stage</th>
                   <th className="table-header">Assigned To</th>
-                  <th className="table-header">Created</th>
                   <th className="table-header">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {leads.map((lead) => (
                   <tr key={lead._id} className="hover:bg-violet-50/20 transition-colors">
-                    <td className="table-cell font-medium text-violet-700">
+                    <td className="table-cell font-medium text-violet-700 whitespace-nowrap">
                       <Link to={`/leads/${lead._id}`} className="hover:underline">{lead.companyName}</Link>
                     </td>
-                    <td className="table-cell">{lead.contactPersonName || lead.contactName}</td>
+                    <td className="table-cell whitespace-nowrap">{lead.contactPersonName || lead.contactName || '—'}</td>
+                    <td className="table-cell text-gray-500">{(lead as any).designation || '—'}</td>
+                    <td className="table-cell text-gray-400 whitespace-nowrap">{lead.phone || '—'}</td>
+                    <td className="table-cell text-gray-500">{lead.email || '—'}</td>
                     <td className="table-cell text-gray-500">{lead.oemName || '—'}</td>
-                    <td className="table-cell text-gray-400">{lead.phone}</td>
+                    <td className="table-cell text-gray-400">{(lead as any).oemEmail || lead.oemEmail || '—'}</td>
+                    <td className="table-cell text-gray-500">{(lead as any).channelPartner || '—'}</td>
+                    <td className="table-cell text-gray-500 whitespace-nowrap">{(lead as any).expectedClosure || '—'}</td>
                     <td className="table-cell">
                       {updatingStatus === lead._id ? (
                         <span className="badge text-xs bg-violet-100 text-violet-600 animate-pulse">Updating…</span>
@@ -223,33 +334,30 @@ export default function LeadsPage() {
                       )}
                     </td>
                     <td className="table-cell"><StatusBadge status={lead.stage} /></td>
-                    <td className="table-cell">{(lead.assignedTo as User)?.name || '—'}</td>
-                    <td className="table-cell text-gray-400">{formatDate(lead.createdAt)}</td>
+                    <td className="table-cell whitespace-nowrap">{(lead.assignedTo as User)?.name || '—'}</td>
                     <td className="table-cell">
-                      <div className="flex items-center gap-2">
-                        <Link to={`/leads/${lead._id}`} className="p-1 hover:text-violet-600 text-gray-400">
-                          <ExternalLink size={15} />
+                      <div className="flex items-center gap-1">
+                        <Link to={`/leads/${lead._id}`} title="View Details"
+                          className="p-1.5 rounded-md hover:bg-violet-100 hover:text-violet-600 text-gray-400 transition-colors">
+                          <ExternalLink size={13} />
                         </Link>
-                        {lead.status === 'Qualified' && !(lead as any).drfEmailSent && (
-                          <button
-                            onClick={() => handleSendDrf(lead._id)}
-                            disabled={sendingDrf === lead._id}
-                            title="Send DRF"
-                            className="p-1 hover:text-blue-600 text-blue-400 disabled:opacity-50"
-                          >
-                            {sendingDrf === lead._id ? <CheckCircle size={15} className="animate-pulse" /> : <Send size={15} />}
-                          </button>
+                        <button onClick={() => openEditModal(lead)} title="Edit"
+                          className="p-1.5 rounded-md hover:bg-amber-100 hover:text-amber-600 text-gray-400 transition-colors">
+                          <Pencil size={13} />
+                        </button>
+                        {lead.status === 'Qualified' && (
+                          (lead as any).drfEmailSent ? (
+                            <span title="DRF sent" className="p-1.5 text-green-500"><CheckCircle size={13} /></span>
+                          ) : (
+                            <button onClick={() => openDrfModal(lead)} title="Send DRF"
+                              className="p-1.5 rounded-md hover:bg-blue-100 hover:text-blue-600 text-blue-400 transition-colors">
+                              <Send size={13} />
+                            </button>
+                          )
                         )}
-                        {(lead as any).drfEmailSent && (
-                          <CheckCircle size={15} className="text-green-500" title="DRF already sent" />
-                        )}
-                        {user?.role === 'admin' && (
-                          <button onClick={() => setArchiveTarget(lead._id)} className="p-1 hover:text-orange-500 text-gray-400" title="Archive">
-                            <Archive size={15} />
-                          </button>
-                        )}
-                        <button onClick={() => setDeleteTarget(lead._id)} className="p-1 hover:text-red-600 text-gray-400" title="Delete permanently">
-                          <Trash2 size={15} />
+                        <button onClick={() => setDeleteTarget(lead._id)} title="Delete"
+                          className="p-1.5 rounded-md hover:bg-red-100 hover:text-red-600 text-gray-400 transition-colors">
+                          <Trash2 size={13} />
                         </button>
                       </div>
                     </td>
@@ -270,74 +378,358 @@ export default function LeadsPage() {
         )}
       </div>
 
-      {/* Create Modal */}
+      {/* Mobile Card View */}
+      {!loading && leads.length > 0 && (
+        <div className="md:hidden space-y-3">
+          {leads.map((lead) => (
+            <div key={lead._id} className="glass-card !p-4 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <Link to={`/leads/${lead._id}`} className="font-semibold text-violet-700 hover:underline text-sm">{lead.companyName}</Link>
+                  <p className="text-xs text-gray-500 mt-0.5">{lead.contactPersonName || lead.contactName}{(lead as any).designation ? ` · ${(lead as any).designation}` : ''}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{lead.phone || ''}{lead.email ? ` · ${lead.email}` : ''}</p>
+                </div>
+                <StatusBadge status={lead.stage} />
+              </div>
+              {((lead as any).oemEmail || lead.oemEmail || (lead as any).channelPartner || (lead as any).expectedClosure) && (
+                <div className="text-xs text-gray-500 space-y-0.5">
+                  {(lead.oemName) && <p><span className="text-gray-400">OEM:</span> {lead.oemName}</p>}
+                  {((lead as any).oemEmail || lead.oemEmail) && <p><span className="text-gray-400">OEM Email:</span> {(lead as any).oemEmail || lead.oemEmail}</p>}
+                  {(lead as any).channelPartner && <p><span className="text-gray-400">Channel Partner:</span> {(lead as any).channelPartner}</p>}
+                  {(lead as any).expectedClosure && <p><span className="text-gray-400">Closure:</span> {(lead as any).expectedClosure}</p>}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2 items-center">
+                <span className="text-xs text-gray-500">{lead.oemName || '—'}</span>
+                {updatingStatus === lead._id ? (
+                  <span className="badge text-xs bg-violet-100 text-violet-600 animate-pulse">Updating…</span>
+                ) : (
+                  <select
+                    value={lead.status || 'New'}
+                    onChange={(e) => handleStatusChange(lead._id, e.target.value as LeadStatus)}
+                    className={`text-xs font-medium rounded-full px-2 py-1 border-0 cursor-pointer ${STATUS_COLORS[lead.status as LeadStatus] || 'bg-gray-100 text-gray-600'}`}
+                  >
+                    {(['New', 'Contacted', 'Qualified', 'Not Qualified'] as LeadStatus[]).map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <div className="flex items-center justify-between pt-1 border-t border-gray-100">
+                <span className="text-xs text-gray-400">{(lead.assignedTo as User)?.name || '—'} · {formatDate(lead.createdAt)}</span>
+                <div className="flex items-center gap-1.5">
+                  <Link to={`/leads/${lead._id}`} title="View Details"
+                    className="p-1.5 rounded-md hover:bg-violet-100 hover:text-violet-600 text-gray-400">
+                    <ExternalLink size={14} />
+                  </Link>
+                  <button onClick={() => openEditModal(lead)} title="Edit"
+                    className="p-1.5 rounded-md hover:bg-amber-100 hover:text-amber-600 text-gray-400">
+                    <Pencil size={14} />
+                  </button>
+                  {lead.status === 'Qualified' && (
+                    (lead as any).drfEmailSent ? (
+                      <span title="DRF sent" className="p-1.5 text-green-500"><CheckCircle size={14} /></span>
+                    ) : (
+                      <button onClick={() => openDrfModal(lead)} title="Send DRF"
+                        className="p-1.5 rounded-md hover:bg-blue-100 hover:text-blue-600 text-blue-400">
+                        <Send size={14} />
+                      </button>
+                    )
+                  )}
+                  <button onClick={() => setDeleteTarget(lead._id)} title="Delete"
+                    className="p-1.5 rounded-md hover:bg-red-100 hover:text-red-600 text-gray-400">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {!loading && leads.length === 0 && (
+        <div className="md:hidden text-center text-gray-400 py-16 glass-card">No leads found</div>
+      )}
+
+      {/* ── New Lead Modal ── */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Add New Lead" size="lg">
-        <form onSubmit={handleCreate} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="label">Company Name *</label>
-              <input required className="input-field" value={form.companyName} onChange={(e) => setForm(f => ({...f, companyName: e.target.value}))} />
+        <form onSubmit={handleCreate} className="space-y-2 text-sm">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="col-span-2">
+              <label className="label text-xs">Account Name *</label>
+              <input required className="input-field py-1.5 text-sm" placeholder="Company name" value={form.companyName} onChange={(e) => f('companyName', e.target.value)} />
             </div>
             <div>
-              <label className="label">Contact Person *</label>
-              <input required className="input-field" value={form.contactPersonName} onChange={(e) => setForm(f => ({...f, contactPersonName: e.target.value}))} />
+              <label className="label text-xs">Contact Person *</label>
+              <div className="flex gap-1">
+                <select className="input-field py-1.5 text-sm w-20 flex-shrink-0" value={form.contactPersonPrefix} onChange={(e) => f('contactPersonPrefix', e.target.value)}>
+                  <option>Mr.</option><option>Ms.</option><option>Dr.</option>
+                </select>
+                <input required className="input-field py-1.5 text-sm flex-1" placeholder="Full name" value={form.contactPersonName} onChange={(e) => f('contactPersonName', e.target.value)} />
+              </div>
             </div>
             <div>
-              <label className="label">Email *</label>
-              <input required type="email" className="input-field" value={form.email} onChange={(e) => setForm(f => ({...f, email: e.target.value}))} />
+              <label className="label text-xs">Designation</label>
+              <input className="input-field py-1.5 text-sm" placeholder="e.g. IT Manager" value={form.designation} onChange={(e) => f('designation', e.target.value)} />
             </div>
             <div>
-              <label className="label">Phone *</label>
-              <input required className="input-field" value={form.phone} onChange={(e) => setForm(f => ({...f, phone: e.target.value}))} />
+              <label className="label text-xs">Contact No. *</label>
+              <input required className="input-field py-1.5 text-sm" value={form.phone} onChange={(e) => f('phone', e.target.value)} />
             </div>
             <div>
-              <label className="label">OEM Name *</label>
-              <input required className="input-field" placeholder="e.g. Siemens, ABB..." value={form.oemName} onChange={(e) => setForm(f => ({...f, oemName: e.target.value}))} />
+              <label className="label text-xs">E-mail *</label>
+              <input required type="email" className="input-field py-1.5 text-sm" value={form.email} onChange={(e) => f('email', e.target.value)} />
+            </div>
+            <div className="col-span-2">
+              <label className="label text-xs">Address & Location</label>
+              <input className="input-field py-1.5 text-sm" placeholder="Full address" value={form.address} onChange={(e) => f('address', e.target.value)} />
             </div>
             <div>
-              <label className="label">OEM Email <span className="text-gray-400 font-normal">(DRF will be sent here)</span></label>
-              <input type="email" className="input-field" placeholder="oem@company.com" value={form.oemEmail} onChange={(e) => setForm(f => ({...f, oemEmail: e.target.value}))} />
+              <label className="label text-xs">Web Site</label>
+              <input className="input-field py-1.5 text-sm" placeholder="https://" value={form.website} onChange={(e) => f('website', e.target.value)} />
             </div>
             <div>
-              <label className="label">Lead Status</label>
-              <select className="input-field" value={form.status} onChange={(e) => setForm(f => ({...f, status: e.target.value as LeadStatus}))}>
+              <label className="label text-xs">Annual Turnover</label>
+              <input className="input-field py-1.5 text-sm" placeholder="e.g. 5 Crore" value={form.annualTurnover} onChange={(e) => f('annualTurnover', e.target.value)} />
+            </div>
+            <div>
+              <label className="label text-xs">OEM / Modules *</label>
+              <input required className="input-field py-1.5 text-sm" placeholder="e.g. Ansys, Siemens" value={form.oemName} onChange={(e) => f('oemName', e.target.value)} />
+            </div>
+            <div>
+              <label className="label text-xs">OEM Email</label>
+              <input type="email" className="input-field py-1.5 text-sm" placeholder="oem@company.com" value={form.oemEmail} onChange={(e) => f('oemEmail', e.target.value)} />
+            </div>
+            <div>
+              <label className="label text-xs">Channel Partner</label>
+              <input className="input-field py-1.5 text-sm" value={form.channelPartner} onChange={(e) => f('channelPartner', e.target.value)} />
+            </div>
+            <div>
+              <label className="label text-xs">Expected Closure</label>
+              <input className="input-field py-1.5 text-sm" placeholder="e.g. Q2 2026" value={form.expectedClosure} onChange={(e) => f('expectedClosure', e.target.value)} />
+            </div>
+            <div>
+              <label className="label text-xs">City</label>
+              <input className="input-field py-1.5 text-sm" value={form.city} onChange={(e) => f('city', e.target.value)} />
+            </div>
+            <div>
+              <label className="label text-xs">State</label>
+              <input className="input-field py-1.5 text-sm" value={form.state} onChange={(e) => f('state', e.target.value)} />
+            </div>
+            <div>
+              <label className="label text-xs">Status</label>
+              <select className="input-field py-1.5 text-sm" value={form.status} onChange={(e) => f('status', e.target.value)}>
                 {(['New','Contacted','Qualified','Not Qualified'] as LeadStatus[]).map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
             <div>
-              <label className="label">Source</label>
-              <select className="input-field" value={form.source} onChange={(e) => setForm(f => ({...f, source: e.target.value}))}>
-                <option value="">Select source</option>
+              <label className="label text-xs">Source</label>
+              <select className="input-field py-1.5 text-sm" value={form.source} onChange={(e) => f('source', e.target.value)}>
+                <option value="">Select</option>
                 {['Cold Call','Email','Referral','Website','Exhibition','LinkedIn','Other'].map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
-            <div>
-              <label className="label">City</label>
-              <input className="input-field" value={form.city} onChange={(e) => setForm(f => ({...f, city: e.target.value}))} />
-            </div>
-            <div>
-              <label className="label">State</label>
-              <input className="input-field" value={form.state} onChange={(e) => setForm(f => ({...f, state: e.target.value}))} />
-            </div>
             {user?.role === 'admin' && (
-              <div>
-                <label className="label">Assign To</label>
-                <select className="input-field" value={form.assignedTo} onChange={(e) => setForm(f => ({...f, assignedTo: e.target.value}))}>
+              <div className="col-span-2">
+                <label className="label text-xs">Assign To</label>
+                <select className="input-field py-1.5 text-sm" value={form.assignedTo} onChange={(e) => f('assignedTo', e.target.value)}>
                   <option value="">Unassigned</option>
                   {salesUsers.map(u => <option key={u._id} value={u._id}>{u.name}</option>)}
                 </select>
               </div>
             )}
+            <div className="col-span-2">
+              <label className="label text-xs">Notes</label>
+              <textarea rows={2} className="input-field py-1.5 text-sm" value={form.notes} onChange={(e) => f('notes', e.target.value)} />
+            </div>
           </div>
-          <div>
-            <label className="label">Notes</label>
-            <textarea rows={2} className="input-field" value={form.notes} onChange={(e) => setForm(f => ({...f, notes: e.target.value}))} />
-          </div>
-          <div className="flex gap-3 justify-end pt-2">
-            <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving…' : 'Create Lead'}</button>
+          <div className="flex gap-2 justify-end pt-1">
+            <button type="button" onClick={() => setShowModal(false)} className="btn-secondary py-1.5 text-sm">Cancel</button>
+            <button type="submit" disabled={saving} className="btn-primary py-1.5 text-sm">{saving ? 'Saving…' : 'Create Lead'}</button>
           </div>
         </form>
+      </Modal>
+
+      {/* ── Send DRF Modal ── */}
+      <Modal isOpen={!!drfTarget} onClose={() => setDrfTarget(null)} title="Send DRF" size="lg">
+        {drfTarget && (
+          <form onSubmit={handleSendDrf} className="space-y-4">
+            <div className="flex items-center gap-2 px-3 py-2 bg-violet-50 rounded-lg border border-violet-100">
+              <Mail size={14} className="text-violet-600 flex-shrink-0" />
+              <p className="text-xs text-violet-700">Fill in the details below. The DRF email will be sent to the OEM email you enter.</p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="sm:col-span-2">
+                <label className="label">Account Name & Group Name *</label>
+                <input required className="input-field" value={drfForm.accountName} onChange={(e) => df('accountName', e.target.value)} />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="label">Address & Location</label>
+                <input className="input-field" value={drfForm.address} onChange={(e) => df('address', e.target.value)} />
+              </div>
+              <div>
+                <label className="label">Web Site</label>
+                <input className="input-field" placeholder="https://" value={drfForm.website} onChange={(e) => df('website', e.target.value)} />
+              </div>
+              <div>
+                <label className="label">Annual Turnover</label>
+                <input className="input-field" placeholder="e.g. 5 Crore" value={drfForm.annualTurnover} onChange={(e) => df('annualTurnover', e.target.value)} />
+              </div>
+              <div>
+                <label className="label">Contact Person *</label>
+                <div className="flex gap-2">
+                  <select className="input-field w-20 flex-shrink-0" value={drfForm.contactPersonPrefix} onChange={(e) => df('contactPersonPrefix', e.target.value)}>
+                    <option>Mr.</option><option>Ms.</option><option>Dr.</option>
+                  </select>
+                  <input required className="input-field flex-1" value={drfForm.contactPerson} onChange={(e) => df('contactPerson', e.target.value)} />
+                </div>
+              </div>
+              <div>
+                <label className="label">Designation</label>
+                <input className="input-field" value={drfForm.designation} onChange={(e) => df('designation', e.target.value)} />
+              </div>
+              <div>
+                <label className="label">Contact No.</label>
+                <input className="input-field" value={drfForm.contactNo} onChange={(e) => df('contactNo', e.target.value)} />
+              </div>
+              <div>
+                <label className="label">E-mail</label>
+                <input type="email" className="input-field" value={drfForm.email} onChange={(e) => df('email', e.target.value)} />
+              </div>
+              <div>
+                <label className="label">Partner Sales Rep</label>
+                <input className="input-field" value={drfForm.partnerSalesRep} onChange={(e) => df('partnerSalesRep', e.target.value)} />
+              </div>
+              <div>
+                <label className="label">Channel Partner</label>
+                <input className="input-field" value={drfForm.channelPartner} onChange={(e) => df('channelPartner', e.target.value)} />
+              </div>
+              <div>
+                <label className="label">Potential / Interested Modules</label>
+                <input className="input-field" value={drfForm.interestedModules} onChange={(e) => df('interestedModules', e.target.value)} />
+              </div>
+              <div>
+                <label className="label">Expected Closure</label>
+                <input className="input-field" placeholder="e.g. Q2 2026" value={drfForm.expectedClosure} onChange={(e) => df('expectedClosure', e.target.value)} />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="label">Send To — OEM Email *</label>
+                <input required type="email" className="input-field" placeholder="oem@company.com" value={drfForm.oemEmail} onChange={(e) => df('oemEmail', e.target.value)} />
+              </div>
+            </div>
+
+            {drfError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{drfError}</p>}
+
+            <div className="flex gap-3 justify-end pt-1">
+              <button type="button" onClick={() => setDrfTarget(null)} className="btn-secondary">Cancel</button>
+              <button type="submit" disabled={drfSaving} className="btn-primary flex items-center gap-2">
+                <Send size={14} />
+                {drfSaving ? 'Sending…' : 'Send DRF'}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* ── Edit Lead Modal ── */}
+      <Modal isOpen={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Lead" size="lg">
+        {editTarget && (
+          <form onSubmit={handleEdit} className="space-y-2 text-sm">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="col-span-2">
+                <label className="label text-xs">Account Name *</label>
+                <input required className="input-field py-1.5 text-sm" placeholder="Company name" value={editForm.companyName} onChange={(e) => ef('companyName', e.target.value)} />
+              </div>
+              <div>
+                <label className="label text-xs">Contact Person *</label>
+                <div className="flex gap-1">
+                  <select className="input-field py-1.5 text-sm w-20 flex-shrink-0" value={editForm.contactPersonPrefix} onChange={(e) => ef('contactPersonPrefix', e.target.value)}>
+                    <option>Mr.</option><option>Ms.</option><option>Dr.</option>
+                  </select>
+                  <input required className="input-field py-1.5 text-sm flex-1" placeholder="Full name" value={editForm.contactPersonName} onChange={(e) => ef('contactPersonName', e.target.value)} />
+                </div>
+              </div>
+              <div>
+                <label className="label text-xs">Designation</label>
+                <input className="input-field py-1.5 text-sm" placeholder="e.g. IT Manager" value={editForm.designation} onChange={(e) => ef('designation', e.target.value)} />
+              </div>
+              <div>
+                <label className="label text-xs">Contact No. *</label>
+                <input required className="input-field py-1.5 text-sm" value={editForm.phone} onChange={(e) => ef('phone', e.target.value)} />
+              </div>
+              <div>
+                <label className="label text-xs">E-mail *</label>
+                <input required type="email" className="input-field py-1.5 text-sm" value={editForm.email} onChange={(e) => ef('email', e.target.value)} />
+              </div>
+              <div className="col-span-2">
+                <label className="label text-xs">Address & Location</label>
+                <input className="input-field py-1.5 text-sm" placeholder="Full address" value={editForm.address} onChange={(e) => ef('address', e.target.value)} />
+              </div>
+              <div>
+                <label className="label text-xs">Web Site</label>
+                <input className="input-field py-1.5 text-sm" placeholder="https://" value={editForm.website} onChange={(e) => ef('website', e.target.value)} />
+              </div>
+              <div>
+                <label className="label text-xs">Annual Turnover</label>
+                <input className="input-field py-1.5 text-sm" placeholder="e.g. 5 Crore" value={editForm.annualTurnover} onChange={(e) => ef('annualTurnover', e.target.value)} />
+              </div>
+              <div>
+                <label className="label text-xs">OEM / Modules *</label>
+                <input required className="input-field py-1.5 text-sm" placeholder="e.g. Ansys, Siemens" value={editForm.oemName} onChange={(e) => ef('oemName', e.target.value)} />
+              </div>
+              <div>
+                <label className="label text-xs">OEM Email</label>
+                <input type="email" className="input-field py-1.5 text-sm" placeholder="oem@company.com" value={editForm.oemEmail} onChange={(e) => ef('oemEmail', e.target.value)} />
+              </div>
+              <div>
+                <label className="label text-xs">Channel Partner</label>
+                <input className="input-field py-1.5 text-sm" value={editForm.channelPartner} onChange={(e) => ef('channelPartner', e.target.value)} />
+              </div>
+              <div>
+                <label className="label text-xs">Expected Closure</label>
+                <input className="input-field py-1.5 text-sm" placeholder="e.g. Q2 2026" value={editForm.expectedClosure} onChange={(e) => ef('expectedClosure', e.target.value)} />
+              </div>
+              <div>
+                <label className="label text-xs">City</label>
+                <input className="input-field py-1.5 text-sm" value={editForm.city} onChange={(e) => ef('city', e.target.value)} />
+              </div>
+              <div>
+                <label className="label text-xs">State</label>
+                <input className="input-field py-1.5 text-sm" value={editForm.state} onChange={(e) => ef('state', e.target.value)} />
+              </div>
+              <div>
+                <label className="label text-xs">Status</label>
+                <select className="input-field py-1.5 text-sm" value={editForm.status} onChange={(e) => ef('status', e.target.value)}>
+                  {(['New','Contacted','Qualified','Not Qualified'] as LeadStatus[]).map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label text-xs">Source</label>
+                <select className="input-field py-1.5 text-sm" value={editForm.source} onChange={(e) => ef('source', e.target.value)}>
+                  <option value="">Select</option>
+                  {['Cold Call','Email','Referral','Website','Exhibition','LinkedIn','Other'].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              {user?.role === 'admin' && (
+                <div className="col-span-2">
+                  <label className="label text-xs">Assign To</label>
+                  <select className="input-field py-1.5 text-sm" value={editForm.assignedTo} onChange={(e) => ef('assignedTo', e.target.value)}>
+                    <option value="">Unassigned</option>
+                    {salesUsers.map(u => <option key={u._id} value={u._id}>{u.name}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className="col-span-2">
+                <label className="label text-xs">Notes</label>
+                <textarea rows={2} className="input-field py-1.5 text-sm" value={editForm.notes} onChange={(e) => ef('notes', e.target.value)} />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-1">
+              <button type="button" onClick={() => setEditTarget(null)} className="btn-secondary py-1.5 text-sm">Cancel</button>
+              <button type="submit" disabled={editSaving} className="btn-primary py-1.5 text-sm">{editSaving ? 'Saving…' : 'Save Changes'}</button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       {/* CSV Import Modal */}
@@ -380,16 +772,6 @@ export default function LeadsPage() {
           )}
         </div>
       </Modal>
-
-      <ConfirmDialog
-        isOpen={!!archiveTarget}
-        onClose={() => setArchiveTarget(null)}
-        onConfirm={handleArchive}
-        title="Archive Lead"
-        message="Are you sure you want to archive this lead?"
-        confirmLabel="Archive"
-        danger
-      />
 
       <ConfirmDialog
         isOpen={!!deleteTarget}

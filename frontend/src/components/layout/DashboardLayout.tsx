@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import { usePageTitleStore } from '@/store/pageTitleStore';
 
 const titleMap: Record<string, string> = {
   '/dashboard':       'Dashboard',
@@ -29,8 +30,11 @@ export default function DashboardLayout() {
     setSidebarOpen(false);
   }, [location.pathname]);
 
-  const path = '/' + location.pathname.split('/')[1];
-  const title = titleMap[path] || 'Telled CRM';
+  const subtitle = usePageTitleStore((s) => s.subtitle);
+  const segments = location.pathname.split('/').filter(Boolean);
+  const path = '/' + segments[0];
+  const baseTitle = titleMap[path] || 'Telled CRM';
+  const title = subtitle ? `${baseTitle} / ${subtitle}` : baseTitle;
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#f4f2ff]">
