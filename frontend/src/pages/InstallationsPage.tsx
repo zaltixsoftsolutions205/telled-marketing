@@ -42,14 +42,12 @@ export default function InstallationsPage() {
   useEffect(() => { load(); }, [load]);
 
   const openCreate = async () => {
-    try {
-    const [accRes, engRes] = await Promise.all([
+    const [accRes, engRes] = await Promise.allSettled([
       accountsApi.getAll({ limit: 100 }),
       usersApi.getEngineers(),
     ]);
-    setAccounts(accRes.data || []);
-    setEngineers(engRes || []);
-    } catch (err) { console.error('openCreate:', err); }
+    setAccounts(accRes.status === 'fulfilled' ? accRes.value.data || [] : []);
+    setEngineers(engRes.status === 'fulfilled' ? engRes.value || [] : []);
     setEditTarget(null);
     setForm({ accountId: '', scheduledDate: '', siteAddress: '', engineer: '', status: 'Scheduled', licenseVersion: '', notes: '' });
     setShowModal(true);
@@ -57,11 +55,9 @@ export default function InstallationsPage() {
 
   const openEdit = async (inst: Installation) => {
     if (!accounts.length) {
-      try {
-        const [accRes, engRes] = await Promise.all([accountsApi.getAll({ limit: 100 }), usersApi.getEngineers()]);
-        setAccounts(accRes.data || []);
-        setEngineers(engRes || []);
-      } catch (err) { console.error('openEdit:', err); }
+      const [accRes, engRes] = await Promise.allSettled([accountsApi.getAll({ limit: 100 }), usersApi.getEngineers()]);
+      setAccounts(accRes.status === 'fulfilled' ? accRes.value.data || [] : []);
+      setEngineers(engRes.status === 'fulfilled' ? engRes.value || [] : []);
     }
     setEditTarget(inst);
     setForm({

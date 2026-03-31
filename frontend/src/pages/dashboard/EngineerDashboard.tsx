@@ -132,7 +132,7 @@ export default function EngineerDashboard() {
                 <div key={inst._id} className="px-4 py-3 sm:px-6 sm:py-4 hover:bg-gray-50/50 transition-colors">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-gray-900 text-sm truncate">{inst.accountId?.accountName}</p>
+                      <p className="font-semibold text-gray-900 text-sm truncate">{(inst.accountId?.companyName || inst.accountId?.accountName)}</p>
                       <p className="text-xs text-gray-400 mt-0.5 truncate">{inst.siteAddress}</p>
                     </div>
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${installStatusStyle[inst.status] ?? ''}`}>
@@ -172,7 +172,7 @@ export default function EngineerDashboard() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-gray-900 text-sm truncate">{ticket.subject}</p>
-                      <p className="text-xs text-gray-400 mt-0.5 truncate">{ticket.accountId?.accountName} · {ticket.ticketId}</p>
+                      <p className="text-xs text-gray-400 mt-0.5 truncate">{(ticket.accountId?.companyName || ticket.accountId?.accountName)} · {ticket.ticketId}</p>
                     </div>
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${priorityStyle[ticket.priority] ?? ''}`}>
                       {ticket.priority}
@@ -216,7 +216,7 @@ export default function EngineerDashboard() {
                 {stats.recentVisits?.map((visit: any) => (
                   <tr key={visit._id} className="hover:bg-amber-50/20 transition-colors">
                     <td className="table-cell font-semibold text-gray-900">{visit.purpose}</td>
-                    <td className="table-cell text-gray-500">{visit.accountId?.accountName ?? '—'}</td>
+                    <td className="table-cell text-gray-500">{(visit.accountId?.companyName || visit.accountId?.accountName) ?? '—'}</td>
                     <td className="table-cell text-gray-400 text-xs">{formatDate(visit.visitDate)}</td>
                     <td className="table-cell font-bold text-gray-900 tabular-nums">{formatCurrency(visit.totalAmount)}</td>
                     <td className="table-cell">

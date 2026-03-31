@@ -81,10 +81,10 @@ export default function App() {
 
           {/* Admin + Sales + Engineer (shared modules) */}
           <Route path="accounts" element={
-            <RoleRoute roles={['admin','sales','engineer']}><AccountsPage /></RoleRoute>
+            <RoleRoute roles={['admin','sales','engineer','hr_finance']}><AccountsPage /></RoleRoute>
           } />
           <Route path="accounts/:id" element={
-            <RoleRoute roles={['admin','sales','engineer']}><AccountDetailPage /></RoleRoute>
+            <RoleRoute roles={['admin','sales','engineer','hr_finance']}><AccountDetailPage /></RoleRoute>
           } />
           <Route path="support" element={
             <RoleRoute roles={['admin','sales','engineer']}><SupportPage /></RoleRoute>
@@ -119,10 +119,10 @@ export default function App() {
 
           {/* Attendance & Leave — HR, Admin, Engineers */}
           <Route path="attendance" element={
-            <RoleRoute roles={['admin','hr_finance','engineer']}><AttendancePage /></RoleRoute>
+            <RoleRoute roles={['admin','hr_finance','engineer','sales']}><AttendancePage /></RoleRoute>
           } />
           <Route path="leaves" element={
-            <RoleRoute roles={['admin','hr_finance','engineer']}><LeavePage /></RoleRoute>
+            <RoleRoute roles={['admin','hr_finance','engineer','sales']}><LeavePage /></RoleRoute>
           } />
 
           {/* Admin only */}
