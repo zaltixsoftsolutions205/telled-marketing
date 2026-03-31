@@ -32,6 +32,7 @@ import dashboardRoutes from './routes/dashboard.routes';
 import attendanceRoutes from './routes/attendance.routes';
 import leaveRoutes from './routes/leave.routes';
 import supportEmailRoutes from './routes/supportEmail.routes';
+import otpRoutes from './routes/otp.routes';
 
 
 const app = express();
@@ -65,6 +66,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/leaves', leaveRoutes);
 app.use('/api/support-email', supportEmailRoutes);
+app.use('/api/otp', otpRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

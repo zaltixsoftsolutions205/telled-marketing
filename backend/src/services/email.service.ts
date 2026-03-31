@@ -1,6 +1,9 @@
 // backend/src/services/email.service.ts
 import { createTransporter } from '../config/email';
 import logger from '../utils/logger';
+import { getTransporter } from '../config/email';
+import nodemailer from 'nodemailer';
+import { getUserEmailTransporter } from '../config/userEmail';
 
 const base = (content: string, title: string) => `<!DOCTYPE html><html><head><style>
 body{font-family:Arial,sans-serif;background:#f4f4f4;margin:0}
@@ -183,6 +186,24 @@ export const sendTicketStatusUpdate = async (
   await send(to, `Support Ticket ${ticketId} - Status Updated to ${newStatus}`, html);
 };
 
+export const sendOTPEmail = async (to: string, otp: string) => {
+  const transporter = getTransporter();
+
+  // 🔥 DO NOT AWAIT
+  transporter.sendMail({
+    from: process.env.EMAIL_FROM,
+    to,
+    subject: 'Your OTP for Telled CRM',
+    html: `
+      <h2>OTP Verification</h2>
+      <h1>${otp}</h1>
+      <p>Valid for 5 minutes</p>
+    `
+  }).catch(err => {
+    console.error('Email failed:', err);
+  });
+};
+
 export const sendTicketAssignmentNotification = async (
   to: string,
   ticketId: string,
@@ -233,4 +254,44 @@ export const sendTicketAssignmentNotification = async (
 
   await send(to, `New Support Ticket Assigned: ${ticketId}`, html);
 };
+
+export const sendUserCredentialsEmail = async (
+  to: string,
+  name: string,
+  email: string,
+  password: string
+) => {
+  try {
+    const transporter = nodemailer.createTransport({
+      host: process.env.USER_SMTP_HOST,
+      port: Number(process.env.USER_SMTP_PORT),
+      secure: true, // ✅ IMPORTANT for 465
+      auth: {
+        user: process.env.USER_SMTP_USER,
+        pass: process.env.USER_SMTP_PASS,
+      },
+    });
+
+    await transporter.sendMail({
+      from: `"Telled CRM" <${process.env.USER_EMAIL_FROM}>`,
+      to,
+      subject: 'Your Login Credentials',
+      html: `
+        <h2>Welcome ${name}</h2>
+        <p>Your account has been created.</p>
+        <p><b>Email:</b> ${email}</p>
+        <p><b>Password:</b> ${password}</p>
+        <p>Please login and change your password.</p>
+      `,
+    });
+
+    console.log("✅ Email sent to:", to);
+
+  } catch (error) {
+    console.error("❌ Email Error:", error);
+    throw error;
+  }
+};
+
+
 export default send;
