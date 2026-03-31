@@ -126,6 +126,39 @@ router.post('/:id/convert', authorize('admin', 'sales', 'engineer', 'hr_finance'
   }
 });
 
+// Record vendor payment against a PO
+router.post('/:id/payment', authorize('admin', 'hr_finance', 'sales'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { paidAmount, paidDate, paymentMode, paymentReference, paymentNotes } = req.body;
+    if (!paidAmount || !paidDate || !paymentMode) { sendError(res, 'paidAmount, paidDate and paymentMode are required', 400); return; }
+    const po = await PurchaseOrder.findByIdAndUpdate(
+      req.params.id,
+      { paymentStatus: 'Paid', paidAmount, paidDate, paymentMode, paymentReference, paymentNotes, paidBy: req.user!.id },
+      { new: true }
+    ).populate('leadId', 'companyName').populate('paidBy', 'name');
+    if (!po) { sendError(res, 'Purchase order not found', 404); return; }
+    sendSuccess(res, po, 'Vendor payment recorded');
+  } catch { sendError(res, 'Failed to record payment', 500); }
+});
+
+// Get all vendor payments (POs that are Paid) — for HR/Finance
+router.get('/vendor-payments', authorize('admin', 'hr_finance'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { page, limit, skip } = getPaginationParams(req);
+    const filter: Record<string, unknown> = { isArchived: false, paymentStatus: 'Paid' };
+    const [pos, total] = await Promise.all([
+      PurchaseOrder.find(filter)
+        .populate('leadId', 'companyName')
+        .populate('paidBy', 'name')
+        .populate('uploadedBy', 'name')
+        .sort({ paidDate: -1 })
+        .skip(skip).limit(limit),
+      PurchaseOrder.countDocuments(filter),
+    ]);
+    sendPaginated(res, pos, total, page, limit);
+  } catch { sendError(res, 'Failed to fetch vendor payments', 500); }
+});
+
 // Update this route to allow admin and sales
 router.post('/sync-emails', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
   try {

@@ -3,6 +3,7 @@ import Leave from '../models/Leave';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams } from '../utils/helpers';
+import { notifyRole, notifyUser } from '../utils/notify';
 
 export const getLeaves = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -50,6 +51,13 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<void>
       status: 'Pending',
     }).save();
     await leave.populate('employeeId', 'name email');
+    const emp = leave.employeeId as any;
+    notifyRole(['admin', 'hr_finance'], {
+      title: 'New Leave Request',
+      message: `${emp?.name || 'An employee'} applied for ${type} leave (${days} day${days > 1 ? 's' : ''})`,
+      type: 'leave',
+      link: '/leaves',
+    });
     sendSuccess(res, leave, 'Leave application submitted', 201);
   } catch (e) {
     sendError(res, 'Failed to apply for leave', 500);
@@ -68,6 +76,13 @@ export const approveLeave = async (req: AuthRequest, res: Response): Promise<voi
       { new: true }
     ).populate('employeeId', 'name email').populate('approvedBy', 'name');
     if (!leave) { sendError(res, 'Leave not found', 404); return; }
+    const empId = (leave.employeeId as any)?._id?.toString() || leave.employeeId.toString();
+    notifyUser(empId, {
+      title: 'Leave Approved',
+      message: `Your ${leave.type} leave request has been approved`,
+      type: 'leave',
+      link: '/my-leaves',
+    });
     sendSuccess(res, leave, 'Leave approved');
   } catch (e) {
     sendError(res, 'Failed to approve leave', 500);
@@ -87,6 +102,13 @@ export const rejectLeave = async (req: AuthRequest, res: Response): Promise<void
       { new: true }
     ).populate('employeeId', 'name email').populate('approvedBy', 'name');
     if (!leave) { sendError(res, 'Leave not found', 404); return; }
+    const empId2 = (leave.employeeId as any)?._id?.toString() || leave.employeeId.toString();
+    notifyUser(empId2, {
+      title: 'Leave Rejected',
+      message: `Your ${leave.type} leave request was rejected${rejectionReason ? ': ' + rejectionReason : ''}`,
+      type: 'leave',
+      link: '/my-leaves',
+    });
     sendSuccess(res, leave, 'Leave rejected');
   } catch (e) {
     sendError(res, 'Failed to reject leave', 500);

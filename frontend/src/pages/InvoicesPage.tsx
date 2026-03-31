@@ -73,7 +73,13 @@ export default function InvoicesPage() {
     if (!selected) return;
     setSaving(true);
     try {
-      await invoicesApi.recordPayment(selected._id, payForm);
+      await invoicesApi.recordPayment(selected._id, {
+        amountPaid: Number(payForm.amount),
+        paymentDate: payForm.paymentDate,
+        mode: payForm.mode,
+        referenceNumber: payForm.reference,
+        notes: payForm.notes,
+      });
       setShowPayment(false);
       load();
       loadStats();
@@ -181,13 +187,15 @@ export default function InvoicesPage() {
                             <CreditCard size={15} />
                           </button>
                         )}
-                        {inv.pdfPath && (
-                          <a href={`/uploads/${inv.pdfPath}`} target="_blank" rel="noreferrer" className="p-1 hover:text-violet-600 text-gray-400" title="View PDF">
-                            <FileText size={15} />
-                          </a>
-                        )}
-                        {(inv as any).pdfUrl && (
-                          <a href={`/api/invoices/${inv._id}/pdf`} target="_blank" rel="noreferrer" className="p-1 hover:text-blue-600 text-gray-400" title="Download PDF">
+                        {((inv as any).pdfUrl || inv.pdfPath) && (
+                          <a
+                            href={`/uploads/${(inv as any).pdfUrl || inv.pdfPath}`}
+                            download
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-1 hover:text-violet-600 text-gray-400"
+                            title="Download Invoice PDF"
+                          >
                             <Download size={15} />
                           </a>
                         )}

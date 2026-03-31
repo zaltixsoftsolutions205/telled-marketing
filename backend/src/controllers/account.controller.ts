@@ -4,6 +4,7 @@ import Lead from '../models/Lead';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, sanitizeQuery } from '../utils/helpers';
+import { notifyUser, notifyRole } from '../utils/notify';
 
 export const getAccounts = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -51,6 +52,12 @@ export const convertLeadToAccount = async (req: AuthRequest, res: Response): Pro
       status: 'Active',
     }).save();
     await Lead.findByIdAndUpdate(leadId, { stage: 'Converted' });
+    notifyRole(['admin', 'hr_finance'], {
+      title: 'New Account Created',
+      message: `"${account.companyName}" has been converted from a lead to an active account`,
+      type: 'general',
+      link: '/accounts',
+    });
     sendSuccess(res, account, 'Lead converted to account', 201);
   } catch (err: any) { sendError(res, err?.message || 'Failed to convert lead', 500); }
 };
@@ -67,6 +74,14 @@ export const assignEngineer = async (req: AuthRequest, res: Response): Promise<v
   try {
     const account = await Account.findByIdAndUpdate(req.params.id, { assignedEngineer: req.body.engineerId }, { new: true }).populate('assignedEngineer', 'name email');
     if (!account) { sendError(res, 'Account not found', 404); return; }
+    if (req.body.engineerId) {
+      notifyUser(req.body.engineerId, {
+        title: 'Account Assigned',
+        message: `You have been assigned to account "${account.companyName}"`,
+        type: 'general',
+        link: '/accounts',
+      });
+    }
     sendSuccess(res, account, 'Engineer assigned');
   } catch { sendError(res, 'Failed', 500); }
 };

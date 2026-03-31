@@ -1,14 +1,19 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, Search, Send, Building2, Pencil, CheckCircle, RefreshCw } from 'lucide-react';
+import { Plus, Search, Send, Building2, Pencil, CheckCircle, RefreshCw, Receipt, CreditCard } from 'lucide-react';
 import { purchasesApi } from '@/api/purchases';
 import { leadsApi } from '@/api/leads';
-import api from '@/api/axios'; // Add this import for the API call
+import { accountsApi } from '@/api/accounts';
+import { invoicesApi } from '@/api/invoices';
+import api from '@/api/axios';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
 import { formatDate, formatCurrency } from '@/utils/formatters';
-import type { PurchaseOrder, Lead } from '@/types';
+import { useAuthStore } from '@/store/authStore';
+import type { PurchaseOrder, Lead, Account } from '@/types';
 
 export default function PurchasesPage() {
+  const { user } = useAuthStore();
+  const canRecordPayment = user?.role === 'admin' || user?.role === 'hr_finance' || user?.role === 'sales';
   const [activeTab, setActiveTab] = useState<'customer' | 'vendor'>('customer');
 
   // Customer POs
@@ -44,6 +49,20 @@ export default function PurchasesPage() {
   const [convertTarget, setConvertTarget] = useState<PurchaseOrder | null>(null);
   const [convertForm, setConvertForm] = useState({ accountName: '', notes: '' });
   const [converting, setConverting] = useState(false);
+
+  // Mark Vendor Paid modal
+  const [payTarget, setPayTarget] = useState<PurchaseOrder | null>(null);
+  const [payForm, setPayForm] = useState({ paidAmount: '', paidDate: new Date().toISOString().slice(0, 10), paymentMode: 'Bank Transfer', paymentReference: '', paymentNotes: '' });
+  const [paying, setPaying] = useState(false);
+
+  // Generate Invoice modal
+  const [invoiceTarget, setInvoiceTarget] = useState<PurchaseOrder | null>(null);
+  const [invoiceAccounts, setInvoiceAccounts] = useState<Account[]>([]);
+  const [invoiceForm, setInvoiceForm] = useState({
+    accountId: '', amount: '', taxPercent: '18',
+    dueDate: '', description: '', notes: '',
+  });
+  const [invoiceGenerating, setInvoiceGenerating] = useState(false);
 
 
   // Add this function for syncing emails
@@ -157,6 +176,87 @@ export default function PurchasesPage() {
     } finally { setConverting(false); }
   };
 
+  const openGenerateInvoice = async (po: PurchaseOrder) => {
+    setInvoiceTarget(po);
+    // Default due date = 30 days from today
+    const due = new Date(); due.setDate(due.getDate() + 30);
+    const dueDate = due.toISOString().slice(0, 10);
+
+    // Fetch accounts to let user select; try to auto-match by leadId
+    try {
+      const res = await accountsApi.getAll({ limit: 200 });
+      const accs: Account[] = res.data || [];
+      setInvoiceAccounts(accs);
+      // Auto-select account that has the same leadId as this PO
+      const lead = po.leadId as Lead;
+      const matched = accs.find((a: any) => a.leadId === lead?._id || a.leadId?._id === lead?._id || a.companyName === lead?.companyName);
+      setInvoiceForm({
+        accountId: matched?._id || '',
+        amount: String(po.amount),
+        taxPercent: '18',
+        dueDate,
+        description: po.product || '',
+        notes: `Generated from PO ${po.poNumber}`,
+      });
+    } catch {
+      setInvoiceAccounts([]);
+      setInvoiceForm({ accountId: '', amount: String(po.amount), taxPercent: '18', dueDate, description: po.product || '', notes: `Generated from PO ${po.poNumber}` });
+    }
+  };
+
+  const openMarkPaid = (po: PurchaseOrder) => {
+    setPayTarget(po);
+    setPayForm({ paidAmount: String(po.amount), paidDate: new Date().toISOString().slice(0, 10), paymentMode: 'Bank Transfer', paymentReference: '', paymentNotes: '' });
+  };
+
+  const handleMarkPaid = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!payTarget) return;
+    setPaying(true);
+    try {
+      await purchasesApi.recordPayment(payTarget._id, {
+        paidAmount: Number(payForm.paidAmount),
+        paidDate: payForm.paidDate,
+        paymentMode: payForm.paymentMode,
+        paymentReference: payForm.paymentReference,
+        paymentNotes: payForm.paymentNotes,
+      });
+      setPayTarget(null);
+      load();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Failed to record payment');
+    } finally { setPaying(false); }
+  };
+
+  const handleGenerateInvoice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!invoiceTarget || !invoiceForm.accountId) return;
+    setInvoiceGenerating(true);
+    try {
+      const invoice = await invoicesApi.create({
+        accountId: invoiceForm.accountId,
+        amount: Number(invoiceForm.amount),
+        taxPercent: Number(invoiceForm.taxPercent),
+        dueDate: invoiceForm.dueDate,
+        description: invoiceForm.description,
+        notes: invoiceForm.notes,
+        poReference: invoiceTarget.poNumber,
+      });
+      const pdfUrl = invoice?.pdfUrl || invoice?.pdfPath;
+      if (pdfUrl) {
+        const a = document.createElement('a');
+        a.href = `/uploads/${pdfUrl}`;
+        a.download = pdfUrl;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+      setInvoiceTarget(null);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Failed to generate invoice');
+    } finally { setInvoiceGenerating(false); }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
@@ -212,10 +312,11 @@ export default function PurchasesPage() {
                     <th className="table-header">PO Number</th>
                     <th className="table-header">Customer</th>
                     <th className="table-header">Product</th>
-                    <th className="table-header">Vendor Name</th>
-                    <th className="table-header">Vendor Email</th>
+                    <th className="table-header">Vendor</th>
                     <th className="table-header">Amount</th>
                     <th className="table-header">Sent On</th>
+                    <th className="table-header">Payment</th>
+                    {canRecordPayment && <th className="table-header">Action</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -224,10 +325,35 @@ export default function PurchasesPage() {
                       <td className="table-cell font-mono font-medium text-amber-700">{po.poNumber}</td>
                       <td className="table-cell font-medium">{(po.leadId as Lead)?.companyName || '—'}</td>
                       <td className="table-cell text-gray-500">{po.product || '—'}</td>
-                      <td className="table-cell text-gray-700">{po.vendorName || '—'}</td>
-                      <td className="table-cell text-gray-500 text-sm">{po.vendorEmail || '—'}</td>
+                      <td className="table-cell">
+                        <p className="text-sm text-gray-700">{po.vendorName || '—'}</p>
+                        {po.vendorEmail && <p className="text-xs text-gray-400">{po.vendorEmail}</p>}
+                      </td>
                       <td className="table-cell font-semibold text-amber-700">{formatCurrency(po.amount)}</td>
-                      <td className="table-cell text-gray-400">{(po as any).vendorEmailSentAt ? formatDate((po as any).vendorEmailSentAt) : '—'}</td>
+                      <td className="table-cell text-gray-400">{po.vendorEmailSentAt ? formatDate(po.vendorEmailSentAt) : '—'}</td>
+                      <td className="table-cell">
+                        {po.paymentStatus === 'Paid' ? (
+                          <div>
+                            <span className="badge bg-green-100 text-green-700 text-xs">Paid</span>
+                            {po.paidDate && <p className="text-xs text-gray-400 mt-0.5">{formatDate(po.paidDate)}</p>}
+                          </div>
+                        ) : (
+                          <span className="badge bg-orange-100 text-orange-700 text-xs">Unpaid</span>
+                        )}
+                      </td>
+                      {canRecordPayment && (
+                        <td className="table-cell">
+                          {po.paymentStatus !== 'Paid' && (
+                            <button
+                              title="Mark Vendor Paid"
+                              onClick={() => openMarkPaid(po)}
+                              className="p-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors"
+                            >
+                              <CreditCard size={13} />
+                            </button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -323,6 +449,16 @@ export default function PurchasesPage() {
                               <span title="Converted to Account">
                                 <CheckCircle size={14} className="text-emerald-500" />
                               </span>
+                            )}
+                            {/* Generate Invoice — only for sent POs */}
+                            {po.vendorEmailSent && (
+                              <button
+                                title="Generate Invoice"
+                                onClick={() => openGenerateInvoice(po)}
+                                className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
+                              >
+                                <Receipt size={13} />
+                              </button>
                             )}
                           </div>
                         </td>
@@ -495,6 +631,106 @@ export default function PurchasesPage() {
         </form>
       </Modal>
 
+      {/* Generate Invoice Modal */}
+      <Modal isOpen={!!invoiceTarget} onClose={() => setInvoiceTarget(null)} title={`Generate Invoice — ${invoiceTarget?.poNumber}`} size="lg">
+        <form onSubmit={handleGenerateInvoice} className="space-y-4">
+          {/* PO Summary */}
+          <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-sm space-y-1">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Customer</span>
+              <span className="font-semibold text-gray-800">{(invoiceTarget?.leadId as Lead)?.companyName || '—'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Product</span>
+              <span className="font-semibold text-gray-800">{invoiceTarget?.product || '—'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">PO Amount</span>
+              <span className="font-bold text-emerald-700">{invoiceTarget ? formatCurrency(invoiceTarget.amount) : '—'}</span>
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Bill To (Account) *</label>
+            <select
+              required
+              className="input-field"
+              value={invoiceForm.accountId}
+              onChange={(e) => setInvoiceForm(f => ({ ...f, accountId: e.target.value }))}
+            >
+              <option value="">Select account</option>
+              {invoiceAccounts.map(a => (
+                <option key={a._id} value={a._id}>{a.accountName || (a as any).companyName}</option>
+              ))}
+            </select>
+            {invoiceAccounts.length === 0 && (
+              <p className="text-xs text-amber-600 mt-1">No accounts found. Convert PO to account first.</p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="label">Amount (₹) *</label>
+              <input
+                required type="number" className="input-field"
+                value={invoiceForm.amount}
+                onChange={(e) => setInvoiceForm(f => ({ ...f, amount: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">Tax %</label>
+              <input
+                type="number" className="input-field" min="0" max="100"
+                value={invoiceForm.taxPercent}
+                onChange={(e) => setInvoiceForm(f => ({ ...f, taxPercent: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">Due Date *</label>
+              <input
+                required type="date" className="input-field"
+                value={invoiceForm.dueDate}
+                onChange={(e) => setInvoiceForm(f => ({ ...f, dueDate: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          {/* Live total preview */}
+          {invoiceForm.amount && (
+            <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 flex items-center justify-between text-sm">
+              <span className="text-gray-500">Total (with {invoiceForm.taxPercent}% tax)</span>
+              <span className="font-bold text-emerald-700 text-base">
+                {formatCurrency(Number(invoiceForm.amount) * (1 + Number(invoiceForm.taxPercent) / 100))}
+              </span>
+            </div>
+          )}
+
+          <div>
+            <label className="label">Description</label>
+            <input
+              className="input-field" placeholder="e.g. Supply of Siemens PLC S7-1500"
+              value={invoiceForm.description}
+              onChange={(e) => setInvoiceForm(f => ({ ...f, description: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="label">Notes</label>
+            <textarea
+              rows={2} className="input-field"
+              value={invoiceForm.notes}
+              onChange={(e) => setInvoiceForm(f => ({ ...f, notes: e.target.value }))}
+            />
+          </div>
+
+          <div className="flex gap-3 justify-end pt-1">
+            <button type="button" onClick={() => setInvoiceTarget(null)} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={invoiceGenerating} className="btn-primary flex items-center gap-2">
+              <Receipt size={14} /> {invoiceGenerating ? 'Generating…' : 'Generate Invoice'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
       {/* Send to Vendor Modal */}
       <Modal isOpen={!!sendTarget} onClose={() => { setSendTarget(null); setSendVendorEmail(''); }} title={`Send PO to Vendor — ${sendTarget?.poNumber}`}>
         <form onSubmit={handleSendToVendor} className="space-y-4">
@@ -520,6 +756,52 @@ export default function PurchasesPage() {
             <button type="button" onClick={() => { setSendTarget(null); setSendVendorEmail(''); }} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={sending} className="btn-primary flex items-center gap-2">
               <Send size={14} />{sending ? 'Sending…' : 'Send to Vendor'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Mark Vendor Paid Modal */}
+      <Modal isOpen={!!payTarget} onClose={() => setPayTarget(null)} title={`Record Vendor Payment — ${payTarget?.poNumber}`}>
+        <form onSubmit={handleMarkPaid} className="space-y-4">
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-sm space-y-1">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Vendor</span>
+              <span className="font-semibold">{payTarget?.vendorName || '—'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">PO Amount</span>
+              <span className="font-bold text-amber-700">{payTarget ? formatCurrency(payTarget.amount) : '—'}</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Amount Paid (₹) *</label>
+              <input required type="number" className="input-field" value={payForm.paidAmount} onChange={(e) => setPayForm(f => ({ ...f, paidAmount: e.target.value }))} />
+            </div>
+            <div>
+              <label className="label">Payment Date *</label>
+              <input required type="date" className="input-field" value={payForm.paidDate} onChange={(e) => setPayForm(f => ({ ...f, paidDate: e.target.value }))} />
+            </div>
+          </div>
+          <div>
+            <label className="label">Payment Mode *</label>
+            <select required className="input-field" value={payForm.paymentMode} onChange={(e) => setPayForm(f => ({ ...f, paymentMode: e.target.value }))}>
+              {['Bank Transfer', 'Cheque', 'Cash', 'UPI', 'Online'].map(m => <option key={m}>{m}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Reference / Cheque No.</label>
+            <input className="input-field" placeholder="Transaction ID, cheque number…" value={payForm.paymentReference} onChange={(e) => setPayForm(f => ({ ...f, paymentReference: e.target.value }))} />
+          </div>
+          <div>
+            <label className="label">Notes</label>
+            <textarea rows={2} className="input-field" value={payForm.paymentNotes} onChange={(e) => setPayForm(f => ({ ...f, paymentNotes: e.target.value }))} />
+          </div>
+          <div className="flex gap-3 justify-end pt-1">
+            <button type="button" onClick={() => setPayTarget(null)} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={paying} className="btn-primary flex items-center gap-2">
+              <CreditCard size={14} />{paying ? 'Saving…' : 'Mark as Paid'}
             </button>
           </div>
         </form>

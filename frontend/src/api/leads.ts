@@ -27,6 +27,10 @@ export const leadsApi = {
   },
   importLeads: async (rows: Array<Record<string, string>>) => {
     const { data } = await api.post('/leads/import', { rows });
-    return data.data; // { imported }
+    return data.data;
+  },
+  sendDrf: async (id: string) => {
+    const { data } = await api.post(`/leads/${id}/send-drf`);
+    return data.data;
   },
 };

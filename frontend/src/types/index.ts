@@ -147,6 +147,13 @@ export interface PurchaseOrder {
   converted: boolean;
   uploadedBy: User | string;
   isArchived: boolean;
+  paymentStatus?: 'Unpaid' | 'Paid';
+  paidAmount?: number;
+  paidDate?: string;
+  paymentMode?: string;
+  paymentReference?: string;
+  paymentNotes?: string;
+  paidBy?: User | string;
   createdAt: string;
   updatedAt: string;
 }
@@ -203,10 +210,10 @@ export interface Invoice {
 export interface Payment {
   _id: string;
   invoiceId: Invoice;
-  amount: number;
+  amountPaid: number;
   paymentDate: string;
   mode: 'Bank Transfer' | 'Cheque' | 'Cash' | 'UPI' | 'Online';
-  reference?: string;
+  referenceNumber?: string;
   notes?: string;
   recordedBy: User;
   createdAt: string;

@@ -294,37 +294,36 @@ export default function AttendancePage() {
 
       {/* Calendar View (for employee self-view) */}
       {isEmployee && (
-        <div className="card !p-0 overflow-hidden">
+        <div className="card !p-0 overflow-hidden max-w-sm">
           {/* Calendar Header */}
-          <div className="bg-gradient-to-r from-violet-600 to-violet-500 px-6 py-4 flex items-center justify-between">
+          <div className="bg-gradient-to-r from-violet-600 to-violet-500 px-4 py-2.5 flex items-center justify-between">
             <div>
-              <p className="text-violet-200 text-xs font-semibold uppercase tracking-widest">{filterYear}</p>
-              <h2 className="text-white text-xl font-bold">{MONTHS[filterMonth - 1]}</h2>
+              <p className="text-violet-200 text-[10px] font-semibold uppercase tracking-widest">{filterYear}</p>
+              <h2 className="text-white text-base font-bold leading-tight">{MONTHS[filterMonth - 1]}</h2>
             </div>
-            {/* Summary pills */}
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
               {[
-                { label: 'Present', count: Object.values(calendarMap).filter(r => r.status === 'Present').length, color: 'bg-green-400/30 text-green-100' },
-                { label: 'Absent', count: Object.values(calendarMap).filter(r => r.status === 'Absent').length, color: 'bg-red-400/30 text-red-100' },
-                { label: 'Leave', count: Object.values(calendarMap).filter(r => r.status === 'Leave' || r.status === 'Half Day').length, color: 'bg-blue-400/30 text-blue-100' },
+                { label: 'P', count: Object.values(calendarMap).filter(r => r.status === 'Present').length, color: 'bg-green-400/30 text-green-100' },
+                { label: 'A', count: Object.values(calendarMap).filter(r => r.status === 'Absent').length, color: 'bg-red-400/30 text-red-100' },
+                { label: 'L', count: Object.values(calendarMap).filter(r => r.status === 'Leave' || r.status === 'Half Day').length, color: 'bg-blue-400/30 text-blue-100' },
               ].map(({ label, count, color }) => (
-                <div key={label} className={`px-3 py-1 rounded-full text-xs font-semibold ${color}`}>
+                <div key={label} className={`px-2 py-0.5 rounded-full text-xs font-semibold ${color}`}>
                   {count} {label}
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="p-4">
+          <div className="p-3">
             {/* Day headers */}
-            <div className="grid grid-cols-7 mb-1">
+            <div className="grid grid-cols-7 mb-0.5">
               {['S','M','T','W','T','F','S'].map((d, i) => (
-                <div key={i} className="text-center text-[11px] font-bold text-gray-400 py-1">{d}</div>
+                <div key={i} className="text-center text-[10px] font-bold text-gray-400 py-0.5">{d}</div>
               ))}
             </div>
 
             {/* Day cells */}
-            <div className="grid grid-cols-7 gap-y-1">
+            <div className="grid grid-cols-7">
               {Array.from({ length: firstDayOfMonth }).map((_, i) => <div key={`e-${i}`} />)}
               {Array.from({ length: daysInMonth }).map((_, i) => {
                 const day = i + 1;
@@ -332,10 +331,10 @@ export default function AttendancePage() {
                 const isToday = isCurrentMonth && day === todayDate;
 
                 const cellStyle: Record<string, string> = {
-                  Present:    'bg-green-500 text-white shadow-sm shadow-green-200',
-                  Absent:     'bg-red-500 text-white shadow-sm shadow-red-200',
-                  'Half Day': 'bg-amber-400 text-white shadow-sm shadow-amber-200',
-                  Leave:      'bg-blue-500 text-white shadow-sm shadow-blue-200',
+                  Present:    'bg-green-500 text-white',
+                  Absent:     'bg-red-500 text-white',
+                  'Half Day': 'bg-amber-400 text-white',
+                  Leave:      'bg-blue-500 text-white',
                   Holiday:    'bg-gray-300 text-gray-700',
                 };
 
@@ -346,7 +345,7 @@ export default function AttendancePage() {
                         ? `${rec.status}${rec.checkIn ? ` · In: ${formatTime(rec.checkIn)}` : ''}${rec.checkOut ? ` · Out: ${formatTime(rec.checkOut)}` : ''}`
                         : 'No record'}
                       className={`
-                        w-9 h-9 flex items-center justify-center rounded-full text-sm font-semibold cursor-default transition-all
+                        w-7 h-7 flex items-center justify-center rounded-full text-xs font-semibold cursor-default transition-all
                         ${rec ? cellStyle[rec.status] : 'text-gray-400 hover:bg-gray-100'}
                         ${isToday && !rec ? 'ring-2 ring-violet-500 ring-offset-1 text-violet-700 font-bold' : ''}
                         ${isToday && rec ? 'ring-2 ring-violet-400 ring-offset-1' : ''}
@@ -361,17 +360,16 @@ export default function AttendancePage() {
           </div>
 
           {/* Legend */}
-          <div className="border-t border-gray-100 px-5 py-3 flex flex-wrap gap-4 bg-gray-50/50">
+          <div className="border-t border-gray-100 px-3 py-2 flex flex-wrap gap-3 bg-gray-50/50">
             {[
               { label: 'Present', color: 'bg-green-500' },
               { label: 'Absent',  color: 'bg-red-500' },
               { label: 'Half Day',color: 'bg-amber-400' },
               { label: 'Leave',   color: 'bg-blue-500' },
-              { label: 'Holiday', color: 'bg-gray-300' },
               { label: 'Today',   color: 'ring-2 ring-violet-500 ring-offset-1 bg-white' },
             ].map(({ label, color }) => (
-              <span key={label} className="flex items-center gap-1.5 text-xs text-gray-500">
-                <span className={`w-4 h-4 rounded-full inline-block ${color}`} />
+              <span key={label} className="flex items-center gap-1 text-[10px] text-gray-500">
+                <span className={`w-3 h-3 rounded-full inline-block ${color}`} />
                 {label}
               </span>
             ))}

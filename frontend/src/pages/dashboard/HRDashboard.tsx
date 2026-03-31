@@ -88,8 +88,8 @@ export default function HRDashboard() {
           icon={Receipt} color="text-red-600" bg="bg-red-50" border="border-red-400"
         />
         <StatCard
-          title="Visit Approvals" value={stats.visits?.pending ?? 0}
-          sub={`${stats?.visits?.total ?? 0} total visits`}
+          title="Visit Approvals" value={stats.visits?.total ?? 0}
+          sub={`${stats.visits?.pending ?? 0} pending · ${stats.visits?.approved ?? 0} approved`}
           icon={CalendarCheck} color="text-amber-700" bg="bg-amber-50" border="border-amber-400"
         />
         <StatCard
@@ -160,10 +160,10 @@ export default function HRDashboard() {
               View all <ArrowRight size={13} />
             </Link>
           </div>
-          {stats.pendingVisitsList?.length === 0 ? (
+          {!stats.pendingVisitsList?.length ? (
             <div className="px-6 py-10 text-center">
               <CheckCircle2 size={30} className="mx-auto text-gray-300 mb-2" />
-              <p className="text-sm text-gray-400">All visits reviewed</p>
+              <p className="text-sm text-gray-400">No completed visits yet</p>
             </div>
           ) : (
             <div className="divide-y divide-gray-50">
@@ -172,18 +172,18 @@ export default function HRDashboard() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-gray-900 text-sm">{visit.engineerId?.name}</p>
-                      <p className="text-xs text-gray-400 mt-0.5 truncate">{visit.purpose} · {visit.accountId?.companyName || visit.accountId?.accountName || 'No account'}</p>
+                      <p className="text-xs text-gray-400 mt-0.5 truncate">{visit.visitType || visit.purpose} · {visit.accountId?.companyName || 'No account'}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="font-extrabold text-gray-900 text-sm tabular-nums">{formatCurrency(visit.totalAmount)}</p>
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full mt-1 inline-block ${visitStatusStyle[visit.hrStatus] ?? ''}`}>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full mt-1 inline-block ${visitStatusStyle[visit.hrStatus] ?? 'bg-gray-100 text-gray-600'}`}>
                         {visit.hrStatus}
                       </span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1 mt-2">
                     <Clock size={10} className="text-gray-400" />
-                    <span className="text-xs text-gray-400">{formatDate(visit.visitDate)}</span>
+                    <span className="text-xs text-gray-400">{formatDate(visit.visitDate || visit.scheduledDate)}</span>
                   </div>
                 </div>
               ))}

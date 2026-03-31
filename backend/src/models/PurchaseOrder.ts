@@ -14,6 +14,14 @@ export interface IPurchaseOrder extends Document {
   converted: boolean;
   uploadedBy: mongoose.Types.ObjectId;
   isArchived: boolean;
+  // Vendor payment tracking
+  paymentStatus: 'Unpaid' | 'Paid';
+  paidAmount?: number;
+  paidDate?: Date;
+  paymentMode?: 'Bank Transfer' | 'Cheque' | 'Cash' | 'UPI' | 'Online';
+  paymentReference?: string;
+  paymentNotes?: string;
+  paidBy?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -33,6 +41,13 @@ const POSchema = new Schema<IPurchaseOrder>(
     converted:         { type: Boolean, default: false },
     uploadedBy:        { type: Schema.Types.ObjectId, ref: 'User', required: true },
     isArchived:        { type: Boolean, default: false },
+    paymentStatus:     { type: String, enum: ['Unpaid', 'Paid'], default: 'Unpaid' },
+    paidAmount:        { type: Number },
+    paidDate:          { type: Date },
+    paymentMode:       { type: String, enum: ['Bank Transfer', 'Cheque', 'Cash', 'UPI', 'Online'] },
+    paymentReference:  { type: String },
+    paymentNotes:      { type: String },
+    paidBy:            { type: Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true }
 );

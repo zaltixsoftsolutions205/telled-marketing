@@ -29,9 +29,16 @@ export const purchasesApi = {
     const { data } = await api.post(`/purchase-orders/${poId}/convert`, body);
     return data.data;
   },
-  // Add this to purchasesApi object
   syncEmails: async () => {
     const { data } = await api.post('/purchase-orders/sync-emails');
     return data.data;
+  },
+  recordPayment: async (id: string, body: unknown) => {
+    const { data } = await api.post(`/purchase-orders/${id}/payment`, body);
+    return data.data;
+  },
+  getVendorPayments: async (params?: Record<string, unknown>) => {
+    const { data } = await api.get('/purchase-orders/vendor-payments', { params });
+    return { data: data.data, pagination: { total: data.meta?.total ?? 0 } };
   },
 };

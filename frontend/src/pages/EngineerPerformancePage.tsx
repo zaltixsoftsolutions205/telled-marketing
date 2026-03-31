@@ -97,7 +97,7 @@ export default function EngineerPerformancePage() {
         (v.engineerId?._id || v.engineerId) === selected
       );
       const allTickets = (supportRes.data || []).filter((t: any) =>
-        (t.assignedTo?._id || t.assignedTo) === selected
+        (t.assignedEngineer?._id || t.assignedEngineer) === selected
       );
       const allTrainings = (trainingRes.data || []).filter((t: any) =>
         (t.trainedBy?._id || t.trainedBy) === selected

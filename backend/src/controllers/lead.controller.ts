@@ -8,6 +8,7 @@ import { getPaginationParams, sanitizeQuery } from '../utils/helpers';
 import { generateDRFPDF } from '../services/pdf.service';
 import { sendDRFEmail } from '../services/email.service';
 import logger from '../utils/logger';
+import { notifyUser, notifyRole } from '../utils/notify';
 
 const uploadDir = process.env.UPLOAD_PATH || './uploads';
 
@@ -66,6 +67,15 @@ export const createLead = async (req: AuthRequest, res: Response): Promise<void>
     if (!data.oemName) delete data.oemName;
     const lead = await new Lead(data).save();
     const populated = await lead.populate('assignedTo', 'name email');
+    const assignedId = (populated.assignedTo as any)?._id?.toString() || data.assignedTo;
+    if (assignedId && assignedId !== req.user!.id) {
+      notifyUser(assignedId, {
+        title: 'New Lead Assigned',
+        message: `Lead "${populated.companyName}" has been assigned to you`,
+        type: 'general',
+        link: '/leads',
+      });
+    }
     sendSuccess(res, populated, 'Lead created', 201);
   } catch (e: unknown) {
     const msg = (e as { message?: string })?.message || 'Failed to create lead';
@@ -83,71 +93,21 @@ export const updateLead = async (req: AuthRequest, res: Response): Promise<void>
       .populate('assignedTo', 'name email');
     if (!lead) { sendError(res, 'Lead not found', 404); return; }
 
-    // ── Auto DRF email when status transitions to Qualified ──────────────
-    if (req.body.status === 'Qualified' && old.status !== 'Qualified' && !old.drfEmailSent) {
-      const assignedUser = lead.assignedTo as any;
-      const { drfNumber, rand } = genDRFNumber();
-      const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    // DRF is no longer auto-sent on Qualified — use the dedicated sendDRF endpoint
 
-      try {
-        const pdfFile = await generateDRFPDF({
-          drfNumber,
-          version: 1,
-          date: today,
-          companyName: lead.companyName,
-          contactName: lead.contactName || lead.contactPersonName || '',
-          email: lead.email,
-          phone: lead.phone,
-          city: lead.city,
-          state: lead.state,
-          oemName: lead.oemName,
-          source: lead.source,
-          salesName: assignedUser?.name || 'Telled Sales',
-          salesEmail: assignedUser?.email || process.env.SMTP_USER || '',
-          notes: lead.notes,
-        });
-
-        const pdfAbsPath = path.join(process.cwd(), uploadDir, pdfFile);
-
-        // Send DRF to OEM email (if set), otherwise fall back to lead's email
-        const oemEmail = (lead as any).oemEmail || lead.email;
-        const recipients = [oemEmail];
-        if (assignedUser?.email && assignedUser.email !== oemEmail) {
-          recipients.push(assignedUser.email);
-        }
-
-        await sendDRFEmail(
-          recipients.join(','),
-          {
-            drfNumber,
-            version: 1,
-            companyName: lead.companyName,
-            contactName: lead.contactName || lead.contactPersonName || '',
-            oemName: lead.oemName || '',
-            salesName: assignedUser?.name || 'Telled Sales',
-          },
-          pdfAbsPath
-        );
-
-        // Create OEMApprovalAttempt so this DRF appears in DRF Management
-        await new OEMApprovalAttempt({
-          leadId: lead._id,
-          attemptNumber: rand,
-          status: 'Pending',
-          sentDate: new Date(),
-          expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-          createdBy: req.user!.id,
-        }).save();
-
-        // Mark DRF email as sent so it doesn't re-send on subsequent updates
-        await Lead.findByIdAndUpdate(lead._id, { drfNumber, drfEmailSent: true, drfEmailSentAt: new Date() });
-        logger.info(`DRF email sent for lead ${lead._id} (${lead.companyName}) — ${drfNumber}`);
-      } catch (emailErr) {
-        // Don't fail the request if email fails — just log it
-        logger.error('DRF email/PDF generation failed:', emailErr);
-      }
+    // Notify assigned sales if stage changed to key milestones
+    const assignedId = (lead.assignedTo as any)?._id?.toString() || (lead.assignedTo as any)?.toString();
+    if (req.body.stage && assignedId) {
+      const stageMessages: Record<string, string> = {
+        'OEM Approved':  `OEM approved for lead "${lead.companyName}" — proceed with quotation`,
+        'OEM Rejected':  `OEM rejected for lead "${lead.companyName}"`,
+        'PO Received':   `PO received for "${lead.companyName}" — ready to convert to account`,
+        'Converted':     `Lead "${lead.companyName}" has been converted to an account`,
+        'Lost':          `Lead "${lead.companyName}" marked as Lost`,
+      };
+      const msg = stageMessages[req.body.stage];
+      if (msg) notifyUser(assignedId, { title: `Lead Stage: ${req.body.stage}`, message: msg, type: 'general', link: '/leads' });
     }
-
     sendSuccess(res, lead, 'Lead updated');
   } catch (e: unknown) {
     const msg = (e as { message?: string })?.message || 'Failed to update lead';
@@ -197,4 +157,59 @@ export const deleteLead = async (req: AuthRequest, res: Response): Promise<void>
     if (!lead) { sendError(res, 'Lead not found', 404); return; }
     sendSuccess(res, null, 'Lead deleted permanently');
   } catch { sendError(res, 'Failed to delete lead', 500); }
+};
+
+export const sendDRF = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const lead = await Lead.findById(req.params.id).populate('assignedTo', 'name email');
+    if (!lead) { sendError(res, 'Lead not found', 404); return; }
+    if (lead.status !== 'Qualified') { sendError(res, 'Lead must be Qualified to send DRF', 400); return; }
+
+    const assignedUser = lead.assignedTo as any;
+    const { drfNumber, rand } = genDRFNumber();
+    const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+    const pdfFile = await generateDRFPDF({
+      drfNumber, version: 1, date: today,
+      companyName: lead.companyName,
+      contactName: lead.contactName || lead.contactPersonName || '',
+      email: lead.email, phone: lead.phone,
+      city: lead.city, state: lead.state,
+      oemName: lead.oemName, source: lead.source,
+      salesName: assignedUser?.name || 'Telled Sales',
+      salesEmail: assignedUser?.email || process.env.SMTP_USER || '',
+      notes: lead.notes,
+    });
+
+    const pdfAbsPath = path.join(process.cwd(), uploadDir, pdfFile);
+    const oemEmail = (lead as any).oemEmail || lead.email;
+    const recipients = [oemEmail];
+    if (assignedUser?.email && assignedUser.email !== oemEmail) recipients.push(assignedUser.email);
+
+    await sendDRFEmail(recipients.join(','), {
+      drfNumber, version: 1,
+      companyName: lead.companyName,
+      contactName: lead.contactName || lead.contactPersonName || '',
+      oemName: lead.oemName || '',
+      salesName: assignedUser?.name || 'Telled Sales',
+    }, pdfAbsPath);
+
+    await new OEMApprovalAttempt({
+      leadId: lead._id, attemptNumber: rand, status: 'Pending',
+      sentDate: new Date(), expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      createdBy: req.user!.id,
+    }).save();
+
+    await Lead.findByIdAndUpdate(lead._id, { drfNumber, drfEmailSent: true, drfEmailSentAt: new Date() });
+    logger.info(`DRF sent manually for lead ${lead._id} (${lead.companyName}) — ${drfNumber}`);
+    notifyRole(['admin'], {
+      title: 'DRF Submitted for OEM Approval',
+      message: `DRF ${drfNumber} sent to OEM for "${lead.companyName}"`,
+      type: 'general', link: '/oem',
+    });
+    sendSuccess(res, { drfNumber }, 'DRF sent successfully');
+  } catch (err) {
+    logger.error('sendDRF failed:', err);
+    sendError(res, 'Failed to send DRF', 500);
+  }
 };

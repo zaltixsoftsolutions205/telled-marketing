@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Search, ExternalLink, Archive, Upload, X, CheckCircle, Trash2 } from 'lucide-react';
+import { Plus, Search, ExternalLink, Archive, Upload, X, CheckCircle, Trash2, Send } from 'lucide-react';
 import { leadsApi } from '@/api/leads';
 import { usersApi } from '@/api/users';
 import { useAuthStore } from '@/store/authStore';
@@ -43,6 +43,7 @@ export default function LeadsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<string | null>(null);
+  const [sendingDrf, setSendingDrf] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [salesUsers, setSalesUsers] = useState<User[]>([]);
   const [form, setForm] = useState({
@@ -94,11 +95,17 @@ export default function LeadsPage() {
     try {
       await leadsApi.update(leadId, { status: newStatus });
       setLeads(prev => prev.map(l => l._id === leadId ? { ...l, status: newStatus } : l));
-      if (newStatus === 'Qualified') {
-        // Brief delay then reload to get updated drfEmailSent flag
-        setTimeout(load, 2000);
-      }
     } catch { /* ignore */ } finally { setUpdatingStatus(null); }
+  };
+
+  const handleSendDrf = async (leadId: string) => {
+    setSendingDrf(leadId);
+    try {
+      await leadsApi.sendDrf(leadId);
+      setLeads(prev => prev.map(l => l._id === leadId ? { ...l, drfEmailSent: true } : l));
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Failed to send DRF');
+    } finally { setSendingDrf(null); }
   };
 
   const handleArchive = async () => {
@@ -223,6 +230,19 @@ export default function LeadsPage() {
                         <Link to={`/leads/${lead._id}`} className="p-1 hover:text-violet-600 text-gray-400">
                           <ExternalLink size={15} />
                         </Link>
+                        {lead.status === 'Qualified' && !(lead as any).drfEmailSent && (
+                          <button
+                            onClick={() => handleSendDrf(lead._id)}
+                            disabled={sendingDrf === lead._id}
+                            title="Send DRF"
+                            className="p-1 hover:text-blue-600 text-blue-400 disabled:opacity-50"
+                          >
+                            {sendingDrf === lead._id ? <CheckCircle size={15} className="animate-pulse" /> : <Send size={15} />}
+                          </button>
+                        )}
+                        {(lead as any).drfEmailSent && (
+                          <CheckCircle size={15} className="text-green-500" title="DRF already sent" />
+                        )}
                         {user?.role === 'admin' && (
                           <button onClick={() => setArchiveTarget(lead._id)} className="p-1 hover:text-orange-500 text-gray-400" title="Archive">
                             <Archive size={15} />

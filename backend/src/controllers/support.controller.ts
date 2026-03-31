@@ -6,6 +6,7 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, generateTicketId } from '../utils/helpers';
 import { sendTicketStatusUpdate, sendTicketAssignmentNotification } from '../services/email.service';
+import { notifyUser } from '../utils/notify';
 import mongoose from 'mongoose';
 import logger from '../utils/logger';
 
@@ -57,9 +58,15 @@ export const createTicket = async (req: AuthRequest, res: Response): Promise<voi
       .populate('assignedEngineer', 'name email')
       .populate('accountId', 'companyName contactEmail');
     
-    // Send notification to assigned engineer
+    // In-app + email notification to assigned engineer
     if (populated?.assignedEngineer) {
       const engineer = populated.assignedEngineer as any;
+      notifyUser(engineer._id?.toString() || engineer.toString(), {
+        title: 'New Support Ticket Assigned',
+        message: `Ticket ${populated.ticketId}: "${populated.subject}" has been assigned to you`,
+        type: 'support',
+        link: '/support',
+      });
       if (engineer?.email) {
         await sendTicketAssignmentNotification(
           engineer.email,
@@ -119,9 +126,25 @@ export const updateTicket = async (req: AuthRequest, res: Response): Promise<voi
       }
     }
     
-    // Send notification to new engineer if assigned
+    // In-app notify creator of status change
+    if (oldStatus !== ticket.status && ticket.createdBy) {
+      notifyUser((ticket.createdBy as any)._id?.toString() || ticket.createdBy.toString(), {
+        title: 'Ticket Status Updated',
+        message: `Ticket ${ticket.ticketId} status changed from ${oldStatus} to ${ticket.status}`,
+        type: 'support',
+        link: '/support',
+      });
+    }
+
+    // In-app + email notification to new engineer if assigned
     if (oldAssignee !== ticket.assignedEngineer?.toString() && ticket.assignedEngineer) {
       const engineer = ticket.assignedEngineer as any;
+      notifyUser(engineer._id?.toString() || engineer.toString(), {
+        title: 'Support Ticket Assigned',
+        message: `Ticket ${ticket.ticketId}: "${ticket.subject}" assigned to you`,
+        type: 'support',
+        link: '/support',
+      });
       if (engineer?.email) {
         await sendTicketAssignmentNotification(
           engineer.email,

@@ -6,6 +6,7 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, generateInvoiceNumber } from '../utils/helpers';
 import { generateInvoicePDF } from '../services/pdf.service';
+import { notifyRole, notifyUser } from '../utils/notify';
 
 export const getInvoices = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -26,14 +27,20 @@ export const createInvoice = async (req: AuthRequest, res: Response): Promise<vo
     const { amount, taxPercent = 18 } = req.body;
     const taxAmount = (amount * taxPercent) / 100;
     const totalAmount = amount + taxAmount;
-    const invoice = await new Invoice({ ...req.body, invoiceNumber: generateInvoiceNumber(), taxAmount, totalAmount, status: 'Sent', createdBy: req.user!.id }).save();
+    let invoice = await new Invoice({ ...req.body, invoiceNumber: generateInvoiceNumber(), taxAmount, totalAmount, status: 'Sent', createdBy: req.user!.id }).save();
     try {
       const account = await Account.findById(req.body.accountId);
       if (account) {
-        const pdf = await generateInvoicePDF({ invoiceNumber: invoice.invoiceNumber, companyName: account.companyName, contactName: account.contactName, amount, taxAmount, totalAmount, dueDate: invoice.dueDate });
-        await Invoice.findByIdAndUpdate(invoice._id, { pdfUrl: pdf });
+        const pdf = await generateInvoicePDF({ invoiceNumber: invoice.invoiceNumber, companyName: account.companyName, contactName: account.contactName, amount, taxAmount, totalAmount, dueDate: invoice.dueDate, invoiceDate: invoice.createdAt, notes: req.body.notes, paidAmount: 0 });
+        invoice = (await Invoice.findByIdAndUpdate(invoice._id, { pdfUrl: pdf }, { new: true })) ?? invoice;
       }
     } catch (_e) {}
+    notifyRole(['admin', 'hr_finance'], {
+      title: 'New Invoice Created',
+      message: `Invoice ${invoice.invoiceNumber} for ₹${invoice.totalAmount.toLocaleString()} has been created`,
+      type: 'salary',
+      link: '/invoices',
+    });
     sendSuccess(res, invoice, 'Invoice created', 201);
   } catch { sendError(res, 'Failed to create invoice', 500); }
 };
@@ -47,6 +54,12 @@ export const recordPayment = async (req: AuthRequest, res: Response): Promise<vo
     invoice.paidAmount += amountPaid;
     invoice.status = invoice.paidAmount >= invoice.totalAmount ? 'Paid' : invoice.paidAmount > 0 ? 'Partially Paid' : invoice.status;
     await invoice.save();
+    notifyRole(['admin', 'hr_finance'], {
+      title: invoice.status === 'Paid' ? 'Invoice Fully Paid' : 'Partial Payment Received',
+      message: `₹${amountPaid.toLocaleString()} received for invoice ${invoice.invoiceNumber} — status: ${invoice.status}`,
+      type: 'salary',
+      link: '/invoices',
+    });
     sendSuccess(res, { invoice, payment }, 'Payment recorded');
   } catch { sendError(res, 'Failed to record payment', 500); }
 };

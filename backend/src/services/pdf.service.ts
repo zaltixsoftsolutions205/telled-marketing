@@ -463,28 +463,147 @@ export const generatePayslipPDF = (data: {
 export const generateInvoicePDF = (data: {
   invoiceNumber: string; companyName: string; contactName: string;
   amount: number; taxAmount: number; totalAmount: number; dueDate: Date; notes?: string;
+  invoiceDate?: Date; paidAmount?: number;
 }): Promise<string> => new Promise((resolve, reject) => {
   const fileName = `invoice-${data.invoiceNumber}-${Date.now()}.pdf`;
   const filePath = path.join(uploadDir, fileName);
-  const doc = new PDFDocument({ margin: 50 });
+  const doc = new PDFDocument({ size: 'A4', margin: 0 });
   const stream = fs.createWriteStream(filePath);
   doc.pipe(stream);
 
-  doc.fontSize(22).fillColor('#4f2d7f').text('INVOICE', { align: 'right' });
-  doc.fontSize(10).fillColor('#666').text('Telled CRM', 50, 80);
-  doc.moveTo(50, 100).lineTo(550, 100).stroke('#ddd');
-  doc.fontSize(11).fillColor('#333');
-  doc.text(`Invoice: ${data.invoiceNumber}`, 50, 115); doc.text(`Due: ${new Date(data.dueDate).toLocaleDateString()}`, 50, 132);
-  doc.text(`Bill To: ${data.companyName}`, 350, 115);
+  const L = 40;   // left margin
+  const R = 555;  // right edge
+  const W = R - L; // content width
+  const PURPLE = '#4f2d7f';
+  const LIGHT_PURPLE = '#f3f0fa';
+  const DARK = '#1a1a2e';
+  const GREY = '#6b7280';
+  const fmt = (n: number) => `\u20b9${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtDate = (d: Date | string) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
-  let y = 165;
-  doc.rect(50, y, 500, 22).fill('#4f2d7f');
-  doc.fillColor('#fff').text('Description', 60, y + 6); doc.text('Amount', 450, y + 6); y += 26;
-  doc.rect(50, y - 2, 500, 20).fill('#f9f5ff');
-  doc.fillColor('#333').fontSize(11); doc.text('Services / Products', 60, y); doc.text(`₹${data.amount}`, 450, y); y += 22;
-  doc.text('Tax / GST', 60, y); doc.text(`₹${data.taxAmount}`, 450, y); y += 26;
-  doc.rect(50, y - 4, 500, 32).fill('#4f2d7f');
-  doc.fillColor('#fff').fontSize(13).text('TOTAL DUE', 60, y + 4); doc.text(`₹${data.totalAmount}`, 450, y + 4);
+  // ── Header band ──────────────────────────────────────────────────────────
+  doc.rect(0, 0, 595, 130).fill(PURPLE);
+
+  // Company name + tagline (top-left)
+  doc.fillColor('#fff').fontSize(22).font('Helvetica-Bold')
+     .text('TELLED', L, 30);
+  doc.fontSize(9).font('Helvetica').fillColor('#d8c8f8')
+     .text('Technology Solutions & Services', L, 56);
+  doc.fontSize(8).fillColor('#b89edc')
+     .text('123, Business Park, Sector 5\nMumbai, Maharashtra 400001\nGST: 27AABCT1234D1Z5  |  info@telled.com', L, 72);
+
+  // Large INVOICE text (top-right)
+  doc.fillColor('#fff').fontSize(40).font('Helvetica-Bold')
+     .text('INVOICE', 0, 38, { align: 'right', width: R + 5 });
+  doc.fontSize(10).font('Helvetica').fillColor('#d8c8f8')
+     .text(data.invoiceNumber, 0, 82, { align: 'right', width: R + 5 });
+
+  // ── Invoice details row ──────────────────────────────────────────────────
+  const detY = 148;
+  const colW = W / 4;
+  const details = [
+    { label: 'Invoice #',    value: data.invoiceNumber },
+    { label: 'Invoice Date', value: fmtDate(data.invoiceDate || new Date()) },
+    { label: 'Terms',        value: 'Due on Receipt' },
+    { label: 'Due Date',     value: fmtDate(data.dueDate) },
+  ];
+  details.forEach((d, i) => {
+    const x = L + i * colW;
+    doc.rect(x, detY - 4, colW - 2, 44).fill(i % 2 === 0 ? LIGHT_PURPLE : '#ede9f8');
+    doc.fillColor(GREY).fontSize(7).font('Helvetica-Bold')
+       .text(d.label.toUpperCase(), x + 8, detY + 2);
+    doc.fillColor(DARK).fontSize(10).font('Helvetica-Bold')
+       .text(d.value, x + 8, detY + 14, { width: colW - 16 });
+  });
+
+  // ── Bill To / Ship To ────────────────────────────────────────────────────
+  const billY = 212;
+  doc.fillColor(GREY).fontSize(7).font('Helvetica-Bold')
+     .text('BILL TO', L, billY);
+  doc.rect(L, billY + 10, (W / 2) - 10, 70).fill('#fafafa').stroke('#e5e7eb');
+  doc.fillColor(DARK).fontSize(11).font('Helvetica-Bold')
+     .text(data.companyName, L + 10, billY + 18);
+  doc.fontSize(9).font('Helvetica').fillColor(GREY)
+     .text(data.contactName || '', L + 10, billY + 34)
+     .text('', L + 10, billY + 48);
+
+  doc.fillColor(GREY).fontSize(7).font('Helvetica-Bold')
+     .text('SHIP TO', L + W / 2 + 10, billY);
+  doc.rect(L + W / 2 + 10, billY + 10, (W / 2) - 10, 70).fill('#fafafa').stroke('#e5e7eb');
+  doc.fillColor(DARK).fontSize(11).font('Helvetica-Bold')
+     .text(data.companyName, L + W / 2 + 20, billY + 18);
+  doc.fontSize(9).font('Helvetica').fillColor(GREY)
+     .text('Same as Billing Address', L + W / 2 + 20, billY + 34);
+
+  // ── Line Items Table ─────────────────────────────────────────────────────
+  const tableY = 305;
+  const cols = { num: L, desc: L + 28, qty: 340, rate: 400, amt: 470 };
+
+  // Table header
+  doc.rect(L, tableY, W, 24).fill(PURPLE);
+  doc.fillColor('#fff').fontSize(8).font('Helvetica-Bold');
+  doc.text('#',            cols.num  + 2, tableY + 8, { width: 20, align: 'center' });
+  doc.text('ITEM & DESCRIPTION', cols.desc, tableY + 8, { width: 270 });
+  doc.text('QTY',          cols.qty,  tableY + 8, { width: 55, align: 'center' });
+  doc.text('RATE',         cols.rate, tableY + 8, { width: 65, align: 'right' });
+  doc.text('AMOUNT',       cols.amt,  tableY + 8, { width: 80, align: 'right' });
+
+  // Single line item row
+  const rowY = tableY + 28;
+  doc.rect(L, rowY, W, 34).fill(LIGHT_PURPLE);
+  doc.fillColor(DARK).fontSize(9).font('Helvetica-Bold');
+  doc.text('1', cols.num + 2, rowY + 4, { width: 20, align: 'center' });
+  doc.text('Services / Products', cols.desc, rowY + 4, { width: 270 });
+  doc.font('Helvetica').fillColor(GREY).fontSize(8)
+     .text('Professional services as agreed', cols.desc, rowY + 18, { width: 270 });
+  doc.fillColor(DARK).fontSize(9).font('Helvetica')
+     .text('1',                  cols.qty,  rowY + 12, { width: 55, align: 'center' })
+     .text(fmt(data.amount),     cols.rate, rowY + 12, { width: 65, align: 'right' })
+     .text(fmt(data.amount),     cols.amt,  rowY + 12, { width: 80, align: 'right' });
+
+  // Row separator
+  doc.moveTo(L, rowY + 34).lineTo(R, rowY + 34).stroke('#e5e7eb');
+
+  // ── Summary / Totals ─────────────────────────────────────────────────────
+  const sumX = 360;
+  const sumW = R - sumX;
+  let sumY = rowY + 50;
+  const sumRow = (label: string, val: string, bold = false, highlight = false) => {
+    if (highlight) {
+      doc.rect(sumX - 8, sumY - 4, sumW + 8, 28).fill(PURPLE);
+      doc.fillColor('#fff').fontSize(11).font('Helvetica-Bold');
+    } else {
+      doc.fillColor(bold ? DARK : GREY).fontSize(9).font(bold ? 'Helvetica-Bold' : 'Helvetica');
+    }
+    doc.text(label, sumX, sumY, { width: sumW * 0.5 });
+    doc.text(val,   sumX + sumW * 0.5, sumY, { width: sumW * 0.48, align: 'right' });
+    sumY += highlight ? 32 : 22;
+  };
+  const taxRate = data.amount > 0 ? ((data.taxAmount / data.amount) * 100).toFixed(0) : '0';
+  sumRow('Sub Total',       fmt(data.amount));
+  sumRow(`Tax Rate (${taxRate}%)`, fmt(data.taxAmount));
+  doc.moveTo(sumX - 8, sumY - 6).lineTo(R, sumY - 6).stroke('#e5e7eb');
+  sumRow('Total',           fmt(data.totalAmount), true);
+  const paid = data.paidAmount ?? 0;
+  const balance = data.totalAmount - paid;
+  if (paid > 0) sumRow('Amount Paid', fmt(paid));
+  sumRow('Balance Due',     fmt(balance), true, true);
+
+  // ── Notes / Terms ────────────────────────────────────────────────────────
+  const notesY = Math.max(sumY + 20, rowY + 180);
+  doc.moveTo(L, notesY).lineTo(R, notesY).stroke('#e5e7eb');
+  doc.fillColor(GREY).fontSize(7).font('Helvetica-Bold')
+     .text('TERMS & CONDITIONS', L, notesY + 10);
+  doc.fillColor(GREY).fontSize(8).font('Helvetica')
+     .text(data.notes || 'Payment is due within the stated due date. Late payments may be subject to a 1.5% monthly finance charge. Please include invoice number on your payment. Thank you for your business!',
+           L, notesY + 22, { width: W });
+
+  // ── Footer band ──────────────────────────────────────────────────────────
+  doc.rect(0, 780, 595, 62).fill(PURPLE);
+  doc.fillColor('#d8c8f8').fontSize(8).font('Helvetica')
+     .text('Thank you for your business!', 0, 792, { align: 'center', width: 595 });
+  doc.fillColor('#b89edc').fontSize(7)
+     .text('TELLED  ·  123, Business Park, Sector 5, Mumbai 400001  ·  info@telled.com  ·  +91 98765 43210', 0, 808, { align: 'center', width: 595 });
 
   doc.end();
   stream.on('finish', () => resolve(fileName));

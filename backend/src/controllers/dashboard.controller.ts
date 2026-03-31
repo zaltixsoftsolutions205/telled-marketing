@@ -188,7 +188,7 @@ export const getHRDashboard = async (_req: AuthRequest, res: Response): Promise<
       paidRevenue, totalInvoices, unpaidCount, overdueCount, partialCount, paidCount,
       totalVisits, pendingVisits, approvedVisits,
       totalSalaries, paidSalaryCount, pendingSalaryCount, paidSalaryTotal,
-      allInvoices, pendingVisitsList, recentSalaries,
+      allInvoices, recentVisitsList, recentSalaries,
     ] = await Promise.all([
       Invoice.aggregate([{ $match: { status: 'Paid' } }, { $group: { _id: null, total: { $sum: '$paidAmount' } } }]),
       Invoice.countDocuments({}),
@@ -196,15 +196,15 @@ export const getHRDashboard = async (_req: AuthRequest, res: Response): Promise<
       Invoice.countDocuments({ status: 'Overdue' }),
       Invoice.countDocuments({ status: 'Partially Paid' }),
       Invoice.countDocuments({ status: 'Paid' }),
-      EngineerVisit.countDocuments({}),
-      EngineerVisit.countDocuments({ hrStatus: 'Pending' }),
-      EngineerVisit.countDocuments({ hrStatus: 'Approved' }),
+      EngineerVisit.countDocuments({ isArchived: false }),
+      EngineerVisit.countDocuments({ hrStatus: 'Pending', isArchived: false }),
+      EngineerVisit.countDocuments({ hrStatus: 'Approved', isArchived: false }),
       Salary.countDocuments({}),
       Salary.countDocuments({ isPaid: true }),
       Salary.countDocuments({ isPaid: false }),
       Salary.aggregate([{ $match: { isPaid: true } }, { $group: { _id: null, total: { $sum: '$finalSalary' } } }]),
       Invoice.find({}).sort({ createdAt: -1 }).limit(10).populate('accountId', 'companyName').lean(),
-      EngineerVisit.find({ hrStatus: 'Pending' }).sort({ visitDate: -1 }).limit(10).populate('engineerId', 'name').populate('accountId', 'companyName').lean(),
+      EngineerVisit.find({ isArchived: false, status: 'Completed' }).sort({ visitDate: -1 }).limit(10).populate('engineerId', 'name').populate('accountId', 'companyName').lean(),
       Salary.find({}).sort({ createdAt: -1 }).limit(10).populate('employeeId', 'name role').lean(),
     ]);
 
@@ -213,7 +213,7 @@ export const getHRDashboard = async (_req: AuthRequest, res: Response): Promise<
       visits:   { total: totalVisits, pending: pendingVisits, approved: approvedVisits },
       salaries: { count: totalSalaries, paid: paidSalaryCount, pending: pendingSalaryCount, totalPaid: paidSalaryTotal[0]?.total || 0 },
       allInvoices,
-      pendingVisitsList,
+      pendingVisitsList: recentVisitsList,
       recentSalaries,
     });
   } catch (e) { console.error(e); sendError(res, 'Failed to get HR dashboard', 500); }

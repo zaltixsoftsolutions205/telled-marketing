@@ -6,6 +6,7 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams } from '../utils/helpers';
 import { generatePayslipPDF } from '../services/pdf.service';
+import { notifyUser } from '../utils/notify';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -42,6 +43,12 @@ export const calculateSalary = async (req: AuthRequest, res: Response): Promise<
       const pdf = await generatePayslipPDF({ employeeName: employee.name, email: employee.email, role: employee.role, month: MONTHS[month - 1], year, baseSalary: employee.baseSalary, visitChargesTotal, travelAllowance, incentives, deductions, finalSalary: salary.finalSalary });
       await Salary.findByIdAndUpdate(salary._id, { payslipPdf: pdf });
     } catch (_e) {}
+    notifyUser(employeeId, {
+      title: 'Salary Calculated',
+      message: `Your salary for ${MONTHS[month - 1]} ${year} has been calculated — ₹${salary.finalSalary?.toLocaleString() || '0'}`,
+      type: 'salary',
+      link: '/salary',
+    });
     sendSuccess(res, salary, 'Salary calculated', 201);
   } catch { sendError(res, 'Failed to calculate salary', 500); }
 };
@@ -50,6 +57,12 @@ export const markSalaryPaid = async (req: AuthRequest, res: Response): Promise<v
   try {
     const salary = await Salary.findByIdAndUpdate(req.params.id, { isPaid: true, paidAt: new Date(), paidBy: req.user!.id }, { new: true });
     if (!salary) { sendError(res, 'Salary record not found', 404); return; }
+    notifyUser(salary.employeeId.toString(), {
+      title: 'Salary Paid',
+      message: `Your salary for ${MONTHS[(salary.month as number) - 1]} ${salary.year} of ₹${(salary as any).finalSalary?.toLocaleString() || '0'} has been paid`,
+      type: 'salary',
+      link: '/salary',
+    });
     sendSuccess(res, salary, 'Salary marked as paid');
   } catch { sendError(res, 'Failed', 500); }
 };

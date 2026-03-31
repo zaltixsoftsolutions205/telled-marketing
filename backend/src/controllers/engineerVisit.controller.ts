@@ -4,6 +4,7 @@ import Salary from '../models/Salary';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams } from '../utils/helpers';
+import { notifyRole, notifyUser } from '../utils/notify';
 
 export const getVisits = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -66,6 +67,13 @@ export const approveVisit = async (req: AuthRequest, res: Response): Promise<voi
       // If no salary record yet, it will be included when HR calculates salary for this period
     }
 
+    const engId = (visit.engineerId as any)?._id || visit.engineerId;
+    notifyUser(engId.toString(), {
+      title: 'Visit Claim Approved',
+      message: `Your visit claim of ₹${visit.totalAmount || 0} has been approved and added to salary`,
+      type: 'visit',
+      link: '/visit-claims',
+    });
     sendSuccess(res, visit, 'Visit approved and salary updated');
   } catch { sendError(res, 'Failed', 500); }
 };
@@ -78,6 +86,13 @@ export const rejectVisit = async (req: AuthRequest, res: Response): Promise<void
       { new: true }
     ).populate('engineerId', 'name email').populate('accountId', 'companyName');
     if (!visit) { sendError(res, 'Visit not found', 404); return; }
+    const engId2 = (visit.engineerId as any)?._id || visit.engineerId;
+    notifyUser(engId2.toString(), {
+      title: 'Visit Claim Rejected',
+      message: `Your visit claim was rejected${req.body.reason ? ': ' + req.body.reason : ''}`,
+      type: 'visit',
+      link: '/visit-claims',
+    });
     sendSuccess(res, visit, 'Visit rejected');
   } catch { sendError(res, 'Failed', 500); }
 };
@@ -131,6 +146,15 @@ export const completeVisit = async (req: AuthRequest, res: Response): Promise<vo
       { path: 'engineerId', select: 'name email' },
       { path: 'accountId', select: 'companyName' },
     ]);
+    const eng = (populated.engineerId as any);
+    if (visit.totalAmount > 0) {
+      notifyRole(['admin', 'hr_finance'], {
+        title: 'Visit Claim Submitted',
+        message: `${eng?.name || 'Engineer'} completed a visit with ₹${visit.totalAmount} claim — awaiting HR approval`,
+        type: 'visit',
+        link: '/engineer-visits',
+      });
+    }
     sendSuccess(res, populated, 'Visit marked as completed');
   } catch { sendError(res, 'Failed', 500); }
 };

@@ -4,6 +4,7 @@ import Account from '../models/Account';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams } from '../utils/helpers';
+import { notifyUser } from '../utils/notify';
 
 export const getTrainings = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -50,6 +51,15 @@ export const createTraining = async (req: AuthRequest, res: Response): Promise<v
       { path: 'accountId', select: 'companyName' },
       { path: 'trainedBy', select: 'name email' },
     ]);
+    const trainerId = (populated.trainedBy as any)?._id?.toString() || data.trainedBy;
+    if (trainerId) {
+      notifyUser(trainerId, {
+        title: 'Training Scheduled',
+        message: `A training session has been scheduled for "${(populated.accountId as any)?.companyName || 'a customer'}" on ${data.trainingDate ? new Date(data.trainingDate).toLocaleDateString('en-IN') : 'a scheduled date'}`,
+        type: 'general',
+        link: '/training',
+      });
+    }
     sendSuccess(res, populated, 'Training created', 201);
   } catch { sendError(res, 'Failed to create training', 500); }
 };

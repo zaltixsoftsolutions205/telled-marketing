@@ -1,6 +1,6 @@
 // frontend/src/pages/SupportPage.tsx
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, Search, MessageSquarePlus, RefreshCw, Eye, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Plus, Search, MessageSquarePlus, Eye, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { supportApi } from '@/api/support';
 import { accountsApi } from '@/api/accounts';
 import { useAuthStore } from '@/store/authStore';
@@ -40,9 +40,7 @@ export default function SupportPage() {
   const [note, setNote] = useState('');
   const [statusUpdateNote, setStatusUpdateNote] = useState('');
   const [saving, setSaving] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
-  const [emailSyncStatus, setEmailSyncStatus] = useState<any>(null);
 
   const loadTickets = useCallback(async () => {
     setLoading(true);
@@ -66,20 +64,20 @@ export default function SupportPage() {
     loadTickets();
   }, [loadTickets]);
 
-  // Load email sync status for admin and engineers
+  // Silent background email sync every 30 seconds
   useEffect(() => {
-    const fetchEmailStatus = async () => {
-      if (user?.role === 'admin' || user?.role === 'engineer') {
-        try {
-          const { data } = await api.get('/support-email/status');
-          setEmailSyncStatus(data.data);
-        } catch (err) {
-          console.error('Failed to fetch email status:', err);
+    if (user?.role !== 'admin' && user?.role !== 'engineer') return;
+    const silentSync = async () => {
+      try {
+        const { data } = await api.post('/support-email/sync');
+        if (data.data?.createdTickets?.length > 0) {
+          loadTickets();
         }
-      }
+      } catch {}
     };
-    
-    fetchEmailStatus();
+    silentSync();
+    const interval = setInterval(silentSync, 30000);
+    return () => clearInterval(interval);
   }, [user]);
 
   const loadAccounts = async () => {
@@ -177,31 +175,6 @@ export default function SupportPage() {
     }
   };
 
-  const handleManualSync = async () => {
-    // Allow both admin and engineers to sync emails
-    if (!user || (user.role !== 'admin' && user.role !== 'engineer')) {
-      showMessage('You don\'t have permission to sync emails', 'error');
-      return;
-    }
-    
-    setSyncing(true);
-    try {
-      const { data } = await api.post('/support-email/sync');
-      const created = data.data.createdTickets?.length || 0;
-      if (created > 0) {
-        showMessage(`Created ${created} tickets from emails`, 'success');
-        loadTickets();
-      } else {
-        showMessage('No new support emails found', 'info');
-      }
-    } catch (err: any) {
-      console.error('Manual sync error:', err);
-      showMessage(err.response?.data?.message || 'Failed to sync emails', 'error');
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'Critical': return 'bg-red-100 text-red-700';
@@ -234,20 +207,6 @@ export default function SupportPage() {
           <p className="text-sm text-gray-500 mt-1">{total} total tickets</p>
         </div>
         <div className="flex gap-3">
-          {/* Sync Emails Button - Available for both Admin and Engineer */}
-          {(user?.role === 'admin' || user?.role === 'engineer') && (
-            <>
-              <button
-                onClick={handleManualSync}
-                disabled={syncing}
-                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-                title="Check emails and create tickets"
-              >
-                <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
-                {syncing ? 'Syncing...' : 'Sync Emails'}
-              </button>
-            </>
-          )}
           <button
             onClick={openCreate}
             className="flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors"
@@ -256,29 +215,6 @@ export default function SupportPage() {
           </button>
         </div>
       </div>
-
-      {/* Email Sync Status Banner (for Admin and Engineer) */}
-      {(user?.role === 'admin' || user?.role === 'engineer') && emailSyncStatus && (
-        <div className={`p-3 rounded-lg flex items-center justify-between ${
-          emailSyncStatus.configured ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'
-        }`}>
-          <div className="flex items-center gap-2">
-            <RefreshCw size={16} className={emailSyncStatus.configured ? 'text-green-600' : 'text-yellow-600'} />
-            <span className="text-sm">
-              {emailSyncStatus.configured ? (
-                <>Auto-sync enabled: Checking <strong>{emailSyncStatus.email}</strong> every 5 minutes for new support emails</>
-              ) : (
-                <>Email auto-sync not configured. Please contact admin to configure email settings.</>
-              )}
-            </span>
-          </div>
-          {emailSyncStatus.host && (
-            <span className="text-xs text-gray-500">
-              {emailSyncStatus.host}:{emailSyncStatus.port}
-            </span>
-          )}
-        </div>
-      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
