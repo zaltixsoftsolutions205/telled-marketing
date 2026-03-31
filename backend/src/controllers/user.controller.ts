@@ -3,14 +3,17 @@ import User from '../models/User';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, sanitizeQuery } from '../utils/helpers';
+import { generatePassword } from '../utils/password';
+import { sendUserCredentialsEmail } from '../services/email.service';
+import { redis } from '../config/redis';
 
 export const getUsers = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { page, limit, skip } = getPaginationParams(req);
     const { role, search, isActive } = req.query;
     const filter: Record<string, unknown> = { organizationId: req.user!.organizationId };
-    if (role)                    filter.role = role;
-    if (isActive !== undefined)  filter.isActive = isActive === 'true';
+    if (role) filter.role = role;
+    if (isActive !== undefined) filter.isActive = isActive === 'true';
     if (search) {
       const re = { $regex: sanitizeQuery(search as string), $options: 'i' };
       filter.$or = [{ name: re }, { email: re }];
@@ -25,13 +28,78 @@ export const getUsers = async (req: AuthRequest, res: Response): Promise<void> =
 
 export const createUser = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    // Bind user to the admin's organization
-    const data = { ...req.body, organizationId: req.user!.organizationId };
-    const user = await new User(data).save();
-    const saved = await User.findById(user._id).select('-password -refreshToken');
-    sendSuccess(res, saved, 'User created', 201);
-  } catch (e: unknown) {
-    if ((e as { code?: number }).code === 11000) { sendError(res, 'Email already exists', 409); return; }
+    const { name, email, role, department, phone, baseSalary } = req.body;
+
+    if (!name || !email || !role) {
+      sendError(res, 'Name, email, role required', 400);
+      return;
+    }
+
+    const normalizedEmail = email.toLowerCase();
+
+
+    // ✅ DOMAIN VALIDATION (ONLY COMPANY EMAILS)
+    const allowedDomains = process.env.ALLOWED_DOMAINS
+      ? process.env.ALLOWED_DOMAINS.split(',').map(d => d.trim())
+      : [];
+
+    const emailDomain = normalizedEmail.split('@')[1];
+
+    console.log("ENV DOMAINS:", process.env.ALLOWED_DOMAINS);
+    console.log("PARSED DOMAINS:", allowedDomains);
+    console.log("EMAIL DOMAIN:", emailDomain);
+
+    if (!allowedDomains.includes(emailDomain)) {
+      sendError(res, 'Only company emails allowed', 403);
+      return;
+    }
+
+    // ✅ CHECK EXISTING USER
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (existingUser) {
+      sendError(res, 'User already exists', 409);
+      return;
+    }
+
+    // 🔐 AUTO PASSWORD
+    const generatedPassword = generatePassword();
+
+    // ✅ CREATE USER
+    const user = await new User({
+      name,
+      email: normalizedEmail,
+      password: generatedPassword,
+      role,
+      department,
+      phone,
+      baseSalary,
+      organizationId: req.user!.organizationId,
+    }).save();
+
+    // 🔥 STORE TEMP PASSWORD IN REDIS (OPTIONAL)
+    await redis.set(`user:${user._id}`, generatedPassword, { ex: 600 });
+
+    // 📧 SEND EMAIL
+    await sendUserCredentialsEmail(
+      normalizedEmail,
+      name,
+      normalizedEmail,
+      generatedPassword
+    );
+
+    sendSuccess(
+      res,
+      {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+      },
+      'User created & credentials sent',
+      201
+    );
+
+  } catch (e) {
+    console.error(e);
     sendError(res, 'Failed to create user', 500);
   }
 };

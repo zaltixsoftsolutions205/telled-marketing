@@ -1,29 +1,63 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
-import { authApi } from '@/api/auth';
+import { authApi, otpApi } from '@/api/auth';
 import { Building2, User, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 
 export default function SignupPage() {
-  const [step, setStep]       = useState<1 | 2>(1);
+  const [step, setStep] = useState<1 | 2>(1);
   const [orgName, setOrgName] = useState('');
-  const [name, setName]       = useState('');
-  const [email, setEmail]     = useState('');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirm, setConfirm]   = useState('');
-  const [showPwd, setShowPwd]       = useState(false);
+  const [confirm, setConfirm] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [error, setError]       = useState('');
-  const [loading, setLoading]   = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const { setAuth } = useAuthStore();
-  const navigate    = useNavigate();
+  const navigate = useNavigate();
+  const [otp, setOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [otpTimer, setOtpTimer] = useState(0);
 
   const handleStep1 = (e: React.FormEvent) => {
     e.preventDefault();
     if (!orgName.trim()) { setError('Organization name is required'); return; }
     setError('');
     setStep(2);
+  };
+  const handleSendOtp = async () => {
+    if (!email) {
+      setError('Enter email first');
+      return;
+    }
+
+    try {
+      setSendingOtp(true);
+      await otpApi.send(email.trim());
+      setOtpSent(true);
+      setOtpTimer(30); // 30 sec cooldown
+      setError('');
+
+      // countdown
+      const interval = setInterval(() => {
+        setOtpTimer(prev => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Failed to send OTP');
+    } finally {
+      setSendingOtp(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -33,7 +67,23 @@ export default function SignupPage() {
     if (password !== confirm) { setError('Passwords do not match'); return; }
     setLoading(true);
     try {
-      const data = await authApi.signup(orgName.trim(), name.trim(), email.trim(), password);
+      if (!otpSent) {
+        setError('Please send OTP first');
+        return;
+      }
+
+      if (otp.length !== 6) {
+        setError('Enter valid 6-digit OTP');
+        return;
+      }
+
+      const data = await authApi.signup(
+        orgName.trim(),
+        name.trim(),
+        email.trim(),
+        password,
+        otp // ✅ IMPORTANT
+      );
       setAuth(data.user, data.accessToken);
       navigate('/dashboard');
     } catch (err: unknown) {
@@ -119,6 +169,20 @@ export default function SignupPage() {
                     />
                   </div>
                 </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSendOtp}
+                    disabled={sendingOtp || otpTimer > 0}
+                    className="btn-secondary w-full"
+                  >
+                    {sendingOtp
+                      ? 'Sending...'
+                      : otpTimer > 0
+                        ? `Resend in ${otpTimer}s`
+                        : 'Send OTP'}
+                  </button>
+                </div>
                 <div>
                   <label className="label">Password *</label>
                   <div className="relative">
@@ -136,6 +200,19 @@ export default function SignupPage() {
                     </button>
                   </div>
                 </div>
+                {otpSent && (
+                  <div>
+                    <label className="label">Enter OTP *</label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="Enter 6-digit OTP"
+                      value={otp}
+                      onChange={(e) => setOtp(e.target.value)}
+                      maxLength={6}
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="label">Confirm Password *</label>
                   <div className="relative">
