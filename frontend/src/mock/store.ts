@@ -372,7 +372,7 @@ export const mockQuotations = {
       : orgUsers().find((u: any) => u.role === 'sales') || orgUsers()[0];
     const q = {
       _id: 'q' + uid(), organizationId: _currentOrgId,
-      leadId: { _id: lead._id, companyName: lead.companyName },
+      leadId: { _id: lead._id, companyName: lead.companyName, email: lead.email, contactPersonName: lead.contactPersonName || lead.contactName },
       quotationNumber: `QT-${new Date().getFullYear()}-${String(orgQuotations().length + 1).padStart(3, '0')}`,
       version, status: 'Sent', items, subtotal, taxRate, taxAmount,
       total: subtotal + taxAmount,

@@ -213,13 +213,18 @@ function amountToWords(n: number): string {
 
 export const generateQuotationPDF = (data: {
   quotationNumber: string;
+  companyName?: string;
+  companyAddress?: string;
   contactName: string;
   contactEmail?: string;
   contactPhone?: string;
   contactAddress?: string;
+  oemName?: string;
+  salesPersonName?: string;
+  salesPersonEmail?: string;
+  salesPersonPhone?: string;
   items: Array<{ description: string; quantity: number; unitPrice: number; total: number }>;
   subtotal: number; taxRate: number; taxAmount: number; total: number;
-  discount?: number;
   validUntil?: Date; notes?: string; terms?: string;
 }): Promise<string> => new Promise((resolve, reject) => {
   const fileName = `quotation-${data.quotationNumber}-${Date.now()}.pdf`;
@@ -229,190 +234,223 @@ export const generateQuotationPDF = (data: {
   doc.pipe(stream);
 
   const W = 595, M = 30, inner = W - M * 2;
-  const SALMON  = '#CD6B5A';
-  const LSALMON = '#F5E0DB';
-  const GREEN   = '#2E7D5A';
-  const AMBER   = '#D97706';
-  const LAMB    = '#FEF3C7';
-  const DARK    = '#1a1a1a';
+  const VIOLET  = '#4f2d7f';
+  const LVIO    = '#e8e0f0';
+  const BORDER  = '#cccccc';
+  const DARK    = '#111111';
   const GRAY    = '#555555';
-  const LGRAY   = '#F7F7F7';
-  const BORDER  = '#CCCCCC';
   const now     = new Date();
-  const fmt     = (d?: Date) => d ? d.toLocaleDateString('en-IN') : '—';
+  const fmtDate = (d?: Date) => d ? d.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' }) : '—';
+  const fmtINR  = (n: number) => `INR ${n.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
-  // helper: draw text clipped to a cell
-  const cell = (txt: string, x: number, y: number, w: number, opts: Record<string,unknown> = {}) => {
-    doc.text(String(txt), x + 4, y, { width: w - 8, lineBreak: false, ellipsis: true, ...opts });
-  };
+  const drawBorder = (x: number, y: number, w: number, h: number) =>
+    doc.rect(x, y, w, h).stroke(BORDER);
+  const fillCell = (x: number, y: number, w: number, h: number, color: string) =>
+    doc.rect(x, y, w, h).fill(color);
 
-  // ── 1. HEADER BAR ─────────────────────────────────────────────────────────
-  doc.rect(0, 0, W, 52).fill(SALMON);
-  doc.fillColor('#000').fontSize(26).font('Helvetica-Bold')
-     .text('QUOTATION', 0, 13, { width: W, align: 'center' });
+  // ── OUTER BORDER ──────────────────────────────────────────────────────────
+  doc.rect(M, 20, inner, 800).stroke(BORDER);
 
-  // ── 2. DATE / QUOTATION NO. ────────────────────────────────────────────────
-  let y = 60;
+  // ── 1. LOGOS ROW ──────────────────────────────────────────────────────────
+  let y = 20;
+  // Telled logo text (left)
+  doc.fillColor(VIOLET).fontSize(18).font('Helvetica-Bold')
+     .text('TELLED', M + 8, y + 8);
   doc.fillColor(GRAY).fontSize(9).font('Helvetica')
-     .text(`DATE`, W - 180, y);
-  doc.fillColor(DARK).fontSize(9).font('Helvetica-Bold')
-     .text(fmt(now), W - 130, y);
-  doc.fillColor(GRAY).fontSize(9).font('Helvetica')
-     .text(`Quotation No.:`, W - 180, y + 14);
-  doc.fillColor(DARK).fontSize(9).font('Helvetica-Bold')
-     .text(data.quotationNumber, W - 110, y + 14);
-  y += 38;
+     .text('MARKETING', M + 8, y + 28);
+  // OEM badge (right)
+  const oemLabel = data.oemName || 'OEM';
+  doc.fillColor(DARK).fontSize(11).font('Helvetica-Bold')
+     .text(oemLabel, W - M - 120, y + 12, { width: 110, align: 'right' });
+  doc.fillColor(GRAY).fontSize(7.5).font('Helvetica')
+     .text('CERTIFIED CHANNEL PARTNER', W - M - 120, y + 26, { width: 110, align: 'right' });
+  y += 52;
+  doc.moveTo(M, y).lineTo(W - M, y).stroke(BORDER);
 
-  // ── 3. SHIPPER + RECEIVER ─────────────────────────────────────────────────
-  const half = inner / 2;
-  const rowH = 18;
-  const shipFields = [
-    ['Company name :', 'Telled CRM'],
-    ['Address:',       'Hyderabad, Telangana'],
-    ['Contact:',       process.env.SMTP_USER || ''],
-    ['CIN:',           ''],
-    ['Email:',         process.env.EMAIL_FROM || 'zaltixsoftsolutions@gmail.com'],
-    ['GSTIN:',         ''],
-  ];
-  const recvFields = [
-    ['Name:',    data.contactName],
-    ['Address:', data.contactAddress || ''],
-    ['Cell:',    data.contactPhone || ''],
-    ['Email:',   data.contactEmail || ''],
-    ['GSTIN:',   ''],
-  ];
+  // ── 2. TO SECTION + RIGHT TABLE ───────────────────────────────────────────
+  y += 6;
+  doc.fillColor(DARK).fontSize(8).font('Helvetica').text('To,', M + 6, y);
+  y += 12;
 
-  // Section header rows
-  doc.rect(M, y, half, 18).fill(SALMON);
-  doc.fillColor('#fff').fontSize(9).font('Helvetica-Bold')
-     .text('SHIPPER', M, y + 4, { width: half, align: 'center' });
-  doc.rect(M + half, y, half, 18).fill(GREEN);
-  doc.fillColor('#fff').fontSize(9).font('Helvetica-Bold')
-     .text('RECEIVER', M + half, y + 4, { width: half, align: 'center' });
+  const toW = 270, rightX = M + toW + 10, rightW = inner - toW - 10;
+  // Company name bold
+  doc.fillColor(DARK).fontSize(10).font('Helvetica-Bold')
+     .text(data.companyName || data.contactName, M + 6, y, { width: toW - 10 });
+  y += 14;
+  if (data.companyAddress || data.contactAddress) {
+    doc.fillColor(GRAY).fontSize(8).font('Helvetica')
+       .text(data.companyAddress || data.contactAddress || '', M + 6, y, { width: toW - 10 });
+    y += 28;
+  } else { y += 4; }
+
+  // Right info table
+  const rightStartY = y - 54;
+  const infoRows = [
+    ['Date', fmtDate(now)],
+    ['Quotation No.', data.quotationNumber],
+    ['Customer ID', ''],
+    ['Quote Validity', data.validUntil ? fmtDate(data.validUntil) : '15 Days'],
+    ['Prepared By', data.salesPersonName || 'Telled Marketing'],
+  ];
+  const rLW = 90, rVW = rightW - rLW, rH = 16;
+  let ry = rightStartY;
+  infoRows.forEach(([lbl, val]) => {
+    fillCell(rightX, ry, rLW, rH, LVIO);
+    drawBorder(rightX, ry, rightW, rH);
+    doc.moveTo(rightX + rLW, ry).lineTo(rightX + rLW, ry + rH).stroke(BORDER);
+    doc.fillColor(DARK).fontSize(7.5).font('Helvetica-Bold').text(lbl, rightX + 3, ry + 4, { width: rLW - 6, lineBreak: false });
+    doc.fillColor(DARK).fontSize(7.5).font('Helvetica').text(val, rightX + rLW + 3, ry + 4, { width: rVW - 6, lineBreak: false });
+    ry += rH;
+  });
+  y = Math.max(y, ry) + 6;
+
+  // ── 3. SUBJECT LINE ───────────────────────────────────────────────────────
+  doc.moveTo(M, y).lineTo(W - M, y).stroke(BORDER);
+  y += 6;
+  doc.fillColor(DARK).fontSize(8.5).font('Helvetica-Bold')
+     .text(`Sub:  Proposal for ${data.oemName || 'Software'}`, M + 6, y);
+  doc.fillColor(DARK).fontSize(8.5).font('Helvetica-Bold')
+     .text(`Telled GST No.: 36AAKFT2721M1ZV`, W / 2, y, { width: W / 2 - M - 6, align: 'right' });
+  y += 14;
+  doc.fillColor(DARK).fontSize(8).font('Helvetica')
+     .text(`Kind Attn.: ${data.contactName}`, M + 6, y);
+  y += 14;
+  doc.moveTo(M, y).lineTo(W - M, y).stroke(BORDER);
+
+  // ── 4. SALES PERSON TABLE ─────────────────────────────────────────────────
+  y += 0;
+  const spCols = [inner / 4, inner / 4, inner / 4, inner / 4];
+  const spHeaders = ['Sales Person', 'Contact Number', 'Email ID', 'Delivery'];
+  const spValues  = [
+    data.salesPersonName || 'Telled Marketing',
+    data.salesPersonPhone || '',
+    data.salesPersonEmail || '',
+    '2 Weeks',
+  ];
+  // Header
+  let sx = M;
+  spHeaders.forEach((h, i) => {
+    fillCell(sx, y, spCols[i], 18, LVIO);
+    drawBorder(sx, y, spCols[i], 18);
+    doc.fillColor(DARK).fontSize(8).font('Helvetica-Bold')
+       .text(h, sx + 4, y + 5, { width: spCols[i] - 8, align: 'center', lineBreak: false });
+    sx += spCols[i];
+  });
+  y += 18;
+  sx = M;
+  spValues.forEach((v, i) => {
+    drawBorder(sx, y, spCols[i], 18);
+    doc.fillColor(i === 2 ? VIOLET : DARK).fontSize(8).font('Helvetica')
+       .text(v, sx + 4, y + 5, { width: spCols[i] - 8, align: 'center', lineBreak: false });
+    sx += spCols[i];
+  });
   y += 18;
 
-  const maxRows = Math.max(shipFields.length, recvFields.length);
-  for (let i = 0; i < maxRows; i++) {
-    const sh = shipFields[i] || ['', ''];
-    const rv = recvFields[i] || ['', ''];
-    const bg = i % 2 === 0 ? '#fff' : LGRAY;
-    doc.rect(M, y, half, rowH).fill(bg).stroke(BORDER);
-    doc.rect(M + half, y, half, rowH).fill(bg).stroke(BORDER);
-    doc.fillColor(DARK).fontSize(8).font('Helvetica-Bold');
-    cell(sh[0], M + 2, y + 4, 80);
-    doc.fillColor(GRAY).font('Helvetica');
-    cell(sh[1], M + 80, y + 4, half - 82);
-    doc.fillColor(DARK).font('Helvetica-Bold');
-    cell(rv[0], M + half + 2, y + 4, 80);
-    doc.fillColor(GRAY).font('Helvetica');
-    cell(rv[1], M + half + 80, y + 4, half - 82);
-    y += rowH;
-  }
-  y += 8;
-
-  // ── 4. NOTE / REMARK ──────────────────────────────────────────────────────
-  const noteText = data.notes || data.terms || 'Material cost 100% advance. Product warranty 1 year';
-  doc.rect(M, y, inner, 24).fill('#fff').stroke(BORDER);
-  doc.fillColor(DARK).fontSize(8).font('Helvetica-Bold')
-     .text('NOTE / REMARK : ', M + 6, y + 7, { continued: true });
-  doc.fillColor(GRAY).font('Helvetica')
-     .text(noteText, { width: inner - 20, lineBreak: false, ellipsis: true });
-  y += 32;
-
   // ── 5. ITEMS TABLE ────────────────────────────────────────────────────────
-  // Column defs [label, x, w, align]
-  const cols = [
-    { lbl: 'S.No.', x: M,        w: 30,  al: 'center' },
-    { lbl: 'Description', x: M+30,  w: 155, al: 'left'   },
-    { lbl: 'Unit',        x: M+185, w: 50,  al: 'center' },
-    { lbl: 'Quantity',    x: M+235, w: 55,  al: 'center' },
-    { lbl: 'Price/unit',  x: M+290, w: 65,  al: 'right'  },
-    { lbl: 'GST (%)',     x: M+355, w: 55,  al: 'center' },
-    { lbl: 'Amount',      x: M+410, w: 125, al: 'right'  },
-  ] as const;
-
-  // Header row
-  doc.rect(M, y, inner, 22).fill(SALMON);
-  doc.fillColor('#fff').fontSize(8.5).font('Helvetica-Bold');
-  cols.forEach(c => {
-    doc.text(c.lbl, c.x + 2, y + 6, { width: c.w - 4, align: c.al as any, lineBreak: false });
+  const iCols = [
+    { lbl: 'Sr. No',               w: 35,  al: 'center' as const },
+    { lbl: 'Product Description',  w: 155, al: 'center' as const },
+    { lbl: 'Qty',                  w: 30,  al: 'center' as const },
+    { lbl: 'List Price Per Qty',   w: 95,  al: 'center' as const },
+    { lbl: 'Strategic Price Per Qty', w: 95, al: 'center' as const },
+    { lbl: 'Total',                w: 125, al: 'center' as const },
+  ];
+  let ix = M;
+  iCols.forEach(c => {
+    fillCell(ix, y, c.w, 18, LVIO);
+    drawBorder(ix, y, c.w, 18);
+    doc.fillColor(DARK).fontSize(7.5).font('Helvetica-Bold')
+       .text(c.lbl, ix + 2, y + 4, { width: c.w - 4, align: c.al, lineBreak: false });
+    ix += c.w;
   });
-  y += 22;
+  y += 18;
 
-  // Item rows
-  data.items.forEach((item, i) => {
-    const bg = i % 2 === 0 ? '#fff' : LSALMON;
-    const rowHt = 20;
-    doc.rect(M, y, inner, rowHt).fill(bg).stroke(BORDER);
-    const gstAmt = item.total * (data.taxRate / 100);
-    const lineAmt = item.total + gstAmt;
+  data.items.forEach((item, idx) => {
+    const rh = 20;
+    ix = M;
     const vals = [
-      String(i + 1),
+      String(idx + 1),
       item.description,
-      'Nos',
       String(item.quantity),
-      `${item.unitPrice.toFixed(2)}`,
-      `${data.taxRate}%`,
-      `\u20B9 ${lineAmt.toFixed(2)}`,
+      fmtINR(item.unitPrice),
+      fmtINR(item.unitPrice),
+      fmtINR(item.total),
     ];
-    doc.fillColor(DARK).fontSize(8).font('Helvetica');
-    cols.forEach((c, ci) => {
-      doc.text(vals[ci], c.x + 2, y + 5, { width: c.w - 4, align: c.al as any, lineBreak: false, ellipsis: true });
+    iCols.forEach((c, ci) => {
+      drawBorder(ix, y, c.w, rh);
+      doc.fillColor(DARK).fontSize(8).font('Helvetica')
+         .text(vals[ci], ix + 2, y + 6, { width: c.w - 4, align: c.al, lineBreak: false, ellipsis: true });
+      ix += c.w;
     });
-    y += rowHt;
+    y += rh;
   });
   y += 4;
 
-  // ── 6. SUMMARY + AMOUNT IN WORDS ─────────────────────────────────────────
-  const discount = data.discount || 0;
-  const finalAmt = data.total - discount;
-  const summaryRows = [
-    { lbl: 'Sub Total',    val: `\u20B9  ${data.subtotal.toFixed(2)}`,       bg: '#fff',  bold: false },
-    { lbl: 'Discount',     val: `\u20B9  ${discount.toFixed(2)}`,             bg: '#fff',  bold: false },
-    { lbl: 'Final Amount', val: `\u20B9  ${finalAmt.toFixed(2)}`,             bg: AMBER,   bold: true  },
-    { lbl: 'Amount Paid',  val: `\u20B9  0.00`,                               bg: '#fff',  bold: false },
-    { lbl: 'Balance',      val: `\u20B9  ${finalAmt.toFixed(2)}`,             bg: LAMB,    bold: false },
+  // ── 6. PRICING SUMMARY (right-aligned) ────────────────────────────────────
+  const sumW = 220, sumLW = 100, sumVW = 120, sumH = 18;
+  const sumX = W - M - sumW;
+  const pricingRows = [
+    { lbl: 'Base Price',  val: fmtINR(data.subtotal), bold: false, bg: '#fff' },
+    { lbl: `GST @ ${data.taxRate}%`, val: fmtINR(data.taxAmount), bold: false, bg: '#fff' },
+    { lbl: 'Final Price', val: fmtINR(data.total),    bold: true,  bg: LVIO   },
   ];
-  const sumX = M + 270, sumLW = 100, sumVW = 165, sumH = 22;
-  summaryRows.forEach(r => {
-    doc.rect(sumX, y, sumLW + sumVW, sumH).fill(r.bg).stroke(BORDER);
-    doc.fillColor(DARK).fontSize(8.5).font(r.bold ? 'Helvetica-Bold' : 'Helvetica')
-       .text(r.lbl, sumX + 4, y + 6, { width: sumLW - 8, lineBreak: false });
-    doc.fillColor(r.bold ? '#fff' : DARK).font(r.bold ? 'Helvetica-Bold' : 'Helvetica')
-       .text(r.val, sumX + sumLW + 2, y + 6, { width: sumVW - 6, align: 'right', lineBreak: false });
+  pricingRows.forEach(r => {
+    fillCell(sumX, y, sumW, sumH, r.bg);
+    drawBorder(sumX, y, sumW, sumH);
+    doc.moveTo(sumX + sumLW, y).lineTo(sumX + sumLW, y + sumH).stroke(BORDER);
+    doc.fillColor(DARK).fontSize(8).font(r.bold ? 'Helvetica-Bold' : 'Helvetica')
+       .text(r.lbl, sumX + 4, y + 5, { width: sumLW - 8, align: 'right', lineBreak: false });
+    doc.fillColor(DARK).fontSize(8).font(r.bold ? 'Helvetica-Bold' : 'Helvetica')
+       .text(r.val, sumX + sumLW + 4, y + 5, { width: sumVW - 8, align: 'right', lineBreak: false });
     y += sumH;
   });
+  y += 8;
 
-  // Amount in words (left side, aligned with first summary row)
-  const wordsY = y - summaryRows.length * sumH;
-  doc.rect(M, wordsY, 265, sumH * 2).fill('#fff').stroke(BORDER);
-  doc.fillColor(DARK).fontSize(8).font('Helvetica-Bold')
-     .text('Amount in Words:', M + 4, wordsY + 4);
-  doc.fillColor(GRAY).font('Helvetica').fontSize(7.5)
-     .text(amountToWords(Math.round(finalAmt)), M + 4, wordsY + 16, { width: 257, lineBreak: false, ellipsis: true });
-  y += 6;
+  // ── 7. TERMS + BANK DETAILS ───────────────────────────────────────────────
+  const termsW = inner / 2 - 5, bankW = inner / 2 - 5, bankX = M + inner / 2 + 5;
+  const termsText = [
+    'Order: License Form should be duly filled along with the Purchase Order',
+    'Taxes: Subject to change as per prevailing laws of the Country',
+    'Delivery: Within 2 weeks from the date of receipt of Purchase Order',
+    'Payment: 100% Advance',
+    'Delivery - Electronic Download',
+    'This offer may be subject to errors and changes.',
+  ];
+  const termsH = 14 * termsText.length + 12;
 
-  // ── 7. DECLARATION ────────────────────────────────────────────────────────
-  doc.rect(M, y, inner, 50).fill('#fff').stroke(BORDER);
-  doc.fillColor(DARK).fontSize(8).font('Helvetica-Bold')
-     .text('Declaration:', M + 6, y + 5);
-  doc.fillColor(GRAY).font('Helvetica').fontSize(7.5)
-     .text('We declare that this quotation shows the actual price of the goods/services described and that all particulars are true and correct.', M + 6, y + 18, { width: inner - 12 });
-  y += 56;
+  // Terms box
+  drawBorder(M, y, termsW, termsH);
+  doc.fillColor(DARK).fontSize(8).font('Helvetica-Bold').text('General Terms and Conditions', M + 4, y + 5);
+  termsText.forEach((t, i) => {
+    doc.fillColor(DARK).fontSize(7).font('Helvetica').text(t, M + 4, y + 16 + i * 11, { width: termsW - 8, lineBreak: false, ellipsis: true });
+  });
 
-  // ── 8. SIGNATURES ─────────────────────────────────────────────────────────
-  doc.rect(M, y, inner / 2, 42).fill('#fff').stroke(BORDER);
-  doc.rect(M + inner / 2, y, inner / 2, 42).fill('#fff').stroke(BORDER);
-  doc.fillColor(SALMON).fontSize(8).font('Helvetica')
-     .text("Client's Signature", M + 6, y + 28, { width: inner / 2 - 12, align: 'center' });
-  doc.fillColor(SALMON).fontSize(8).font('Helvetica')
-     .text('Business Signature', M + inner / 2 + 6, y + 28, { width: inner / 2 - 12, align: 'center' });
-  y += 48;
+  // Bank details box
+  drawBorder(bankX, y, bankW, termsH);
+  doc.fillColor(DARK).fontSize(8).font('Helvetica-Bold').text('Bank Details', bankX + 4, y + 5);
+  const bankRows = [
+    ['Bank', 'ICICI Bank Ltd.'],
+    ['Account No.', '279905500216'],
+    ['IFSC Code', 'ICIC0002799'],
+    ['Branch', 'Bachupally'],
+  ];
+  bankRows.forEach(([lbl, val], i) => {
+    doc.fillColor(DARK).fontSize(7.5).font('Helvetica-Bold').text(lbl, bankX + 4, y + 18 + i * 14, { width: 70, lineBreak: false });
+    doc.fillColor(DARK).fontSize(7.5).font('Helvetica').text(val, bankX + 76, y + 18 + i * 14, { width: bankW - 80, lineBreak: false });
+  });
+  y += termsH + 10;
 
-  // ── 9. FOOTER ─────────────────────────────────────────────────────────────
-  doc.rect(0, y, W, 26).fill(LSALMON);
+  // ── 8. SIGNATURE + COMPANY ADDRESS ────────────────────────────────────────
+  const sigH = 70;
+  drawBorder(M, y, inner / 2 - 5, sigH);
+  drawBorder(W - M - inner / 2 + 5, y, inner / 2 - 5, sigH);
+  doc.fillColor(GRAY).fontSize(8).font('Helvetica')
+     .text('Authorised Signatory', M + 6, y + sigH - 16, { width: inner / 2 - 14 });
   doc.fillColor(DARK).fontSize(9).font('Helvetica-Bold')
-     .text('Thanks for business with us!!! Please visit us again !!!', 0, y + 8, { width: W, align: 'center' });
+     .text('TELLED MARKETING,', W - M - inner / 2 + 10, y + 8, { width: inner / 2 - 18, align: 'center' });
+  doc.fillColor(GRAY).fontSize(7.5).font('Helvetica')
+     .text('RR Enclave, 3rd Floor, Plot No 231 Part 232,\nNear HI RISE PVR Meadows, Kranti Nagar Colony,\nMallampet, Hyderabad, Telangana, 500090',
+           W - M - inner / 2 + 10, y + 22, { width: inner / 2 - 18, align: 'center' });
 
   doc.end();
   stream.on('finish', () => { logger.info(`Quotation PDF: ${filePath}`); resolve(fileName); });

@@ -291,13 +291,14 @@ export const finalizeQuotation = async (req: AuthRequest, res: Response): Promis
 export const sendQuotationEmail = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const quotation = await Quotation.findById(req.params.id)
-      .populate('leadId', 'companyName email contactPersonName phone city state address');
-    
+      .populate('leadId', 'companyName email contactPersonName phone address city state oemName')
+      .populate('createdBy', 'name email phone');
+
     if (!quotation) {
       sendError(res, 'Quotation not found', 404);
       return;
     }
-    
+
     const lead = quotation.leadId as any;
     if (!lead?.email) {
       sendError(res, 'Lead email not found', 400);
@@ -307,15 +308,20 @@ export const sendQuotationEmail = async (req: AuthRequest, res: Response): Promi
     // Generate PDF
     const pdfFile = await generateQuotationPDFService({
       quotationNumber: quotation.quotationNumber,
+      companyName: lead.companyName,
+      companyAddress: [lead.address, lead.city, lead.state].filter(Boolean).join(', '),
       contactName: lead.contactPersonName || lead.companyName,
       contactEmail: lead.email,
       contactPhone: lead.phone,
-      contactAddress: [lead.address, lead.city, lead.state].filter(Boolean).join(', '),
-      items: quotation.items.map(i => ({ 
-        description: i.description, 
-        quantity: i.quantity, 
-        unitPrice: i.unitPrice, 
-        total: i.total 
+      oemName: lead.oemName,
+      salesPersonName: (quotation.createdBy as any)?.name,
+      salesPersonEmail: (quotation.createdBy as any)?.email,
+      salesPersonPhone: (quotation.createdBy as any)?.phone,
+      items: quotation.items.map(i => ({
+        description: i.description,
+        quantity: i.quantity,
+        unitPrice: i.unitPrice,
+        total: i.total,
       })),
       subtotal: quotation.subtotal,
       taxRate: quotation.taxRate,
@@ -493,26 +499,32 @@ export const sendToVendor = async (req: AuthRequest, res: Response): Promise<voi
 export const generateQuotationPDF = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const quotation = await Quotation.findById(req.params.id)
-      .populate('leadId', 'companyName email contactPersonName phone city state address');
-    
+      .populate('leadId', 'companyName email contactPersonName phone address city state oemName')
+      .populate('createdBy', 'name email phone');
+
     if (!quotation) {
       sendError(res, 'Quotation not found', 404);
       return;
     }
-    
+
     const lead = quotation.leadId as any;
-    
+
     const pdfFile = await generateQuotationPDFService({
       quotationNumber: quotation.quotationNumber,
+      companyName: lead.companyName,
+      companyAddress: [lead.address, lead.city, lead.state].filter(Boolean).join(', '),
       contactName: lead.contactPersonName || lead.companyName,
       contactEmail: lead.email,
       contactPhone: lead.phone,
-      contactAddress: [lead.address, lead.city, lead.state].filter(Boolean).join(', '),
-      items: quotation.items.map(i => ({ 
-        description: i.description, 
-        quantity: i.quantity, 
-        unitPrice: i.unitPrice, 
-        total: i.total 
+      oemName: lead.oemName,
+      salesPersonName: (quotation.createdBy as any)?.name,
+      salesPersonEmail: (quotation.createdBy as any)?.email,
+      salesPersonPhone: (quotation.createdBy as any)?.phone,
+      items: quotation.items.map(i => ({
+        description: i.description,
+        quantity: i.quantity,
+        unitPrice: i.unitPrice,
+        total: i.total,
       })),
       subtotal: quotation.subtotal,
       taxRate: quotation.taxRate,

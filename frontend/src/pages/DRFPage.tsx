@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { drfApi } from '@/api/drf';
 import { quotationsApi } from '@/api/quotations';
 import { usersApi } from '@/api/users';
@@ -55,7 +55,6 @@ export default function DRFPage() {
   const currentUser = useAuthStore((s) => s.user);
   const isAdmin     = currentUser?.role === 'admin';
   const isSales     = currentUser?.role === 'sales' || isAdmin;
-  const navigate    = useNavigate();
 
   const [analytics, setAnalytics]   = useState<any>(null);
   const [drfs, setDRFs]             = useState<any[]>([]);
@@ -228,7 +227,7 @@ export default function DRFPage() {
     setQSaving(true);
     setQError('');
     try {
-      await quotationsApi.create({
+      const created = await quotationsApi.create({
         leadId: quotationDRF.leadId?._id || quotationDRF.leadId,
         items: validItems,
         taxRate: qForm.taxRate,
@@ -236,10 +235,12 @@ export default function DRFPage() {
         terms: qForm.terms || undefined,
         notes: qForm.notes || undefined,
       });
+      if (created?._id) await quotationsApi.sendEmail(created._id);
+      // Mark DRF so Send Quotation button disappears
+      setDRFs(prev => prev.map(d => d._id === quotationDRF._id ? { ...d, quotationSent: true } : d));
       setQuotationDRF(null);
-      navigate('/quotations');
     } catch (err: unknown) {
-      setQError((err as any)?.response?.data?.message || 'Failed to create quotation');
+      setQError((err as any)?.response?.data?.message || 'Failed to send quotation');
     } finally {
       setQSaving(false);
     }
@@ -425,7 +426,7 @@ export default function DRFPage() {
                       <td className="px-4 py-3 text-gray-500 text-xs">{drf.createdBy?.name}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          {drf.status === 'Approved' && isSales && (
+                          {drf.status === 'Approved' && isSales && !drf.quotationSent && (
                             <button
                               onClick={() => openQuotationModal(drf)}
                               className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md hover:bg-emerald-100 transition-colors"
@@ -724,7 +725,7 @@ export default function DRFPage() {
                 <button type="button" onClick={() => setQuotationDRF(null)} className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50">Cancel</button>
                 <button type="submit" disabled={qSaving} className="px-4 py-2 text-sm bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50 flex items-center gap-2">
                   <FileText size={14} />
-                  {qSaving ? 'Creating…' : 'Create Quotation'}
+                  {qSaving ? 'Sending…' : 'Create & Send Quotation'}
                 </button>
               </div>
             </form>

@@ -1,8 +1,7 @@
 // src/pages/QuotationsPage.tsx
 import { useEffect, useState, useCallback } from 'react';
 import {
-  Plus, Search, FileText, Mail, Check, X, Download, Send,
-  Percent, Building2, RefreshCw, Eye, Edit,
+  Plus, Search, FileText, Mail, Download, Send, Percent, RefreshCw, Eye,
 } from 'lucide-react';
 import { quotationsApi } from '@/api/quotations';
 import { leadsApi } from '@/api/leads';
@@ -52,6 +51,8 @@ export default function QuotationsPage() {
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [sendEmailTarget, setSendEmailTarget] = useState<Quotation | null>(null);
+  const [sendEmailSending, setSendEmailSending] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -206,12 +207,15 @@ export default function QuotationsPage() {
   };
 
   const handleAction = async (action: string, id: string) => {
+    if (action === 'sendEmail') {
+      const q = quotations.find(qt => qt._id === id);
+      if (q) { setSendEmailTarget(q); return; }
+    }
     setActionLoading(id + action);
     try {
       switch (action) {
         case 'accept': await quotationsApi.accept(id); setToast({ message: 'Quotation accepted', type: 'success' }); break;
         case 'reject': await quotationsApi.reject(id); setToast({ message: 'Quotation rejected', type: 'success' }); break;
-        case 'sendEmail': await quotationsApi.sendEmail(id); setToast({ message: 'Email sent to customer', type: 'success' }); break;
         case 'finalize': await quotationsApi.finalize(id); setToast({ message: 'Quotation finalized', type: 'success' }); break;
         case 'generatePDF': await quotationsApi.generatePDF(id); setToast({ message: 'PDF generation started', type: 'success' }); break;
       }
@@ -223,10 +227,25 @@ export default function QuotationsPage() {
     }
   };
 
+  const handleConfirmSendEmail = async () => {
+    if (!sendEmailTarget) return;
+    setSendEmailSending(true);
+    try {
+      await quotationsApi.sendEmail(sendEmailTarget._id);
+      setToast({ message: 'Email sent to lead successfully', type: 'success' });
+      setSendEmailTarget(null);
+      load();
+    } catch (err: any) {
+      setToast({ message: err?.response?.data?.message || 'Failed to send email', type: 'error' });
+    } finally {
+      setSendEmailSending(false);
+    }
+  };
+
   const getActionButtons = (q: Quotation) => {
     const buttons = [];
 
-    // View button for all
+    // View button always
     buttons.push(
       <button key="view" title="View Details" onClick={() => openViewModal(q)}
         className="p-1.5 rounded-lg bg-gray-50 text-gray-600 hover:bg-gray-100 transition-colors">
@@ -234,71 +253,19 @@ export default function QuotationsPage() {
       </button>
     );
 
-    // Edit for non-Final quotations
-    if (q.status !== 'Final') {
+    // Mail button only if email not yet sent
+    if (!q.emailSent) {
       buttons.push(
-        <button key="edit" title="Edit Quotation" onClick={() => openEditModal(q)}
-          className="p-1.5 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 transition-colors">
-          <Edit size={14} />
-        </button>
-      );
-    }
-
-    // Draft actions
-    if (q.status === 'Draft') {
-      buttons.push(
-        <button key="finalize" title="Finalize & Send to Customer"
-          disabled={actionLoading === q._id + 'finalize'}
-          onClick={() => handleAction('finalize', q._id)}
-          className="p-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors disabled:opacity-50">
-          <Check size={14} />
-        </button>
-      );
-    }
-
-    // Sent actions
-    if (q.status === 'Sent') {
-      buttons.push(
-        <button key="sendEmail"
-          title={q.emailSent ? `Resend Email` : 'Send Email to Customer'}
+        <button key="sendEmail" title="Send Email to Customer"
           disabled={actionLoading === q._id + 'sendEmail'}
           onClick={() => handleAction('sendEmail', q._id)}
-          className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors">
-          <Mail size={13} />
-        </button>,
-        <button key="accept" title="Accept Quotation"
-          disabled={actionLoading === q._id + 'accept'}
-          onClick={() => handleAction('accept', q._id)}
-          className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-50">
-          <Check size={14} />
-        </button>,
-        <button key="reject" title="Reject Quotation"
-          disabled={actionLoading === q._id + 'reject'}
-          onClick={() => handleAction('reject', q._id)}
-          className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors disabled:opacity-50">
-          <X size={14} />
-        </button>,
-        <button key="vendor" title="Send to Vendor"
-          onClick={() => openVendorModal(q)}
-          className="p-1.5 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-100 transition-colors">
-          <Building2 size={14} />
-        </button>
-      );
-    }
-
-    // Accepted / Rejected: allow re-sending email
-    if (q.status === 'Accepted' || q.status === 'Rejected') {
-      buttons.push(
-        <button key="email" title="Send Email to Customer"
-          disabled={actionLoading === q._id + 'sendEmail' || q.emailSent}
-          onClick={() => handleAction('sendEmail', q._id)}
-          className={`p-1.5 rounded-lg transition-colors ${q.emailSent ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}>
+          className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors disabled:opacity-50">
           <Mail size={14} />
         </button>
       );
     }
 
-    // PDF button for all
+    // PDF button always
     buttons.push(
       <button key="pdf" title={q.pdfPath ? 'Download PDF' : 'Generate PDF'}
         disabled={actionLoading === q._id + 'generatePDF'}
@@ -583,6 +550,30 @@ export default function QuotationsPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Send Email Confirmation Modal */}
+      <Modal isOpen={!!sendEmailTarget} onClose={() => setSendEmailTarget(null)} title="Send Quotation Email" size="sm">
+        {sendEmailTarget && (
+          <div className="space-y-4">
+            <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-800">
+              <p className="font-semibold mb-1">{sendEmailTarget.quotationNumber}</p>
+              <p className="text-xs text-blue-600">{(sendEmailTarget.leadId as any)?.companyName}</p>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-gray-700">
+              <Mail size={14} className="text-gray-400 flex-shrink-0" />
+              <span>Sending to: <strong className="text-violet-700">{(sendEmailTarget.leadId as any)?.email || 'Lead email on file'}</strong></span>
+            </div>
+            <p className="text-xs text-gray-500">The quotation PDF will be attached and sent to the lead's contact email address.</p>
+            <div className="flex gap-2 justify-end pt-1">
+              <button onClick={() => setSendEmailTarget(null)} className="btn-secondary py-1.5 text-sm">Cancel</button>
+              <button onClick={handleConfirmSendEmail} disabled={sendEmailSending} className="btn-primary py-1.5 text-sm flex items-center gap-2">
+                <Send size={13} />
+                {sendEmailSending ? 'Sending…' : 'Send Email'}
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Send to Vendor Modal */}

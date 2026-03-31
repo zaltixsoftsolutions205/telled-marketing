@@ -6,8 +6,10 @@ import logger from '../utils/logger';
 import { generatePONumber } from '../utils/helpers';
 import mongoose from 'mongoose';
 
-const IMAP_USER = process.env.SMTP_USER || '';
-const IMAP_PASS = process.env.SMTP_PASS || '';
+const IMAP_HOST = process.env.SUPPORT_EMAIL_HOST || 'imap.hostinger.com';
+const IMAP_PORT = parseInt(process.env.SUPPORT_EMAIL_PORT || '993');
+const IMAP_USER = process.env.SUPPORT_EMAIL_USER || process.env.SMTP_USER || '';
+const IMAP_PASS = process.env.SUPPORT_EMAIL_PASS || process.env.SMTP_PASS || '';
 
 // Keywords to identify purchase order emails
 const PO_KEYWORDS = [
@@ -351,13 +353,13 @@ export async function syncPurchaseOrderEmails(): Promise<PurchaseOrderEmailResul
   };
 
   if (!IMAP_USER || !IMAP_PASS) {
-    result.errors.push('IMAP credentials not configured (SMTP_USER / SMTP_PASS)');
+    result.errors.push('IMAP credentials not configured (SUPPORT_EMAIL_USER / SUPPORT_EMAIL_PASS)');
     return result;
   }
 
   const client = new ImapFlow({
-    host: 'imap.gmail.com',
-    port: 993,
+    host: IMAP_HOST,
+    port: IMAP_PORT,
     secure: true,
     auth: { user: IMAP_USER, pass: IMAP_PASS },
     logger: false,
