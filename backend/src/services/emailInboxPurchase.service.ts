@@ -11,7 +11,7 @@ const IMAP_PORT = parseInt(process.env.SUPPORT_EMAIL_PORT || '993');
 const IMAP_USER = process.env.SUPPORT_EMAIL_USER || process.env.SMTP_USER || '';
 const IMAP_PASS = process.env.SUPPORT_EMAIL_PASS || process.env.SMTP_PASS || '';
 
-// Keywords to identify purchase order emails
+// Improved keywords to identify purchase order emails
 const PO_KEYWORDS = [
   'purchase order',
   'purchase order number',
@@ -28,51 +28,54 @@ const PO_KEYWORDS = [
   'purchase confirmation',
   'please find our purchase order',
   'please find the purchase order',
+  'purchase order attached',
+  'po attached',
 ];
 
-// Patterns for extracting PO number
+// Improved patterns for extracting PO number
 const PO_NUMBER_PATTERNS = [
   /PO(?:[-\s]?#?)(?:[-\s]?)([A-Z0-9-]{4,20})/gi,
   /Purchase\s+Order\s+(?:Number|#)?\s*[:\s-]*([A-Z0-9-]{4,20})/gi,
   /Order\s+(?:Number|#)?\s*[:\s-]*([A-Z0-9-]{4,20})/gi,
   /PO\s*:\s*([A-Z0-9-]{4,20})/gi,
   /PO\s+([A-Z0-9-]{4,20})/gi,
+  /P\.O\.\s*#?\s*([A-Z0-9-]{4,20})/gi,
+  /\[PO#?\s*([A-Z0-9-]{4,20})\]/gi,
 ];
 
-// Patterns for extracting amount
+// Improved patterns for extracting amount
 const AMOUNT_PATTERNS = [
-  /(?:Total|Amount|Order\s+Total|Invoice\s+Total)\s*[:\s$₹]*([\d,]+(?:\.\d{2})?)/gi,
+  /(?:Total|Amount|Order\s+Total|Invoice\s+Total|Grand\s+Total)\s*[:\s$₹]*([\d,]+(?:\.\d{2})?)/gi,
   /Grand\s+Total\s*[:\s$₹]*([\d,]+(?:\.\d{2})?)/gi,
   /₹\s*([\d,]+(?:\.\d{2})?)/gi,
   /\$\s*([\d,]+(?:\.\d{2})?)/gi,
   /(?:order\s+total|total\s+amount)\s*[:\s]*([\d,]+)/gi,
+  /(?:Amount|Total)[:\s]+([\d,]+(?:\.\d{2})?)/gi,
 ];
 
-// Patterns for extracting vendor/company name - IMPROVED
+// Improved patterns for extracting vendor/company name
 const VENDOR_PATTERNS = [
-  // Company field
-  /(?:Company|Vendor|Supplier|Seller|From|Customer)\s*[:\s-]*([A-Za-z0-9\s&.,]+?)(?:\n|,|$|@|Regards|Please)/gi,
-  // After "Regards" or "Thanks" - common in emails
-  /(?:Regards|Thanks|Thank you|Best regards|Sincerely)[,\s]*(?:[A-Za-z\s]+?)(?:\n|$)/gi,
-  // Extract from the signature line
+  /(?:Company|Vendor|Supplier|Seller|From|Customer|Buyer)\s*[:\s-]*([A-Za-z0-9\s&.,]+?)(?:\n|,|$|@|Regards|Please|Thank)/gi,
+  /From:\s*([A-Za-z0-9\s&.,]+?)(?:\n|<)/gi,
   /^([A-Za-z\s]{3,50})$/gm,
-  // Extract from the content before "Please confirm"
   /(.+?)\s*Please confirm/gi,
+  /(?:Regards|Thanks|Thank you|Best regards|Sincerely)[,\s]*\n?\s*([A-Za-z\s]{3,50})/gi,
 ];
 
-// Patterns for extracting product description
+// Improved patterns for extracting product description
 const PRODUCT_PATTERNS = [
-  /(?:Product|Item|Description|Item\s+Details?)\s*[:\s-]*([A-Za-z0-9\s&.,-]+?)(?:\n|,|$)/gi,
+  /(?:Product|Item|Description|Item\s+Details?|Material|Goods)\s*[:\s-]*([A-Za-z0-9\s&.,-]+?)(?:\n|,|$)/gi,
   /Item\s*:\s*([A-Za-z0-9\s&.,-]+)/gi,
   /Product\s*:\s*([A-Za-z0-9\s&.,-]+)/gi,
+  /Description\s*:\s*([A-Za-z0-9\s&.,-]+)/gi,
 ];
 
 // Patterns for extracting date
 const DATE_PATTERNS = [
-  /(?:Date|Order Date|PO Date)\s*[:\s-]*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
+  /(?:Date|Order Date|PO Date|Ordered on|Received on)\s*[:\s-]*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
   /(\d{1,2}\/\d{1,2}\/\d{4})/g,
   /(\d{4}-\d{2}-\d{2})/g,
-  /(?:Ordered on|Received on)\s*[:\s]*(\d{1,2}\/\d{1,2}\/\d{4})/gi,
+  /(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4})/gi,
 ];
 
 export interface PurchaseOrderEmailResult {
@@ -94,7 +97,7 @@ function extractPONumber(text: string): string | null {
     const match = pattern.exec(text);
     if (match && match[1]) {
       pattern.lastIndex = 0;
-      return match[1].trim();
+      return match[1].trim().toUpperCase();
     }
     pattern.lastIndex = 0;
   }
@@ -125,13 +128,13 @@ function extractVendorName(text: string, fromName: string, fromEmail: string): s
     for (const match of matches) {
       if (match && match[1]) {
         let name = match[1].trim();
-        // Clean up common words
-        name = name.replace(/^(Company|Vendor|Supplier|From):\s*/i, '');
+        // Clean up common words and prefixes
+        name = name.replace(/^(Company|Vendor|Supplier|From|Customer|Buyer):\s*/i, '');
         name = name.replace(/[,.]$/, '');
         name = name.replace(/\s+/g, ' ');
         
         // Filter out common non-company words
-        const excludeWords = ['please', 'confirm', 'order', 'purchase', 'regards', 'thanks', 'thank', 'best', 'sincerely'];
+        const excludeWords = ['please', 'confirm', 'order', 'purchase', 'regards', 'thanks', 'thank', 'best', 'sincerely', 'email', 'phone', 'address'];
         if (name.length > 2 && name.length < 100 && !excludeWords.includes(name.toLowerCase())) {
           pattern.lastIndex = 0;
           logger.info(`Extracted vendor name from pattern: ${name}`);
@@ -142,11 +145,10 @@ function extractVendorName(text: string, fromName: string, fromEmail: string): s
     pattern.lastIndex = 0;
   }
   
-  // If no company name found, try to extract from the email body before "Please confirm"
+  // Try to extract from email body before "Please confirm"
   const confirmMatch = text.match(/(.+?)\s*Please confirm/gi);
   if (confirmMatch && confirmMatch[1]) {
     let name = confirmMatch[1].trim();
-    // Remove common prefixes
     name = name.replace(/^(Company|Vendor|Supplier|From):\s*/i, '');
     name = name.replace(/\s+/g, ' ');
     if (name.length > 2 && name.length < 100) {
@@ -188,7 +190,7 @@ function extractVendorEmail(text: string, fromEmail: string): string | null {
   const emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
   
   // If found an email in body, use that
-  if (emailMatch) {
+  if (emailMatch && emailMatch[0]) {
     // But don't use our own email address
     if (emailMatch[0] !== IMAP_USER) {
       return emailMatch[0];
@@ -290,6 +292,7 @@ async function findLeadByVendorInfo(vendorName: string | null, vendorEmail: stri
       $or: [
         { contactEmail: { $regex: new RegExp(vendorEmail, 'i') } },
         { email: { $regex: new RegExp(vendorEmail, 'i') } },
+        { oemEmail: { $regex: new RegExp(vendorEmail, 'i') } }
       ],
       isArchived: false,
     });
@@ -304,14 +307,20 @@ async function findLeadByVendorInfo(vendorName: string | null, vendorEmail: stri
   if (vendorName && vendorName.length > 2) {
     // Try exact match first
     let leadByName = await Lead.findOne({
-      companyName: { $regex: new RegExp(`^${vendorName}$`, 'i') },
+      $or: [
+        { companyName: { $regex: new RegExp(`^${vendorName}$`, 'i') } },
+        { oemName: { $regex: new RegExp(`^${vendorName}$`, 'i') } }
+      ],
       isArchived: false,
     });
     
     // Try partial match
     if (!leadByName) {
       leadByName = await Lead.findOne({
-        companyName: { $regex: new RegExp(vendorName, 'i') },
+        $or: [
+          { companyName: { $regex: new RegExp(vendorName, 'i') } },
+          { oemName: { $regex: new RegExp(vendorName, 'i') } }
+        ],
         isArchived: false,
       });
     }
@@ -370,7 +379,6 @@ export async function syncPurchaseOrderEmails(): Promise<PurchaseOrderEmailResul
   });
 
   client.on('error', (err: Error) => {
-    // Hostinger IMAP drops idle connections — harmless, next sync reconnects
     if (err.message && (err.message.includes('socket') || err.message.includes('ECONNRESET') || err.message.includes('closed') || err.message.includes('EPIPE'))) {
       logger.warn('IMAP connection closed by server (harmless)');
     } else {
@@ -380,6 +388,7 @@ export async function syncPurchaseOrderEmails(): Promise<PurchaseOrderEmailResul
 
   try {
     await client.connect();
+    logger.info('IMAP connected successfully');
   } catch (connErr) {
     result.errors.push(`IMAP connect failed: ${(connErr as Error).message}`);
     return result;
@@ -387,22 +396,22 @@ export async function syncPurchaseOrderEmails(): Promise<PurchaseOrderEmailResul
 
   const lock = await client.getMailboxLock('INBOX');
   try {
-    // Search emails from last 24 hours for purchase orders
+    // Search emails from last 7 days
     const since = new Date();
-    since.setDate(since.getDate() - 1);
+    since.setDate(since.getDate() - 7);
 
     const uids: number[] = await (client as any).search({ since }, { uid: true });
 
     if (!uids || uids.length === 0) {
-      result.skipped.push('No emails found in last 24 hours');
+      result.skipped.push('No emails found in last 7 days');
       lock.release();
       await client.logout();
       return result;
     }
 
-    logger.info(`PO Email sync: found ${uids.length} messages in last 24 hours`);
+    logger.info(`PO Email sync: found ${uids.length} messages in last 7 days`);
 
-    for await (const msg of client.fetch(uids, { envelope: true, source: true }, { uid: true })) {
+    for await (const msg of client.fetch(uids, { envelope: true, source: true, uid: true }, { uid: true })) {
       result.scanned++;
       try {
         const subject = msg.envelope?.subject || '';
@@ -410,8 +419,11 @@ export async function syncPurchaseOrderEmails(): Promise<PurchaseOrderEmailResul
         const fromEmail = msg.envelope?.from?.[0]?.address || '';
         const rawText = rawEmailToText(msg.source || Buffer.alloc(0));
         
+        logger.info(`Processing email from ${fromEmail} (${fromName}) with subject: ${subject}`);
+        
         // Skip non-PO emails quickly
         if (!isPurchaseOrderEmail(subject, rawText)) {
+          logger.info(`Skipping - Not a PO email: ${subject}`);
           continue;
         }
 
@@ -421,13 +433,12 @@ export async function syncPurchaseOrderEmails(): Promise<PurchaseOrderEmailResul
         const freshText = subject + ' ' + stripQuotedContent(rawText);
         const poNumber = extractPONumber(freshText);
         const amount = extractAmount(freshText);
-        // FIXED: Pass fromName and fromEmail for better extraction
         const vendorName = extractVendorName(freshText, fromName, fromEmail);
         const vendorEmail = extractVendorEmail(freshText, fromEmail);
         const product = extractProduct(freshText);
         const receivedDate = extractReceivedDate(freshText) || new Date();
 
-        logger.info(`Extracted: PO=${poNumber}, Amount=${amount}, VendorName=${vendorName}, VendorEmail=${vendorEmail}, Product=${product}`);
+        logger.info(`Extracted: PO=${poNumber}, Amount=${amount}, VendorName=${vendorName}, VendorEmail=${vendorEmail}, Product=${product}, ReceivedDate=${receivedDate}`);
 
         // Try to find matching lead
         let lead = await findLeadByVendorInfo(vendorName, vendorEmail);
@@ -438,6 +449,7 @@ export async function syncPurchaseOrderEmails(): Promise<PurchaseOrderEmailResul
             $or: [
               { contactEmail: { $regex: new RegExp(fromEmail, 'i') } },
               { email: { $regex: new RegExp(fromEmail, 'i') } },
+              { oemEmail: { $regex: new RegExp(fromEmail, 'i') } }
             ],
             isArchived: false,
           });
@@ -485,7 +497,6 @@ export async function syncPurchaseOrderEmails(): Promise<PurchaseOrderEmailResul
           const updateData: any = {};
           if (amount && !existingPO.amount) updateData.amount = amount;
           if (product && !existingPO.product) updateData.product = product;
-          // vendorName and vendorEmail are always entered manually — never auto-filled from email
           
           if (Object.keys(updateData).length > 0) {
             await PurchaseOrder.findByIdAndUpdate(existingPO._id, updateData);
@@ -497,16 +508,19 @@ export async function syncPurchaseOrderEmails(): Promise<PurchaseOrderEmailResul
         } else {
           // Create new PO
           const defaultAdmin = await getDefaultAdminUser();
-
+          
+          // Generate PO number if not extracted
+          const finalPONumber = poNumber || generatePONumber();
+          
           const newPO = await new PurchaseOrder({
             leadId: lead._id,
-            poNumber: poNumber || generatePONumber(),
+            poNumber: finalPONumber,
             amount: amount || 0,
             product: product || '',
-            vendorName: '',   // must be entered manually
-            vendorEmail: '',  // must be entered manually
+            vendorName: vendorName || '',  // Will be edited manually
+            vendorEmail: vendorEmail || '', // Will be edited manually
             receivedDate: receivedDate,
-            notes: `Auto-created from email on ${new Date().toISOString()}\n\nOriginal Subject: ${subject}`,
+            notes: `Auto-created from email on ${new Date().toISOString()}\n\nOriginal Subject: ${subject}\nFrom: ${fromEmail}`,
             uploadedBy: defaultAdmin?._id || lead.assignedTo || new mongoose.Types.ObjectId(),
             vendorEmailSent: false,
             converted: false,
@@ -517,7 +531,7 @@ export async function syncPurchaseOrderEmails(): Promise<PurchaseOrderEmailResul
           await Lead.findByIdAndUpdate(lead._id, { stage: 'PO Received' });
 
           result.created.push(newPO.poNumber);
-          logger.info(`Created PO ${newPO.poNumber} for lead ${lead.companyName} from email ${fromEmail} — vendor details pending manual entry`);
+          logger.info(`Created PO ${newPO.poNumber} for lead ${lead.companyName} from email ${fromEmail}`);
         }
 
         result.processed++;

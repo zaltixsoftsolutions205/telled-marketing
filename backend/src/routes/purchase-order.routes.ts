@@ -26,85 +26,237 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       filter.$or = [{ vendorName: re }, { product: re }, { poNumber: re }];
     }
     const [pos, total] = await Promise.all([
-      PurchaseOrder.find(filter).populate('leadId', 'companyName email contactPersonName').populate('uploadedBy', 'name').sort({ createdAt: -1 }).skip(skip).limit(limit),
+      PurchaseOrder.find(filter)
+        .populate('leadId', 'companyName email contactPersonName')
+        .populate('uploadedBy', 'name')
+        .populate('paidBy', 'name')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
       PurchaseOrder.countDocuments(filter),
     ]);
     sendPaginated(res, pos, total, page, limit);
-  } catch { sendError(res, 'Failed to fetch purchase orders', 500); }
+  } catch (error) {
+    logger.error('Get POs error:', error);
+    sendError(res, 'Failed to fetch purchase orders', 500);
+  }
+});
+
+// Get single PO
+router.get('/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    const po = await PurchaseOrder.findById(req.params.id)
+      .populate('leadId', 'companyName email contactPersonName phone address city state')
+      .populate('uploadedBy', 'name email')
+      .populate('paidBy', 'name email');
+    
+    if (!po || po.isArchived) {
+      sendError(res, 'Purchase order not found', 404);
+      return;
+    }
+    sendSuccess(res, po);
+  } catch (error) {
+    logger.error('Get PO error:', error);
+    sendError(res, 'Failed to fetch purchase order', 500);
+  }
 });
 
 // Create
 router.post('/', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
   try {
     const { leadId, amount, product, vendorName, vendorEmail, receivedDate, notes } = req.body;
-    if (!leadId || !amount || !receivedDate) { sendError(res, 'leadId, amount and receivedDate are required', 400); return; }
+    if (!leadId || !amount || !receivedDate) {
+      sendError(res, 'leadId, amount and receivedDate are required', 400);
+      return;
+    }
+    
     const po = await new PurchaseOrder({
-      leadId, amount, product, vendorName, vendorEmail, receivedDate, notes,
+      leadId,
+      amount,
+      product,
+      vendorName,
+      vendorEmail,
+      receivedDate,
+      notes,
       poNumber: generatePONumber(),
       uploadedBy: req.user!.id,
     }).save();
+    
     // Update lead stage to PO Received
     await Lead.findByIdAndUpdate(leadId, { stage: 'PO Received' });
-    sendSuccess(res, po, 'Purchase order created', 201);
-  } catch { sendError(res, 'Failed to create purchase order', 500); }
+    
+    const populated = await PurchaseOrder.findById(po._id)
+      .populate('leadId', 'companyName email contactPersonName')
+      .populate('uploadedBy', 'name');
+    
+    sendSuccess(res, populated, 'Purchase order created', 201);
+  } catch (error) {
+    logger.error('Create PO error:', error);
+    sendError(res, 'Failed to create purchase order', 500);
+  }
 });
 
-// Update
+// Update - Enhanced with better validation
 router.put('/:id', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
   try {
-    const po = await PurchaseOrder.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!po) { sendError(res, 'Purchase order not found', 404); return; }
-    sendSuccess(res, po, 'Updated');
-  } catch { sendError(res, 'Failed to update', 500); }
+    const { amount, product, vendorName, vendorEmail, notes, receivedDate } = req.body;
+    
+    const updateData: any = {};
+    if (amount !== undefined) updateData.amount = amount;
+    if (product !== undefined) updateData.product = product;
+    if (vendorName !== undefined) updateData.vendorName = vendorName;
+    if (vendorEmail !== undefined) updateData.vendorEmail = vendorEmail;
+    if (notes !== undefined) updateData.notes = notes;
+    if (receivedDate !== undefined) updateData.receivedDate = receivedDate;
+    
+    const po = await PurchaseOrder.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true, runValidators: true }
+    ).populate('leadId', 'companyName email contactPersonName')
+      .populate('uploadedBy', 'name');
+    
+    if (!po) {
+      sendError(res, 'Purchase order not found', 404);
+      return;
+    }
+    
+    sendSuccess(res, po, 'Purchase order updated');
+  } catch (error) {
+    logger.error('Update PO error:', error);
+    sendError(res, 'Failed to update purchase order', 500);
+  }
 });
 
-// Send to vendor
+// Send to vendor - Enhanced with better email
 router.post('/:id/send-to-vendor', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
   try {
-    const po = await PurchaseOrder.findById(req.params.id).populate('leadId', 'companyName contactPersonName email');
-    if (!po) { sendError(res, 'Purchase order not found', 404); return; }
+    const po = await PurchaseOrder.findById(req.params.id)
+      .populate('leadId', 'companyName contactPersonName email phone address city state');
+    
+    if (!po) {
+      sendError(res, 'Purchase order not found', 404);
+      return;
+    }
+    
     const vendorEmailToUse: string = req.body.vendorEmail || po.vendorEmail || '';
-    if (!vendorEmailToUse) { sendError(res, 'Vendor email not set', 400); return; }
-    if (req.body.vendorEmail) { po.vendorEmail = req.body.vendorEmail; await po.save(); }
+    if (!vendorEmailToUse) {
+      sendError(res, 'Vendor email not set. Please provide vendor email.', 400);
+      return;
+    }
+    
+    // Update vendor email if provided
+    if (req.body.vendorEmail && req.body.vendorEmail !== po.vendorEmail) {
+      po.vendorEmail = req.body.vendorEmail;
+      await po.save();
+    }
 
     const lead = po.leadId as any;
 
     // Generate PDF
     const pdfFileName = await generatePurchaseOrderPDF({
-      poNumber:        po.poNumber,
-      poDate:          new Date(po.receivedDate).toLocaleDateString('en-IN'),
-      vendorName:      po.vendorName || vendorEmailToUse,
-      vendorEmail:     vendorEmailToUse,
-      product:         po.product,
-      amount:          po.amount,
+      poNumber: po.poNumber,
+      poDate: new Date(po.receivedDate).toLocaleDateString('en-IN'),
+      vendorName: po.vendorName || vendorEmailToUse,
+      vendorEmail: vendorEmailToUse,
+      product: po.product || 'N/A',
+      amount: po.amount,
       customerCompany: lead?.companyName || '—',
       customerContact: lead?.contactPersonName || '',
-      customerEmail:   lead?.email || '',
+      customerEmail: lead?.email || '',
+      customerPhone: lead?.phone || '',
+      customerAddress: [lead?.address, lead?.city, lead?.state].filter(Boolean).join(', ') || '',
     });
 
     const uploadDir = process.env.UPLOAD_PATH || './uploads';
     const pdfPath = path.join(uploadDir, pdfFileName);
 
-    const html = `<div style="font-family:Arial,sans-serif;padding:20px;max-width:600px">
-      <h2 style="color:#1a56a0">Purchase Order — ${po.poNumber}</h2>
-      <p>Dear ${po.vendorName || 'Supplier'},</p>
-      <p>Please find attached our Purchase Order <strong>${po.poNumber}</strong> for your reference.</p>
-      <p>Kindly confirm receipt and expected delivery date.</p>
-      <br/>
-      <p style="margin:0;color:#666">Regards,</p>
-      <p style="margin:4px 0"><strong>Telled Marketing</strong></p>
-      <p style="margin:2px 0;font-size:13px;color:#666">GST: 36AAKFT2721M1ZV</p>
-    </div>`;
+    // Enhanced email HTML
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: linear-gradient(135deg, #6d28d9, #4c1d95); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+          .content { padding: 20px; background: #f9fafb; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px; }
+          .details { background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border: 1px solid #e5e7eb; }
+          .detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
+          .detail-label { font-weight: 600; color: #4b5563; }
+          .detail-value { color: #111827; }
+          .footer { margin-top: 20px; padding-top: 20px; text-align: center; font-size: 12px; color: #9ca3af; border-top: 1px solid #e5e7eb; }
+          .button { display: inline-block; background: #6d28d9; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; margin-top: 15px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h2>Purchase Order</h2>
+            <p style="margin: 5px 0 0; opacity: 0.9;">${po.poNumber}</p>
+          </div>
+          <div class="content">
+            <p>Dear ${po.vendorName || 'Vendor'},</p>
+            <p>Please find attached our Purchase Order <strong>${po.poNumber}</strong> for your reference.</p>
+            
+            <div class="details">
+              <div class="detail-row">
+                <span class="detail-label">PO Number:</span>
+                <span class="detail-value">${po.poNumber}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">PO Date:</span>
+                <span class="detail-value">${new Date(po.receivedDate).toLocaleDateString('en-IN')}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Product/Service:</span>
+                <span class="detail-value">${po.product || 'N/A'}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Amount:</span>
+                <span class="detail-value" style="font-size: 18px; font-weight: bold; color: #6d28d9;">₹ ${po.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Customer:</span>
+                <span class="detail-value">${lead?.companyName || 'N/A'}</span>
+              </div>
+            </div>
+            
+            <p>Kindly confirm receipt and expected delivery date at your earliest convenience.</p>
+            
+            <p style="margin-top: 20px;">For any queries, please contact us at <strong>${process.env.EMAIL_FROM || 'support@telled.com'}</strong></p>
+            
+            <p>Regards,<br/>
+            <strong>Telled Marketing</strong><br/>
+            GST: 36AAKFT2721M1ZV</p>
+          </div>
+          <div class="footer">
+            <p>This is an automated notification from Telled CRM. Please do not reply to this email.</p>
+            <p>&copy; ${new Date().getFullYear()} Telled Marketing. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
 
-    await sendEmail(vendorEmailToUse, `Purchase Order ${po.poNumber} — Telled Marketing`, html, [
+    await sendEmail(vendorEmailToUse, `Purchase Order ${po.poNumber} from Telled Marketing`, html, [
       { filename: `PO-${po.poNumber}.pdf`, path: pdfPath },
     ]);
 
-    await PurchaseOrder.findByIdAndUpdate(req.params.id, { vendorEmailSent: true, vendorEmailSentAt: new Date() });
-    sendSuccess(res, {}, 'Email with PO PDF sent to vendor');
-  } catch (err) {
-    logger.error('Send to vendor error:', err);
-    sendError(res, 'Failed to send email', 500);
+    await PurchaseOrder.findByIdAndUpdate(req.params.id, { 
+      vendorEmailSent: true, 
+      vendorEmailSentAt: new Date(),
+      vendorEmail: vendorEmailToUse
+    });
+    
+    sendSuccess(res, { 
+      poNumber: po.poNumber, 
+      vendorEmail: vendorEmailToUse,
+      sentAt: new Date()
+    }, 'Email with PO PDF sent to vendor');
+  } catch (error) {
+    logger.error('Send to vendor error:', error);
+    sendError(res, 'Failed to send email to vendor', 500);
   }
 });
 
@@ -112,7 +264,10 @@ router.post('/:id/send-to-vendor', authorize('admin', 'sales', 'engineer', 'hr_f
 router.post('/:id/convert', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
   try {
     const po = await PurchaseOrder.findById(req.params.id).populate('leadId');
-    if (!po) { sendError(res, 'Purchase order not found', 404); return; }
+    if (!po) {
+      sendError(res, 'Purchase order not found', 404);
+      return;
+    }
     const lead = po.leadId as any;
     const { accountName, notes } = req.body;
 
@@ -133,12 +288,14 @@ router.post('/:id/convert', authorize('admin', 'sales', 'engineer', 'hr_finance'
       address: lead.address || '',
       city: lead.city || '',
       state: lead.state || '',
-      notes,
+      notes: notes,
       status: 'Active',
       assignedSales: lead.assignedTo || req.user!.id,
     }).save();
+    
     await Lead.findByIdAndUpdate(lead._id, { stage: 'Converted' });
     await PurchaseOrder.findByIdAndUpdate(req.params.id, { converted: true });
+    
     sendSuccess(res, account, 'Converted to account', 201);
   } catch (err: any) {
     logger.error('Convert to account error:', err);
@@ -150,15 +307,36 @@ router.post('/:id/convert', authorize('admin', 'sales', 'engineer', 'hr_finance'
 router.post('/:id/payment', authorize('admin', 'hr_finance', 'sales'), async (req: AuthRequest, res: Response) => {
   try {
     const { paidAmount, paidDate, paymentMode, paymentReference, paymentNotes } = req.body;
-    if (!paidAmount || !paidDate || !paymentMode) { sendError(res, 'paidAmount, paidDate and paymentMode are required', 400); return; }
+    if (!paidAmount || !paidDate || !paymentMode) {
+      sendError(res, 'paidAmount, paidDate and paymentMode are required', 400);
+      return;
+    }
+    
     const po = await PurchaseOrder.findByIdAndUpdate(
       req.params.id,
-      { paymentStatus: 'Paid', paidAmount, paidDate, paymentMode, paymentReference, paymentNotes, paidBy: req.user!.id },
+      { 
+        paymentStatus: 'Paid', 
+        paidAmount, 
+        paidDate, 
+        paymentMode, 
+        paymentReference, 
+        paymentNotes, 
+        paidBy: req.user!.id 
+      },
       { new: true }
-    ).populate('leadId', 'companyName').populate('paidBy', 'name');
-    if (!po) { sendError(res, 'Purchase order not found', 404); return; }
+    ).populate('leadId', 'companyName')
+      .populate('paidBy', 'name email');
+    
+    if (!po) {
+      sendError(res, 'Purchase order not found', 404);
+      return;
+    }
+    
     sendSuccess(res, po, 'Vendor payment recorded');
-  } catch { sendError(res, 'Failed to record payment', 500); }
+  } catch (error) {
+    logger.error('Record payment error:', error);
+    sendError(res, 'Failed to record payment', 500);
+  }
 });
 
 // Get all vendor payments (POs that are Paid) — for HR/Finance
@@ -169,17 +347,21 @@ router.get('/vendor-payments', authorize('admin', 'hr_finance'), async (req: Aut
     const [pos, total] = await Promise.all([
       PurchaseOrder.find(filter)
         .populate('leadId', 'companyName')
-        .populate('paidBy', 'name')
+        .populate('paidBy', 'name email')
         .populate('uploadedBy', 'name')
         .sort({ paidDate: -1 })
-        .skip(skip).limit(limit),
+        .skip(skip)
+        .limit(limit),
       PurchaseOrder.countDocuments(filter),
     ]);
     sendPaginated(res, pos, total, page, limit);
-  } catch { sendError(res, 'Failed to fetch vendor payments', 500); }
+  } catch (error) {
+    logger.error('Get vendor payments error:', error);
+    sendError(res, 'Failed to fetch vendor payments', 500);
+  }
 });
 
-// Update this route to allow admin and sales
+// Sync emails - Allow multiple roles
 router.post('/sync-emails', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
   try {
     logger.info('Manual PO email sync triggered by user:', req.user?.email);
