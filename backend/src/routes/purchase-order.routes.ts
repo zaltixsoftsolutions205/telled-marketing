@@ -8,6 +8,8 @@ import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, generatePONumber } from '../utils/helpers';
 import sendEmail from '../services/email.service';
 import { syncPurchaseOrderEmails } from '../services/emailInboxPurchase.service';
+import { generatePurchaseOrderPDF } from '../services/pdf.service';
+import path from 'path';
 import logger from '../utils/logger';
 
 const router = Router();
@@ -59,33 +61,51 @@ router.put('/:id', authorize('admin', 'sales', 'engineer', 'hr_finance'), async 
 // Send to vendor
 router.post('/:id/send-to-vendor', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
   try {
-    const po = await PurchaseOrder.findById(req.params.id).populate('leadId', 'companyName');
+    const po = await PurchaseOrder.findById(req.params.id).populate('leadId', 'companyName contactPersonName email');
     if (!po) { sendError(res, 'Purchase order not found', 404); return; }
-    // Use email from request body if provided, otherwise fall back to saved vendorEmail
-    const vendorEmailToUse: string = req.body.vendorEmail || po.vendorEmail;
+    const vendorEmailToUse: string = req.body.vendorEmail || po.vendorEmail || '';
     if (!vendorEmailToUse) { sendError(res, 'Vendor email not set', 400); return; }
-    // Save the vendor email if it wasn't saved yet
-    if (req.body.vendorEmail) {
-      po.vendorEmail = req.body.vendorEmail;
-      await po.save();
-    }
-    const lead = po.leadId as unknown as { companyName: string };
-    const html = `<div style="font-family:Arial,sans-serif;padding:20px">
-      <h2 style="color:#4f2d7f">Purchase Order ${po.poNumber}</h2>
-      <p>Dear ${po.vendorName || 'Vendor'},</p>
-      <p>We are pleased to place the following purchase order:</p>
-      <table style="border-collapse:collapse;width:100%">
-        <tr><td style="padding:8px;border:1px solid #eee;background:#f5f3ff;font-weight:bold">PO Number</td><td style="padding:8px;border:1px solid #eee">${po.poNumber}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #eee;background:#f5f3ff;font-weight:bold">Product</td><td style="padding:8px;border:1px solid #eee">${po.product || '—'}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #eee;background:#f5f3ff;font-weight:bold">Amount</td><td style="padding:8px;border:1px solid #eee">₹${po.amount.toLocaleString()}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #eee;background:#f5f3ff;font-weight:bold">Customer</td><td style="padding:8px;border:1px solid #eee">${lead?.companyName || '—'}</td></tr>
-      </table>
-      <p style="margin-top:16px;color:#666">Please confirm receipt of this order.</p>
+    if (req.body.vendorEmail) { po.vendorEmail = req.body.vendorEmail; await po.save(); }
+
+    const lead = po.leadId as any;
+
+    // Generate PDF
+    const pdfFileName = await generatePurchaseOrderPDF({
+      poNumber:        po.poNumber,
+      poDate:          new Date(po.receivedDate).toLocaleDateString('en-IN'),
+      vendorName:      po.vendorName || vendorEmailToUse,
+      vendorEmail:     vendorEmailToUse,
+      product:         po.product,
+      amount:          po.amount,
+      customerCompany: lead?.companyName || '—',
+      customerContact: lead?.contactPersonName || '',
+      customerEmail:   lead?.email || '',
+    });
+
+    const uploadDir = process.env.UPLOAD_PATH || './uploads';
+    const pdfPath = path.join(uploadDir, pdfFileName);
+
+    const html = `<div style="font-family:Arial,sans-serif;padding:20px;max-width:600px">
+      <h2 style="color:#1a56a0">Purchase Order — ${po.poNumber}</h2>
+      <p>Dear ${po.vendorName || 'Supplier'},</p>
+      <p>Please find attached our Purchase Order <strong>${po.poNumber}</strong> for your reference.</p>
+      <p>Kindly confirm receipt and expected delivery date.</p>
+      <br/>
+      <p style="margin:0;color:#666">Regards,</p>
+      <p style="margin:4px 0"><strong>Telled Marketing</strong></p>
+      <p style="margin:2px 0;font-size:13px;color:#666">GST: 36AAKFT2721M1ZV</p>
     </div>`;
-    await sendEmail(vendorEmailToUse, `Purchase Order ${po.poNumber}`, html);
+
+    await sendEmail(vendorEmailToUse, `Purchase Order ${po.poNumber} — Telled Marketing`, html, [
+      { filename: `PO-${po.poNumber}.pdf`, path: pdfPath },
+    ]);
+
     await PurchaseOrder.findByIdAndUpdate(req.params.id, { vendorEmailSent: true, vendorEmailSentAt: new Date() });
-    sendSuccess(res, {}, 'Email sent to vendor');
-  } catch { sendError(res, 'Failed to send email', 500); }
+    sendSuccess(res, {}, 'Email with PO PDF sent to vendor');
+  } catch (err) {
+    logger.error('Send to vendor error:', err);
+    sendError(res, 'Failed to send email', 500);
+  }
 });
 
 // Convert to account

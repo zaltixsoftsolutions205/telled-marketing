@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { authApi } from '@/api/auth';
+import { useLogoStore } from '@/store/logoStore';
+import { resolveLogoUrl } from '@/api/settings';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -12,6 +14,9 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const { setAuth } = useAuthStore();
   const navigate = useNavigate();
+  const companyName = useLogoStore((s) => s.companyName);
+  const logoUrl = useLogoStore((s) => s.logoUrl);
+  const resolvedLogo = resolveLogoUrl(logoUrl);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,10 +39,14 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-600 to-violet-800 flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <span className="text-white font-bold text-2xl">T</span>
-          </div>
-          <h1 className="text-3xl font-bold text-gray-900">Telled CRM</h1>
+          {resolvedLogo ? (
+            <img src={resolvedLogo} alt="logo" className="w-16 h-16 object-contain rounded-2xl mx-auto mb-4" />
+          ) : (
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-600 to-violet-800 flex items-center justify-center mx-auto mb-4 shadow-lg">
+              <span className="text-white font-bold text-2xl">{companyName ? companyName.charAt(0).toUpperCase() : 'C'}</span>
+            </div>
+          )}
+          <h1 className="text-3xl font-bold text-gray-900">{companyName || 'CRM Platform'}</h1>
           <p className="text-gray-500 mt-1 text-sm">Enterprise Operations Platform</p>
         </div>
 

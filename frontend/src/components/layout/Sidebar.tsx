@@ -4,9 +4,11 @@ import {
   LayoutDashboard, Users, Building2, FileText,
   ShoppingCart, Wrench, Headphones, Receipt, CreditCard,
   CalendarCheck, DollarSign, UserCog, LogOut, ChevronDown, ChevronRight,
-  FileBadge, GraduationCap, TrendingUp, CalendarDays, Calendar,
+  FileBadge, GraduationCap, TrendingUp, CalendarDays, Calendar, Settings,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
+import { useLogoStore } from '@/store/logoStore';
+import { resolveLogoUrl } from '@/api/settings';
 import { authApi } from '@/api/auth';
 import type { Role } from '@/types';
 import { cn } from '@/utils/cn';
@@ -131,6 +133,9 @@ export default function Sidebar() {
   const { logout } = useAuthStore();
   const navigate = useNavigate();
   const role = user?.role as Role;
+  const logoUrl = useLogoStore((s) => s.logoUrl);
+  const companyName = useLogoStore((s) => s.companyName);
+  const resolvedLogo = resolveLogoUrl(logoUrl);
 
   const handleLogout = async () => {
     await authApi.logout();
@@ -145,11 +150,15 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="p-5 border-b border-gray-100">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center shadow-lg shadow-violet-200">
-            <span className="text-white font-black text-lg">T</span>
-          </div>
+          {resolvedLogo ? (
+            <img src={resolvedLogo} alt="Company Logo" className="h-14 w-14 object-contain rounded-xl" />
+          ) : (
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center shadow-lg shadow-violet-200">
+              <span className="text-white font-black text-lg">T</span>
+            </div>
+          )}
           <div>
-            <p className="font-bold text-gray-900 text-sm leading-tight">Telled CRM</p>
+            <p className="font-bold text-gray-900 text-sm leading-tight">{companyName || 'My Company'}</p>
             <p className="text-xs text-gray-400 mt-0.5">Operations Platform</p>
           </div>
         </div>
@@ -166,6 +175,7 @@ export default function Sidebar() {
             ))}
             <div className="mt-2 border-t border-gray-100 pt-2 space-y-0.5">
               <NavItem to="/users" label="Users" icon={UserCog} />
+              <NavItem to="/settings" label="Settings" icon={Settings} />
             </div>
           </>
         ) : (

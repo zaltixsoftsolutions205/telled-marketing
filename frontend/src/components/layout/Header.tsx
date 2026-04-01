@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Bell, Menu, CheckCheck, Calendar, Wrench, Headphones, DollarSign, Info } from 'lucide-react';
+import { Bell, Menu, CheckCheck, Calendar, Wrench, Headphones, DollarSign, Info, ImagePlus, X, Pencil, Check } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { notificationsApi, type Notification } from '@/api/notifications';
 import { useNavigate } from 'react-router-dom';
+import { settingsApi, resolveLogoUrl } from '@/api/settings';
+import { useLogoStore } from '@/store/logoStore';
 
 interface Props {
   title: string;
@@ -42,6 +44,45 @@ export default function Header({ title, onMenuClick }: Props) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unread, setUnread] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const logoUrl = useLogoStore((s) => s.logoUrl);
+  const setLogoUrl = useLogoStore((s) => s.setLogoUrl);
+  const companyName = useLogoStore((s) => s.companyName);
+  const setCompanyName = useLogoStore((s) => s.setCompanyName);
+  const isAdmin = user?.role === 'admin';
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+
+  const startEditName = () => {
+    setNameInput(companyName);
+    setEditingName(true);
+  };
+  const saveCompanyName = () => {
+    const trimmed = nameInput.trim();
+    if (trimmed) setCompanyName(trimmed);
+    setEditingName(false);
+  };
+  const handleNameKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') saveCompanyName();
+    if (e.key === 'Escape') setEditingName(false);
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      await settingsApi.uploadLogo(file);
+    } catch {}
+    // reset input so same file can be re-uploaded
+    e.target.value = '';
+  };
+
+  const handleRemoveLogo = async () => {
+    await settingsApi.deleteLogo();
+    setLogoUrl(null);
+  };
+
+  const resolvedLogo = resolveLogoUrl(logoUrl);
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -101,6 +142,69 @@ export default function Header({ title, onMenuClick }: Props) {
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
+        {/* Admin: Logo Upload */}
+        {isAdmin && (
+          <div className="flex items-center gap-1.5">
+            <input
+              ref={logoInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleLogoUpload}
+            />
+            <button
+              onClick={() => logoInputRef.current?.click()}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-violet-600 bg-violet-50 hover:bg-violet-100 transition-colors border border-violet-100"
+              title="Upload company logo"
+            >
+              {resolvedLogo ? (
+                <img src={resolvedLogo} alt="logo" className="h-5 w-5 object-contain rounded" />
+              ) : (
+                <ImagePlus size={14} />
+              )}
+              <span className="hidden sm:inline">{resolvedLogo ? 'Change Logo' : 'Upload Logo'}</span>
+            </button>
+            {resolvedLogo && (
+              <button
+                onClick={handleRemoveLogo}
+                className="p-1.5 rounded-xl text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                title="Remove logo"
+              >
+                <X size={13} />
+              </button>
+            )}
+
+            {/* Company name editor */}
+            {editingName ? (
+              <div className="flex items-center gap-1">
+                <input
+                  autoFocus
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  onKeyDown={handleNameKey}
+                  placeholder="Company name"
+                  className="h-7 px-2 text-xs border border-violet-300 rounded-lg outline-none focus:ring-1 focus:ring-violet-400 w-36"
+                />
+                <button onClick={saveCompanyName} className="p-1 rounded-lg text-violet-600 hover:bg-violet-100 transition-colors">
+                  <Check size={13} />
+                </button>
+                <button onClick={() => setEditingName(false)} className="p-1 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors">
+                  <X size={13} />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={startEditName}
+                className="flex items-center gap-1 px-2 py-1.5 rounded-xl text-xs text-gray-500 hover:bg-gray-100 transition-colors"
+                title="Set company name"
+              >
+                <Pencil size={12} />
+                <span className="hidden sm:inline">{companyName || 'Set Name'}</span>
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Notification Bell */}
         <div className="relative" ref={dropdownRef}>
           <button

@@ -34,6 +34,7 @@ import leaveRoutes from './routes/leave.routes';
 import supportEmailRoutes from './routes/supportEmail.routes';
 import notificationRoutes from './routes/notification.routes';
 import otpRoutes from './routes/otp.routes';
+import settingsRoutes from './routes/settings.routes';
 
 
 const app = express();
@@ -69,6 +70,7 @@ app.use('/api/leaves', leaveRoutes);
 app.use('/api/support-email', supportEmailRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/otp', otpRoutes);
+app.use('/api/settings', settingsRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

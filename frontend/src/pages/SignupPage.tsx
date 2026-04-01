@@ -102,7 +102,7 @@ export default function SignupPage() {
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-600 to-violet-800 flex items-center justify-center mx-auto mb-4 shadow-lg">
             <span className="text-white font-bold text-2xl">T</span>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Telled CRM</h1>
+          <h1 className="text-3xl font-bold text-gray-900">{orgName || 'CRM Platform'}</h1>
           <p className="text-gray-500 mt-1 text-sm">Create your organization</p>
         </div>
 

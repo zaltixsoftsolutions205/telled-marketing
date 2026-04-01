@@ -23,6 +23,7 @@ import TrainingPage from '@/pages/TrainingPage';
 import EngineerPerformancePage from '@/pages/EngineerPerformancePage';
 import AttendancePage from '@/pages/AttendancePage';
 import LeavePage from '@/pages/LeavePage';
+import SettingsPage from '@/pages/SettingsPage';
 import type { Role } from '@/types';
 
 // ─── Route guards ─────────────────────────────────────────────────────────────
@@ -128,6 +129,9 @@ export default function App() {
           {/* Admin only */}
           <Route path="users" element={
             <RoleRoute roles={['admin']}><UsersPage /></RoleRoute>
+          } />
+          <Route path="settings" element={
+            <RoleRoute roles={['admin']}><SettingsPage /></RoleRoute>
           } />
         </Route>
 

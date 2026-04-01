@@ -3,6 +3,8 @@ import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { usePageTitleStore } from '@/store/pageTitleStore';
+import { settingsApi } from '@/api/settings';
+import { useLogoStore } from '@/store/logoStore';
 
 const titleMap: Record<string, string> = {
   '/dashboard':       'Dashboard',
@@ -19,11 +21,18 @@ const titleMap: Record<string, string> = {
   '/salary':          'Salary Management',
   '/users':           'User Management',
   '/training':        'Training',
+  '/settings':        'Settings',
 };
 
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
+  const setLogoUrl = useLogoStore((s) => s.setLogoUrl);
+  const companyName = useLogoStore((s) => s.companyName);
+
+  useEffect(() => {
+    settingsApi.getLogo().then(url => setLogoUrl(url)).catch(() => {});
+  }, []);
 
   // Auto-close sidebar on navigation (mobile)
   useEffect(() => {
@@ -33,7 +42,7 @@ export default function DashboardLayout() {
   const subtitle = usePageTitleStore((s) => s.subtitle);
   const segments = location.pathname.split('/').filter(Boolean);
   const path = '/' + segments[0];
-  const baseTitle = titleMap[path] || 'Telled CRM';
+  const baseTitle = titleMap[path] || companyName || 'CRM Platform';
   const title = subtitle ? `${baseTitle} / ${subtitle}` : baseTitle;
 
   return (

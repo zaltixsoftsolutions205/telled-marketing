@@ -647,3 +647,187 @@ export const generateInvoicePDF = (data: {
   stream.on('finish', () => resolve(fileName));
   stream.on('error', reject);
 });
+
+// ─── PURCHASE ORDER PDF ──────────────────────────────────────────────────────
+export const generatePurchaseOrderPDF = (data: {
+  poNumber: string;
+  poDate: string;
+  vendorName: string;
+  vendorEmail?: string;
+  product?: string;
+  amount: number;
+  customerCompany: string;
+  customerContact?: string;
+  customerEmail?: string;
+}): Promise<string> => new Promise((resolve, reject) => {
+  const fileName = `po-${data.poNumber}-${Date.now()}.pdf`;
+  const filePath = path.join(uploadDir, fileName);
+  const doc = new PDFDocument({ size: 'A4', margin: 0 });
+  const stream = fs.createWriteStream(filePath);
+  doc.pipe(stream);
+
+  const W = 595, M = 36;
+  const inner = W - M * 2;
+  const BLUE = '#1a56a0';
+  const BLUE_LIGHT = '#dbeafe';
+  const MID = '#4a5568';
+  const DARK = '#1a1a2e';
+  const half = inner / 2;
+
+  const fillRect = (x: number, y: number, w: number, h: number, color: string) => {
+    doc.fillColor(color).rect(x, y, w, h).fill();
+  };
+
+  // ── HEADER ────────────────────────────────────────────────────────────────
+  fillRect(0, 0, W, 58, '#ffffff');
+  doc.fillColor(DARK).font('Helvetica-Bold').fontSize(20)
+    .text('PURCHASE  ORDER', 0, 18, { align: 'center', width: W, characterSpacing: 3 });
+  fillRect(0, 58, W, 4, BLUE);
+
+  // Company block
+  fillRect(0, 62, W, 78, '#f9fafb');
+  doc.fillColor(BLUE).font('Helvetica-Bold').fontSize(14)
+    .text('TELLED MARKETING', 0, 74, { align: 'center', width: W });
+  doc.fillColor(MID).font('Helvetica').fontSize(8)
+    .text('Flat No.302, Sri Maruthi Nilayam, Beside HDFC Bank, Bharat Nagar, Hyderabad - 500018', 0, 93, { align: 'center', width: W });
+  doc.fillColor(MID).font('Helvetica').fontSize(8)
+    .text('GST: 36AAKFT2721M1ZV  |  guruashok@zaltixsoftsolutions.com', 0, 107, { align: 'center', width: W });
+
+  // ── SUPPLIER + PO META BOX ────────────────────────────────────────────────
+  let y = 152;
+  doc.rect(M, y, inner, 110).strokeColor('#cbd5e0').lineWidth(1).stroke();
+  doc.rect(M, y, half, 110).strokeColor('#cbd5e0').lineWidth(1).stroke();
+
+  const sRow = (label: string, val: string, rowY: number) => {
+    doc.fillColor(BLUE).font('Helvetica-Bold').fontSize(8).text(label + ':', M + 8, rowY, { width: 92 });
+    doc.fillColor(DARK).font('Helvetica').fontSize(8).text(val || '—', M + 102, rowY, { width: half - 110 });
+  };
+  sRow('Supplier Name',  data.vendorName,           y + 10);
+  sRow('Email',          data.vendorEmail || '—',   y + 26);
+  sRow('Customer',       data.customerCompany,       y + 42);
+  sRow('Contact Person', data.customerContact || '—', y + 58);
+  sRow('Contact Email',  data.customerEmail || '—', y + 74);
+
+  const rx = M + half + 8;
+  const metaRows: [string, string][] = [
+    ['PO No.',        data.poNumber],
+    ['PO Date',       data.poDate],
+    ['Payment Terms', '100% against invoice'],
+    ['Delivery',      'As agreed'],
+    ['Valid For',     '7 days'],
+  ];
+  metaRows.forEach(([label, val], i) => {
+    const ry = y + 10 + i * 20;
+    fillRect(M + half + 1, ry - 2, 86, 14, BLUE_LIGHT);
+    doc.fillColor(BLUE).font('Helvetica-Bold').fontSize(8).text(label, rx, ry, { width: 82 });
+    doc.fillColor(DARK).font('Helvetica').fontSize(8).text(val, rx + 88, ry, { width: half - 100 });
+  });
+
+  // ── BILL TO / SHIP TO ─────────────────────────────────────────────────────
+  y = 272;
+  fillRect(M, y, half, 18, BLUE);
+  fillRect(M + half, y, half, 18, BLUE);
+  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(9)
+    .text('Bill To:', M + 10, y + 4, { width: half - 20 });
+  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(9)
+    .text('Ship To:', M + half + 10, y + 4, { width: half - 20 });
+
+  y = 290;
+  const addrH = 70;
+  doc.rect(M, y, half, addrH).strokeColor('#cbd5e0').lineWidth(1).stroke();
+  doc.rect(M + half, y, half, addrH).strokeColor('#cbd5e0').lineWidth(1).stroke();
+
+  const addrBlock = (x: number, sy: number) => {
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(9).text('TELLED MARKETING', x + 8, sy + 6, { width: half - 16 });
+    doc.fillColor(MID).font('Helvetica').fontSize(7.5)
+      .text('Flat No.302, Sri Maruthi Nilayam, Bharat Nagar', x + 8, sy + 20, { width: half - 16 })
+      .text('Hyderabad - 500018', x + 8, sy + 32, { width: half - 16 })
+      .text('GST: 36AAKFT2721M1ZV', x + 8, sy + 44, { width: half - 16 })
+      .text('guruashok@zaltixsoftsolutions.com', x + 8, sy + 56, { width: half - 16 });
+  };
+  addrBlock(M, y);
+  addrBlock(M + half, y);
+
+  // ── PAYMENT LINE ──────────────────────────────────────────────────────────
+  y = 362 + 8;
+  doc.fillColor(MID).font('Helvetica-Bold').fontSize(8)
+    .text('Payment Date: 7 days from date of delivery', M, y, { width: half });
+  doc.fillColor(MID).font('Helvetica-Bold').fontSize(8)
+    .text('Payment Terms: 100% against invoice', M + half, y, { width: half, align: 'right' });
+
+  // ── ITEMS TABLE ───────────────────────────────────────────────────────────
+  y = 384;
+  const cols = [32, 88, 180, 48, 42, 66, 40, 27];
+  const headers = ['S.No', 'Product Code', 'Product Name', 'Quantity', 'Units', 'Rate', 'Tax', 'Amount'];
+  let cx = M;
+  cols.forEach((cw, i) => {
+    fillRect(cx, y, cw, 22, BLUE);
+    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(7.5)
+      .text(headers[i], cx + 2, y + 6, { width: cw - 4, align: 'center' });
+    cx += cw;
+  });
+
+  y += 22;
+  const gst = 18;
+  const baseAmt = Math.round(data.amount / (1 + gst / 100));
+  const rowData = ['1', '—', data.product || 'As per order', '1', 'nos',
+    `Rs.${baseAmt.toLocaleString('en-IN')}`, `${gst}%`, `Rs.${data.amount.toLocaleString('en-IN')}`];
+  cx = M;
+  rowData.forEach((val, i) => {
+    fillRect(cx, y, cols[i], 24, i % 2 === 0 ? '#f9fafb' : '#ffffff');
+    doc.rect(cx, y, cols[i], 24).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
+    doc.fillColor(DARK).font('Helvetica').fontSize(8)
+      .text(val, cx + 2, y + 7, { width: cols[i] - 4, align: 'center' });
+    cx += cols[i];
+  });
+
+  // ── TOTALS ────────────────────────────────────────────────────────────────
+  y += 24 + 10;
+  const totW = 190, totX = M + inner - totW;
+  const totRow = (label: string, val: string, bold = false, bg = '#ffffff') => {
+    fillRect(totX, y, totW, 20, bg);
+    doc.rect(totX, y, totW, 20).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
+    doc.fillColor(bold ? BLUE : MID).font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9)
+      .text(label, totX + 8, y + 5, { width: 94 });
+    doc.fillColor(bold ? BLUE : DARK).font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9)
+      .text(val, totX + 104, y + 5, { width: totW - 112, align: 'right' });
+    y += 20;
+  };
+  totRow('Total',       `Rs.${baseAmt.toLocaleString('en-IN')}`);
+  totRow('Discounts',   'Rs.0.00');
+  totRow('Grand Total', `Rs.${data.amount.toLocaleString('en-IN')}`, true, BLUE_LIGHT);
+
+  // ── TERMS + AUTHORIZATION ─────────────────────────────────────────────────
+  y += 16;
+  const termsH = 100;
+  doc.rect(M, y, half - 4, termsH).strokeColor('#cbd5e0').lineWidth(1).stroke();
+  doc.fillColor(BLUE).font('Helvetica-Bold').fontSize(8).text('Terms and Conditions:', M + 8, y + 8);
+  const terms = [
+    '1. We reserve the right to cancel this PO before shipment.',
+    '2. Invoice should reference PO number and date.',
+    '3. Deviation from agreed specs will result in cancellation.',
+    '4. Packing/shipping charges are to be borne by supplier.',
+    '5. Delivery must be completed within 7 days of PO date.',
+  ];
+  doc.fillColor(MID).font('Helvetica').fontSize(7.5);
+  terms.forEach((t, i) => doc.text(t, M + 8, y + 22 + i * 13, { width: half - 20 }));
+
+  const authX = M + half + 4;
+  fillRect(authX, y, half - 4, termsH, BLUE);
+  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(10)
+    .text('For TELLED MARKETING', authX, y + 16, { width: half - 4, align: 'center' });
+  doc.fillColor('#a0c4ff').font('Helvetica').fontSize(8)
+    .text('Authorised Signatory', authX, y + termsH - 20, { width: half - 4, align: 'center' });
+
+  // ── FOOTER ────────────────────────────────────────────────────────────────
+  y += termsH + 12;
+  fillRect(0, y, W, 30, BLUE);
+  doc.fillColor('#a0c4ff').font('Helvetica').fontSize(8)
+    .text('Mark any communications to: guruashok@zaltixsoftsolutions.com', M, y + 7, { width: W * 0.6 });
+  doc.fillColor('#cce0ff').font('Helvetica-Bold').fontSize(8)
+    .text('Authorised Signatory', 0, y + 7, { width: W - M, align: 'right' });
+
+  doc.end();
+  stream.on('finish', () => resolve(fileName));
+  stream.on('error', reject);
+});
