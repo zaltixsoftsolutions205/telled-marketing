@@ -250,6 +250,7 @@ export interface Salary {
   year: number;
   baseSalary: number;
   visitChargesTotal: number;
+  claimsTotal: number;
   travelAllowance: number;
   incentives: number;
   deductions: number;

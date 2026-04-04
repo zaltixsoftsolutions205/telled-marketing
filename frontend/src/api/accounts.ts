@@ -21,4 +21,8 @@ export const accountsApi = {
     const { data } = await api.patch(`/accounts/${id}/assign-engineer`, { engineerId });
     return data.data;
   },
+  delete: async (id: string) => {
+    const { data } = await api.delete(`/accounts/${id}`);
+    return data.data;
+  },
 };

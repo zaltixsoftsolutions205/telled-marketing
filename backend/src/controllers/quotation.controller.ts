@@ -564,6 +564,17 @@ export const archiveQuotation = async (req: AuthRequest, res: Response): Promise
   }
 };
 
+export const deleteQuotation = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const quotation = await Quotation.findByIdAndDelete(req.params.id);
+    if (!quotation) { sendError(res, 'Quotation not found', 404); return; }
+    sendSuccess(res, null, 'Quotation deleted');
+  } catch (error) {
+    logger.error('deleteQuotation error:', error);
+    sendError(res, 'Failed to delete quotation', 500);
+  }
+};
+
 export const getQuotationStats = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const filter: Record<string, unknown> = { isArchived: false };

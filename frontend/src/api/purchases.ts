@@ -41,4 +41,8 @@ export const purchasesApi = {
     const { data } = await api.get('/purchase-orders/vendor-payments', { params });
     return { data: data.data, pagination: { total: data.meta?.total ?? 0 } };
   },
+  delete: async (id: string) => {
+    const { data } = await api.delete(`/purchase-orders/${id}`);
+    return data.data;
+  },
 };

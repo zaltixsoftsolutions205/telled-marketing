@@ -6,6 +6,7 @@ import { salariesApi } from '@/api/salaries';
 import { usersApi } from '@/api/users';
 import { useAuthStore } from '@/store/authStore';
 import { useLogoStore } from '@/store/logoStore';
+import { resolveLogoUrl } from '@/api/settings';
 import StatusBadge from '@/components/common/StatusBadge';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
@@ -19,6 +20,7 @@ export default function SalaryPage() {
   const user = useAuthStore((s) => s.user);
   const isHR = user?.role === 'admin' || user?.role === 'hr_finance';
   const { logoUrl, companyName } = useLogoStore();
+  const resolvedLogo = resolveLogoUrl(logoUrl);
 
   const [salaries, setSalaries] = useState<Salary[]>([]);
   const [total, setTotal] = useState(0);
@@ -37,6 +39,8 @@ export default function SalaryPage() {
     employeeId: '', month: now.getMonth() + 1, year: now.getFullYear(),
     baseSalary: '', incentives: '', deductions: '', travelAllowance: '',
   });
+  const [claimsTotal, setClaimsTotal] = useState<number | null>(null);
+  const [claimsFetching, setClaimsFetching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [payTarget, setPayTarget] = useState<Salary | null>(null);
 
@@ -61,8 +65,19 @@ export default function SalaryPage() {
       setEngineers((res.data || []).filter((u: User) => u.role !== 'admin'));
     } catch (err) { console.error('openCalc:', err); }
     setForm({ employeeId: '', month: now.getMonth() + 1, year: now.getFullYear(), baseSalary: '', incentives: '', deductions: '', travelAllowance: '' });
+    setClaimsTotal(null);
     setShowCalc(true);
   };
+
+  // Auto-fetch approved claims when employee + month + year are set
+  useEffect(() => {
+    if (!form.employeeId || !showCalc) { setClaimsTotal(null); return; }
+    setClaimsFetching(true);
+    salariesApi.getClaimsPreview(form.employeeId, Number(form.month), Number(form.year))
+      .then(amt => setClaimsTotal(amt))
+      .catch(() => setClaimsTotal(0))
+      .finally(() => setClaimsFetching(false));
+  }, [form.employeeId, form.month, form.year, showCalc]);
 
   // Load all employees for filter
   useEffect(() => {
@@ -125,10 +140,7 @@ export default function SalaryPage() {
         <table style="border-bottom:1.5px solid ${B};">
           <tr>
             <td style="padding:14px 18px;width:50%;vertical-align:middle;">
-              ${logoUrl
-                ? `<img src="${logoUrl}" style="height:46px;object-fit:contain;" />`
-                : `<div style="font-weight:900;font-size:17px;letter-spacing:2px;">${companyName}</div>`
-              }
+              <img src="${resolvedLogo}" style="height:46px;object-fit:contain;" />
             </td>
             <td style="padding:14px 18px;width:50%;text-align:right;vertical-align:middle;">
               <div style="font-size:18px;font-weight:900;letter-spacing:2px;color:${BRAND};">PAYSLIP</div>
@@ -297,6 +309,7 @@ export default function SalaryPage() {
                   <th className="table-header">Month / Year</th>
                   <th className="table-header">Base Salary</th>
                   <th className="table-header">Visit Charges</th>
+                  <th className="table-header">Claims</th>
                   <th className="table-header">Travel Allow.</th>
                   <th className="table-header">Incentives</th>
                   <th className="table-header">Deductions</th>
@@ -312,6 +325,7 @@ export default function SalaryPage() {
                     <td className="table-cell text-gray-500">{MONTHS[sal.month - 1]} {sal.year}</td>
                     <td className="table-cell">{formatCurrency(sal.baseSalary)}</td>
                     <td className="table-cell text-blue-600">{formatCurrency(sal.visitChargesTotal)}</td>
+                    <td className="table-cell text-amber-600">{formatCurrency((sal as any).claimsTotal || 0)}</td>
                     <td className="table-cell text-blue-500">{formatCurrency(sal.travelAllowance || 0)}</td>
                     <td className="table-cell text-green-600">{formatCurrency(sal.incentives)}</td>
                     <td className="table-cell text-red-600">-{formatCurrency(sal.deductions)}</td>
@@ -387,7 +401,23 @@ export default function SalaryPage() {
               <input type="number" className="input-field" value={form.deductions} onChange={(e) => setForm(f => ({...f, deductions: e.target.value}))} />
             </div>
           </div>
-          <p className="text-xs text-gray-400">Visit charges will be auto-aggregated from approved engineer visits.</p>
+
+          {/* Claims — auto-fetched from approved visit claims */}
+          {form.employeeId && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <label className="label !mb-1 text-amber-800">Claims (Auto-calculated from approved HR claims)</label>
+              {claimsFetching ? (
+                <p className="text-sm text-amber-600 animate-pulse">Fetching approved claims…</p>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <p className="text-lg font-bold text-amber-700">{formatCurrency(claimsTotal ?? 0)}</p>
+                  {claimsTotal === 0 && <p className="text-xs text-amber-500">No approved claims for this period</p>}
+                </div>
+              )}
+            </div>
+          )}
+
+          <p className="text-xs text-gray-400">Visit charges and claims will be auto-aggregated from approved engineer records.</p>
           <div className="flex gap-3 justify-end">
             <button type="button" onClick={() => setShowCalc(false)} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Calculating…' : 'Calculate'}</button>

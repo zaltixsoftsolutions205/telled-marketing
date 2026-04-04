@@ -179,10 +179,19 @@ export const sendDRF = async (req: AuthRequest, res: Response): Promise<void> =>
     const oemEmail = bodyOemEmail || (lead as any).oemEmail || lead.email;
     if (!oemEmail) { sendError(res, 'OEM email is required', 400); return; }
 
+    // Save DRF first — email is fire-and-forget
+    await new OEMApprovalAttempt({
+      leadId: lead._id, attemptNumber, status: 'Pending',
+      sentDate: new Date(), expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      createdBy: req.user!.id,
+    }).save();
+
+    await Lead.findByIdAndUpdate(lead._id, { drfNumber, drfEmailSent: true, drfEmailSentAt: new Date() });
+
+    // Send email in background — don't block success response
     const recipients = [oemEmail];
     if (assignedUser?.email && assignedUser.email !== oemEmail) recipients.push(assignedUser.email);
-
-    await sendDRFEmail(recipients.join(','), {
+    sendDRFEmail(recipients.join(','), {
       drfNumber, version: attemptNumber,
       companyName: accountName || lead.companyName,
       contactName: contactPerson || lead.contactPersonName || lead.contactName || '',
@@ -194,16 +203,9 @@ export const sendDRF = async (req: AuthRequest, res: Response): Promise<void> =>
       email: email || lead.email,
       channelPartner, interestedModules: interestedModules || lead.oemName,
       expectedClosure,
-    });
+    }).catch((err: unknown) => logger.error('DRF email failed (non-fatal):', err));
 
-    await new OEMApprovalAttempt({
-      leadId: lead._id, attemptNumber, status: 'Pending',
-      sentDate: new Date(), expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      createdBy: req.user!.id,
-    }).save();
-
-    await Lead.findByIdAndUpdate(lead._id, { drfNumber, drfEmailSent: true, drfEmailSentAt: new Date() });
-    logger.info(`DRF sent for lead ${lead._id} (${lead.companyName}) → ${oemEmail} — ${drfNumber}`);
+    logger.info(`DRF created for lead ${lead._id} (${lead.companyName}) → ${oemEmail} — ${drfNumber}`);
     notifyRole(['admin'], {
       title: 'DRF Submitted for OEM Approval',
       message: `DRF ${drfNumber} sent to OEM for "${accountName || lead.companyName}"`,

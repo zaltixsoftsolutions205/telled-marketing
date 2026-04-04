@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, Search, Send, Building2, Pencil, CheckCircle, RefreshCw, Receipt, CreditCard, Edit, Mail } from 'lucide-react';
+import { Plus, Search, Send, Building2, Pencil, CheckCircle, RefreshCw, Receipt, CreditCard, Edit, Mail, Trash2 } from 'lucide-react';
 import { purchasesApi } from '@/api/purchases';
 import { leadsApi } from '@/api/leads';
 import { accountsApi } from '@/api/accounts';
@@ -7,6 +7,7 @@ import { invoicesApi } from '@/api/invoices';
 import api from '@/api/axios';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
 import Toast from '@/components/common/Toast';
 import { formatDate, formatCurrency } from '@/utils/formatters';
 import { useAuthStore } from '@/store/authStore';
@@ -51,6 +52,10 @@ export default function PurchasesPage() {
   const [convertForm, setConvertForm] = useState({ accountName: '', notes: '' });
   const [converting, setConverting] = useState(false);
 
+  // Delete
+  const [deleteTarget, setDeleteTarget] = useState<PurchaseOrder | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   // Mark Vendor Paid modal
   const [payTarget, setPayTarget] = useState<PurchaseOrder | null>(null);
   const [payForm, setPayForm] = useState({ paidAmount: '', paidDate: new Date().toISOString().slice(0, 10), paymentMode: 'Bank Transfer', paymentReference: '', paymentNotes: '' });
@@ -64,6 +69,21 @@ export default function PurchasesPage() {
     dueDate: '', description: '', notes: '',
   });
   const [invoiceGenerating, setInvoiceGenerating] = useState(false);
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await purchasesApi.delete(deleteTarget._id);
+      setOrders(prev => prev.filter(o => o._id !== deleteTarget._id));
+      setTotal(prev => prev - 1);
+      setDeleteTarget(null);
+    } catch (err: any) {
+      setToast({ message: err?.response?.data?.message || 'Failed to delete purchase order', type: 'error' });
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const handleSyncEmails = async () => {
     setSyncing(true);
@@ -373,7 +393,7 @@ export default function PurchasesPage() {
                     <th className="table-header">Amount</th>
                     <th className="table-header">Sent On</th>
                     <th className="table-header">Payment</th>
-                    {canRecordPayment && <th className="table-header">Action</th>}
+                    <th className="table-header">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -398,19 +418,28 @@ export default function PurchasesPage() {
                           <span className="badge bg-orange-100 text-orange-700 text-xs">Unpaid</span>
                         )}
                       </td>
-                      {canRecordPayment && (
                         <td className="table-cell">
-                          {po.paymentStatus !== 'Paid' && (
-                            <button
-                              title="Mark Vendor Paid"
-                              onClick={() => openMarkPaid(po)}
-                              className="p-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors"
-                            >
-                              <CreditCard size={13} />
-                            </button>
-                          )}
+                          <div className="flex items-center gap-1.5">
+                            {canRecordPayment && po.paymentStatus !== 'Paid' && (
+                              <button
+                                title="Mark Vendor Paid"
+                                onClick={() => openMarkPaid(po)}
+                                className="p-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors"
+                              >
+                                <CreditCard size={13} />
+                              </button>
+                            )}
+                            {(user?.role === 'admin' || user?.role === 'sales') && (
+                              <button
+                                title="Delete PO"
+                                onClick={() => setDeleteTarget(po)}
+                                className="p-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
                         </td>
-                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -524,6 +553,16 @@ export default function PurchasesPage() {
                                 className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
                               >
                                 <Receipt size={13} />
+                              </button>
+                            )}
+                            {/* Delete */}
+                            {(user?.role === 'admin' || user?.role === 'sales') && (
+                              <button
+                                title="Delete PO"
+                                onClick={() => setDeleteTarget(po)}
+                                className="p-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
+                              >
+                                <Trash2 size={13} />
                               </button>
                             )}
                           </div>
@@ -870,6 +909,17 @@ export default function PurchasesPage() {
           </div>
         </form>
       </Modal>
+
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        title="Delete Purchase Order"
+        message={`Are you sure you want to delete PO ${deleteTarget?.poNumber}? This action cannot be undone.`}
+        confirmLabel="Delete"
+        loading={deleting}
+        onConfirm={handleDelete}
+        onClose={() => setDeleteTarget(null)}
+        danger
+      />
     </div>
   );
 }

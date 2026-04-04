@@ -1,12 +1,22 @@
 import { Response } from 'express';
 import Salary from '../models/Salary';
 import EngineerVisit from '../models/EngineerVisit';
+import VisitClaim from '../models/VisitClaim';
 import User from '../models/User';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams } from '../utils/helpers';
 import { generatePayslipPDF } from '../services/pdf.service';
 import { notifyUser } from '../utils/notify';
+import mongoose from 'mongoose';
+
+const getClaimsTotal = async (employeeId: any, start: Date, end: Date): Promise<number> => {
+  const agg = await VisitClaim.aggregate([
+    { $match: { engineerId: new mongoose.Types.ObjectId(employeeId), status: 'approved', isArchived: false, claimDate: { $gte: start, $lte: end } } },
+    { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+  ]);
+  return agg[0]?.total || 0;
+};
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -38,7 +48,8 @@ export const calculateSalary = async (req: AuthRequest, res: Response): Promise<
       { $group: { _id: null, total: { $sum: '$totalAmount' } } },
     ]);
     const visitChargesTotal = visitAgg[0]?.total || 0;
-    const salary = await new Salary({ employeeId, month, year, baseSalary: employee.baseSalary, visitChargesTotal, travelAllowance, incentives, deductions, notes }).save();
+    const claimsTotal = await getClaimsTotal(employeeId, start, end);
+    const salary = await new Salary({ employeeId, month, year, baseSalary: employee.baseSalary, visitChargesTotal, claimsTotal, travelAllowance, incentives, deductions, notes }).save();
     try {
       const pdf = await generatePayslipPDF({ employeeName: employee.name, email: employee.email, role: employee.role, month: MONTHS[month - 1], year, baseSalary: employee.baseSalary, visitChargesTotal, travelAllowance, incentives, deductions, finalSalary: salary.finalSalary });
       await Salary.findByIdAndUpdate(salary._id, { payslipPdf: pdf });
@@ -65,4 +76,16 @@ export const markSalaryPaid = async (req: AuthRequest, res: Response): Promise<v
     });
     sendSuccess(res, salary, 'Salary marked as paid');
   } catch { sendError(res, 'Failed', 500); }
+};
+
+export const getClaimsPreview = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { employeeId, month, year } = req.query;
+    if (!employeeId || !month || !year) { sendError(res, 'employeeId, month, year required', 400); return; }
+    const m = Number(month); const y = Number(year);
+    const start = new Date(y, m - 1, 1);
+    const end = new Date(y, m, 0);
+    const claimsTotal = await getClaimsTotal(employeeId as string, start, end);
+    sendSuccess(res, { claimsTotal });
+  } catch { sendError(res, 'Failed to fetch claims preview', 500); }
 };

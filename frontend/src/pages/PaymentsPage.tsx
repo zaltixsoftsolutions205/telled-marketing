@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Search, CreditCard, TrendingUp, BarChart2, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { Search, CreditCard, TrendingUp, BarChart2, ArrowDownCircle, ArrowUpCircle, Plus } from 'lucide-react';
 import { invoicesApi } from '@/api/invoices';
 import { purchasesApi } from '@/api/purchases';
 import { useAuthStore } from '@/store/authStore';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
+import Modal from '@/components/common/Modal';
 import { formatDate, formatCurrency } from '@/utils/formatters';
 import type { Payment, Invoice, User, PurchaseOrder, Lead } from '@/types';
 
@@ -13,15 +14,28 @@ export default function PaymentsPage() {
   const [tab, setTab] = useState<'incoming' | 'vendor'>('incoming');
   const [payments, setPayments] = useState<Payment[]>([]);
   const [vendorPos, setVendorPos] = useState<PurchaseOrder[]>([]);
+  const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+
+  const [showRecord, setShowRecord] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [recordForm, setRecordForm] = useState({
+    invoiceId: '',
+    amountPaid: '',
+    mode: 'Bank Transfer',
+    paymentDate: new Date().toISOString().slice(0, 10),
+    referenceNumber: '',
+    notes: '',
+  });
 
   const loadIncoming = useCallback(async () => {
     try {
       const res = await invoicesApi.getAll({ limit: 200 });
-      const allInvoices: Invoice[] = res.data || [];
+      const invoices: Invoice[] = res.data || [];
+      setAllInvoices(invoices);
       const paymentLists = await Promise.all(
-        allInvoices.map((inv: Invoice) => invoicesApi.getPayments(inv._id).catch(() => []))
+        invoices.map((inv: Invoice) => invoicesApi.getPayments(inv._id).catch(() => []))
       );
       setPayments(paymentLists.flat());
     } catch (err) {
@@ -61,6 +75,27 @@ export default function PaymentsPage() {
   for (const p of payments) { modeCounts[p.mode] = (modeCounts[p.mode] || 0) + 1; }
   const topMode = Object.entries(modeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || '—';
 
+  const handleRecord = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const newPayment = await invoicesApi.recordPayment(recordForm.invoiceId, {
+        amountPaid: Number(recordForm.amountPaid),
+        mode: recordForm.mode,
+        paymentDate: recordForm.paymentDate,
+        referenceNumber: recordForm.referenceNumber || undefined,
+        notes: recordForm.notes || undefined,
+      });
+      setPayments(prev => [newPayment, ...prev]);
+      setShowRecord(false);
+      setRecordForm({ invoiceId: '', amountPaid: '', mode: 'Bank Transfer', paymentDate: new Date().toISOString().slice(0, 10), referenceNumber: '', notes: '' });
+    } catch (err) {
+      console.error('recordPayment:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const filteredIncoming = search
     ? payments.filter(p => {
         const inv = p.invoiceId as Invoice;
@@ -80,9 +115,16 @@ export default function PaymentsPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div>
-        <h1 className="page-header">Payments</h1>
-        <p className="text-sm text-gray-500 mt-0.5">{payments.length} incoming · {vendorPos.length} vendor paid</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="page-header">Payments</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{payments.length} incoming · {vendorPos.length} vendor paid</p>
+        </div>
+        {canSeeVendor && (
+          <button onClick={() => setShowRecord(true)} className="btn-primary flex items-center gap-2">
+            <Plus size={16} /> Record Payment
+          </button>
+        )}
       </div>
 
       {/* Stats */}
@@ -170,7 +212,11 @@ export default function PaymentsPage() {
                 <tbody className="divide-y divide-gray-50">
                   {filteredIncoming.map((pmt) => (
                     <tr key={pmt._id} className="hover:bg-green-50/20 transition-colors">
-                      <td className="table-cell font-mono text-sm">{(pmt.invoiceId as Invoice)?.invoiceNumber}</td>
+                      <td className="table-cell font-mono text-sm">
+                        {(pmt.invoiceId as Invoice)?.invoiceNumber
+                          || allInvoices.find(i => i._id === (pmt.invoiceId as any)?._id || i._id === pmt.invoiceId as any)?.invoiceNumber
+                          || <span className="text-gray-300">—</span>}
+                      </td>
                       <td className="table-cell font-semibold text-green-700">{formatCurrency(pmt.amountPaid)}</td>
                       <td className="table-cell">
                         <span className="badge bg-blue-100 text-blue-800">{pmt.mode}</span>
@@ -225,6 +271,97 @@ export default function PaymentsPage() {
           )}
         </div>
       )}
+      <Modal isOpen={showRecord} onClose={() => setShowRecord(false)} title="Record Incoming Payment">
+        <form onSubmit={handleRecord} className="space-y-4">
+          <div>
+            <label className="label">Invoice *</label>
+            <select
+              required
+              className="input-field"
+              value={recordForm.invoiceId}
+              onChange={(e) => setRecordForm(f => ({ ...f, invoiceId: e.target.value }))}
+            >
+              <option value="">Select invoice</option>
+              {allInvoices.map(inv => (
+                <option key={inv._id} value={inv._id}>
+                  {inv.invoiceNumber} — {(inv.accountId as any)?.accountName || ''} ({formatCurrency(inv.amount)})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Amount Paid (₹) *</label>
+              <input
+                required
+                type="number"
+                min="1"
+                step="0.01"
+                className="input-field"
+                value={recordForm.amountPaid}
+                onChange={(e) => setRecordForm(f => ({ ...f, amountPaid: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">Payment Date *</label>
+              <input
+                required
+                type="date"
+                className="input-field"
+                value={recordForm.paymentDate}
+                onChange={(e) => setRecordForm(f => ({ ...f, paymentDate: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Payment Mode *</label>
+              <select
+                required
+                className="input-field"
+                value={recordForm.mode}
+                onChange={(e) => setRecordForm(f => ({ ...f, mode: e.target.value }))}
+              >
+                <option>Bank Transfer</option>
+                <option>UPI</option>
+                <option>Cheque</option>
+                <option>Cash</option>
+                <option>NEFT</option>
+                <option>RTGS</option>
+                <option>IMPS</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Reference Number</label>
+              <input
+                className="input-field"
+                placeholder="UTR / Cheque no."
+                value={recordForm.referenceNumber}
+                onChange={(e) => setRecordForm(f => ({ ...f, referenceNumber: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Notes</label>
+            <textarea
+              rows={2}
+              className="input-field"
+              value={recordForm.notes}
+              onChange={(e) => setRecordForm(f => ({ ...f, notes: e.target.value }))}
+            />
+          </div>
+
+          <div className="flex gap-3 justify-end">
+            <button type="button" onClick={() => setShowRecord(false)} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={saving} className="btn-primary">
+              {saving ? 'Recording…' : 'Record Payment'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

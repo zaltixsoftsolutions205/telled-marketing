@@ -27,7 +27,7 @@ export const invoicesApi = {
   },
   recordPayment: async (id: string, body: unknown) => {
     const { data } = await api.post(`/invoices/${id}/payments`, body);
-    return data.data;
+    return data.data?.payment ?? data.data;
   },
   getPayments: async (id: string) => {
     const { data } = await api.get(`/invoices/${id}/payments`);

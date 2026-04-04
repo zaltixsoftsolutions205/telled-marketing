@@ -17,7 +17,7 @@ export const getAllDRFs = async (req: AuthRequest, res: Response): Promise<void>
     if (req.query.status) filter.status = req.query.status;
     if (req.query.leadId) filter.leadId = req.query.leadId;
     const [data, total] = await Promise.all([
-      OEMApprovalAttempt.find(filter).populate('leadId', 'companyName oemName').populate('createdBy', 'name email').sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
+      OEMApprovalAttempt.find(filter).populate('leadId', 'companyName oemName contactPersonName contactName email oemEmail').populate('createdBy', 'name email').sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
       OEMApprovalAttempt.countDocuments(filter),
     ]);
     sendPaginated(res, data, total, page, limit);
@@ -62,7 +62,8 @@ export const createAttempt = async (req: AuthRequest, res: Response): Promise<vo
     const d = attempt.sentDate;
     const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
     const drfNumber = `DRF-${dateStr}-${String(attempt.attemptNumber).padStart(3, '0')}`;
-    await sendOEMApprovalRequest(lead.email, lead.companyName, lead.oemName || '', attempt.attemptNumber, drfNumber);
+    const oemTo = lead.oemEmail || lead.email;
+    await sendOEMApprovalRequest(oemTo, lead.companyName, lead.oemName || '', attempt.attemptNumber, drfNumber);
     sendSuccess(res, attempt, 'OEM request submitted', 201);
   } catch { sendError(res, 'Failed to create OEM attempt', 500); }
 };
@@ -91,6 +92,44 @@ export const rejectAttempt = async (req: AuthRequest, res: Response): Promise<vo
     if (lead) await sendOEMRejectionNotification(lead.email, lead.companyName, reason, attempt.attemptNumber);
     sendSuccess(res, attempt, 'OEM rejected');
   } catch { sendError(res, 'Failed to reject', 500); }
+};
+
+export const resendDRF = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const attempt = await OEMApprovalAttempt.findById(req.params.id);
+    if (!attempt) { sendError(res, 'DRF not found', 404); return; }
+    if (attempt.status !== 'Rejected') { sendError(res, 'Only rejected DRFs can be resent', 400); return; }
+
+    const daysSinceRejection = attempt.rejectedDate
+      ? Math.floor((Date.now() - new Date(attempt.rejectedDate).getTime()) / (1000 * 60 * 60 * 24))
+      : 0;
+
+    if (daysSinceRejection < 30) {
+      sendError(res, `Cannot resend yet. ${30 - daysSinceRejection} day(s) remaining before resend is allowed.`, 400);
+      return;
+    }
+
+    const lead = await Lead.findById(attempt.leadId);
+    if (!lead) { sendError(res, 'Lead not found', 404); return; }
+
+    // Reset to Pending and update sentDate
+    attempt.status = 'Pending';
+    attempt.sentDate = new Date();
+    attempt.rejectedDate = undefined;
+    attempt.rejectionReason = undefined;
+    attempt.approvedDate = undefined;
+    attempt.approvedBy = undefined;
+    await attempt.save();
+    await Lead.findByIdAndUpdate(attempt.leadId, { stage: 'OEM Submitted' });
+
+    const d = attempt.sentDate;
+    const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    const drfNumber = `DRF-${dateStr}-${String(attempt.attemptNumber).padStart(3, '0')}`;
+    const oemTo = lead.oemEmail || lead.email;
+    await sendOEMApprovalRequest(oemTo, lead.companyName, lead.oemName || '', attempt.attemptNumber, drfNumber);
+
+    sendSuccess(res, attempt, 'DRF email resent successfully');
+  } catch { sendError(res, 'Failed to resend DRF', 500); }
 };
 
 export const resetToPending = async (req: AuthRequest, res: Response): Promise<void> => {

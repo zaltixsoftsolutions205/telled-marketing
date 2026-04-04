@@ -114,6 +114,32 @@ export default function DRFPage() {
     load();
   };
 
+  // Resend state
+  const [resendTarget, setResendTarget] = useState<any>(null);
+  const [resending, setResending] = useState(false);
+  const [resendError, setResendError] = useState('');
+
+  const handleResend = async () => {
+    if (!resendTarget) return;
+    setResending(true); setResendError('');
+    try {
+      const updated = await drfApi.resend(resendTarget._id);
+      notify('DRF Resent', `DRF email resent for "${resendTarget.leadId?.companyName || 'lead'}".`, 'drf', '/drfs');
+      setDRFs(prev => prev.map(d => d._id === resendTarget._id ? { ...d, ...updated, status: 'Pending' } : d));
+      setResendTarget(null);
+    } catch (err: any) {
+      setResendError(err?.response?.data?.message || 'Failed to resend DRF');
+    } finally {
+      setResending(false);
+    }
+  };
+
+  const getDaysUntilResend = (drf: any): number => {
+    if (!drf.rejectedDate) return 30;
+    const daysSince = Math.floor((Date.now() - new Date(drf.rejectedDate).getTime()) / (1000 * 60 * 60 * 24));
+    return Math.max(0, 30 - daysSince);
+  };
+
   // Email sync state
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{ approved: string[]; rejected: string[]; scanned: number; errors: string[] } | null>(null);
@@ -253,13 +279,14 @@ export default function DRFPage() {
         terms: qForm.terms || undefined,
         notes: qForm.notes || undefined,
       });
-      if (created?._id) await quotationsApi.sendEmail(created._id);
-      notify('Quotation Sent', `Quotation created and sent for "${(quotationDRF.leadId as any)?.companyName || 'lead'}".`, 'quotation', '/quotations');
-      // Mark DRF so Send Quotation button disappears
+      // Close modal and mark success regardless of email result
       setDRFs(prev => prev.map(d => d._id === quotationDRF._id ? { ...d, quotationSent: true } : d));
       setQuotationDRF(null);
+      notify('Quotation Created', `Quotation created for "${(quotationDRF.leadId as any)?.companyName || 'lead'}".`, 'quotation', '/quotations');
+      // Try to send email in background — don't block on failure
+      if (created?._id) quotationsApi.sendEmail(created._id).catch(() => {});
     } catch (err: unknown) {
-      setQError((err as any)?.response?.data?.message || 'Failed to send quotation');
+      setQError((err as any)?.response?.data?.message || 'Failed to create quotation');
     } finally {
       setQSaving(false);
     }
@@ -428,7 +455,7 @@ export default function DRFPage() {
                       <td className="px-4 py-3 font-medium text-gray-900">
                         <Link to={`/leads/${drf.leadId?._id}`} className="hover:text-violet-600 hover:underline">{drf.leadId?.companyName}</Link>
                       </td>
-                      <td className="px-4 py-3 text-gray-500">{drf.leadId?.contactPersonName || drf.leadId?.contactName || '—'}</td>
+                      <td className="px-4 py-3 text-gray-500">{drf.leadId?.contactPersonName || drf.leadId?.contactName || drf.leadId?.email || '—'}</td>
                       <td className="px-4 py-3 text-gray-500">{drf.leadId?.oemName || '—'}</td>
                       <td className="px-4 py-3 text-center">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${drf.version > 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
@@ -455,15 +482,36 @@ export default function DRFPage() {
                               Send Quotation
                             </button>
                           )}
-                          {isAdmin && drf.status === 'Rejected' && (
-                            <button
-                              onClick={() => { setQuickAction({ drf, type: 'reset' }); setQuickReason(''); setQuickError(''); }}
-                              title="Reset to Pending"
-                              className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-md hover:bg-amber-100 transition-colors"
-                            >
-                              <RotateCcw size={12} /> Reset
-                            </button>
-                          )}
+                          {drf.status === 'Rejected' && (() => {
+                            const daysLeft = getDaysUntilResend(drf);
+                            const canResend = daysLeft === 0;
+                            return (
+                              <>
+                                <button
+                                  onClick={() => canResend ? (setResendTarget(drf), setResendError('')) : undefined}
+                                  disabled={!canResend}
+                                  title={canResend ? 'Resend DRF email to OEM' : `Can resend in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}`}
+                                  className={`inline-flex items-center gap-1 px-2 py-1 text-xs border rounded-md transition-colors ${
+                                    canResend
+                                      ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 cursor-pointer'
+                                      : 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed'
+                                  }`}
+                                >
+                                  <RefreshCw size={12} />
+                                  {canResend ? 'Resend' : `Resend in ${daysLeft}d`}
+                                </button>
+                                {isAdmin && (
+                                  <button
+                                    onClick={() => { setQuickAction({ drf, type: 'reset' }); setQuickReason(''); setQuickError(''); }}
+                                    title="Reset to Pending"
+                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-md hover:bg-amber-100 transition-colors"
+                                  >
+                                    <RotateCcw size={12} /> Reset
+                                  </button>
+                                )}
+                              </>
+                            );
+                          })()}
                           {isAdmin && drf.status === 'Pending' && (
                             <>
                               <button
@@ -518,6 +566,34 @@ export default function DRFPage() {
           </>
         )}
       </div>
+
+      {/* Resend DRF Confirmation Modal */}
+      <Modal
+        isOpen={!!resendTarget}
+        onClose={() => { setResendTarget(null); setResendError(''); }}
+        title="Resend DRF Email"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            The same OEM approval request email will be resent for{' '}
+            <strong>{resendTarget?.leadId?.companyName}</strong> (attempt #{resendTarget?.attemptNumber}).
+          </p>
+          <p className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-lg p-3">
+            The DRF status will reset to <strong>Pending</strong> while awaiting the new response.
+          </p>
+          {resendError && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">{resendError}</p>
+          )}
+          <div className="flex gap-3 justify-end">
+            <button onClick={() => { setResendTarget(null); setResendError(''); }} className="btn-secondary">Cancel</button>
+            <button onClick={handleResend} disabled={resending} className="btn-primary flex items-center gap-2">
+              <RefreshCw size={14} className={resending ? 'animate-spin' : ''} />
+              {resending ? 'Sending…' : 'Resend Email'}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Quick Approve / Reject / Reset Modal */}
       <Modal

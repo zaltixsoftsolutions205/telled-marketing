@@ -3,17 +3,19 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import {
-  Plus, Search, FileText, Mail, Download, Send, Percent, RefreshCw, Eye,
+  Plus, Search, FileText, Mail, Download, Send, Percent, RefreshCw, Eye, Trash2,
 } from 'lucide-react';
 import { quotationsApi } from '@/api/quotations';
 import { leadsApi } from '@/api/leads';
 import { drfApi } from '@/api/drf';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
 import Toast from '@/components/common/Toast';
 import { formatDate, formatCurrency } from '@/utils/formatters';
 import type { Quotation, Lead, QuotationItem } from '@/types';
 import { useLogoStore } from '@/store/logoStore';
+import { resolveLogoUrl } from '@/api/settings';
 import { notify } from '@/store/notificationStore';
 
 const emptyItem: QuotationItem = { description: '', quantity: 1, listPrice: 0, unitPrice: 0, total: 0 };
@@ -47,10 +49,13 @@ export default function QuotationsPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showVendorModal, setShowVendorModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Quotation | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedQuotation, setSelectedQuotation] = useState<Quotation | null>(null);
   const [items, setItems] = useState<QuotationItem[]>([{ ...emptyItem }]);
   const { logoUrl, companyName } = useLogoStore();
+  const resolvedLogo = resolveLogoUrl(logoUrl);
   const printRef = useRef<HTMLDivElement>(null);
 
   const [form, setForm] = useState({
@@ -206,6 +211,21 @@ export default function QuotationsPage() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await quotationsApi.delete(deleteTarget._id);
+      setQuotations(prev => prev.filter(q => q._id !== deleteTarget._id));
+      setTotal(prev => prev - 1);
+      setDeleteTarget(null);
+    } catch (err: any) {
+      setToast({ message: err?.response?.data?.message || 'Failed to delete quotation', type: 'error' });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleSendToVendor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedQuotation) return;
@@ -254,9 +274,7 @@ export default function QuotationsPage() {
     const createdBy = q.createdBy;
     const finalPrice = q.finalAmount || q.total;
 
-    const logoHtml = logoUrl
-      ? `<img src="${logoUrl}" style="height:50px;object-fit:contain;" />`
-      : `<div style="font-weight:900;font-size:18px;letter-spacing:2px;">${companyName}</div>`;
+    const logoHtml = `<img src="${resolvedLogo}" style="height:50px;object-fit:contain;" />`;
 
     const itemsRows = q.items.map((item, i) => `
       <tr>
@@ -305,10 +323,7 @@ This offer may be subject to errors and changes.`;
         <table style="width:100%;border-collapse:collapse;border-bottom:1px solid ${B};">
           <tr>
             <td style="padding:12px 16px;width:50%;vertical-align:middle;">
-              ${logoUrl
-                ? `<img src="${logoUrl}" style="height:52px;object-fit:contain;" />`
-                : `<div style="font-weight:900;font-size:18px;letter-spacing:2px;">${companyName}</div>`
-              }
+              <img src="${resolvedLogo}" style="height:52px;object-fit:contain;" />
             </td>
             <td style="padding:12px 16px;width:50%;vertical-align:middle;text-align:right;border-left:1px solid ${B};">
               ${lead?.oemName
@@ -444,8 +459,8 @@ This offer may be subject to errors and changes.`;
               <div style="border-top:1px solid #999;padding-top:4px;font-size:10px;text-align:center;">Authorised Signatory</div>
             </td>
             <td style="padding:12px 16px;vertical-align:middle;text-align:center;">
-              <div style="font-weight:bold;font-size:13px;letter-spacing:1px;">TELLED MARKETING,</div>
-              <div style="font-size:10px;margin-top:5px;color:#333;line-height:1.6;">${TELLED_INFO.address.replace(/\n/g, '<br/>')}</div>
+              <img src="${resolvedLogo}" style="height:40px;object-fit:contain;margin-bottom:6px;" />
+              <div style="font-size:10px;margin-top:4px;color:#333;line-height:1.6;">${TELLED_INFO.address.replace(/\n/g, '<br/>')}</div>
             </td>
           </tr>
         </table>
@@ -528,6 +543,15 @@ This offer may be subject to errors and changes.`;
         onClick={() => generateQuotationPDF(q)}
         className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors">
         <Download size={14} />
+      </button>
+    );
+
+    // Delete button (admin only)
+    buttons.push(
+      <button key="delete" title="Delete Quotation"
+        onClick={() => setDeleteTarget(q)}
+        className="p-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
+        <Trash2 size={14} />
       </button>
     );
 
@@ -949,9 +973,7 @@ This offer may be subject to errors and changes.`;
                   <tbody>
                     <tr>
                       <td style={{ width: '50%', verticalAlign: 'middle' }}>
-                        {logoUrl
-                          ? <img src={logoUrl} alt="logo" style={{ height: 50, objectFit: 'contain' }} />
-                          : <div style={{ fontWeight: 900, fontSize: 18, letterSpacing: 2, }}>{companyName}</div>}
+                        <img src={resolvedLogo} alt="logo" style={{ height: 50, objectFit: 'contain' }} />
                       </td>
                       <td style={{ width: '50%', textAlign: 'right', verticalAlign: 'middle' }}>
                         {lead?.oemName && (
@@ -1127,7 +1149,7 @@ This offer may be subject to errors and changes.`;
                         <div style={{ borderTop: '1px solid #000', paddingTop: 4, marginTop: 24, fontSize: 10 }}>Authorised Signatory</div>
                       </td>
                       <td style={{ border: '1px solid #000', padding: '12px', verticalAlign: 'middle', textAlign: 'center' }}>
-                        <div style={{ fontWeight: 'bold', fontSize: 13, letterSpacing: 1 }}>TELLED MARKETING,</div>
+                        <img src={resolvedLogo} alt="logo" style={{ height: 40, objectFit: 'contain', marginBottom: 6 }} />
                         <div style={{ fontSize: 10, marginTop: 4, whiteSpace: 'pre-line' }}>{TELLED_INFO.address}</div>
                       </td>
                     </tr>
@@ -1139,6 +1161,17 @@ This offer may be subject to errors and changes.`;
           );
         })()}
       </Modal>
+
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        title="Delete Quotation"
+        message={`Are you sure you want to delete quotation ${deleteTarget?.quotationNumber}? This action cannot be undone.`}
+        confirmLabel="Delete"
+        loading={deleting}
+        onConfirm={handleDelete}
+        onClose={() => setDeleteTarget(null)}
+        danger
+      />
     </div>
   );
 }

@@ -361,6 +361,18 @@ router.get('/vendor-payments', authorize('admin', 'hr_finance'), async (req: Aut
   }
 });
 
+// Delete PO (admin + sales)
+router.delete('/:id', authorize('admin', 'sales'), async (req: AuthRequest, res: Response) => {
+  try {
+    const po = await PurchaseOrder.findByIdAndDelete(req.params.id);
+    if (!po) { sendError(res, 'Purchase order not found', 404); return; }
+    sendSuccess(res, null, 'Purchase order deleted');
+  } catch (error) {
+    logger.error('Delete PO error:', error);
+    sendError(res, 'Failed to delete purchase order', 500);
+  }
+});
+
 // Sync emails - Allow multiple roles
 router.post('/sync-emails', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
   try {

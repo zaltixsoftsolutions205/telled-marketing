@@ -19,7 +19,7 @@ export const getAccounts = async (req: AuthRequest, res: Response): Promise<void
       { contactName: { $regex: sanitizeQuery(search as string), $options: 'i' } },
     ];
     const [accounts, total] = await Promise.all([
-      Account.find(filter).populate('assignedEngineer', 'name email').populate('assignedSales', 'name email').sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Account.find(filter).populate('leadId', 'companyName').populate('assignedEngineer', 'name email').populate('assignedSales', 'name email').sort({ createdAt: -1 }).skip(skip).limit(limit),
       Account.countDocuments(filter),
     ]);
     sendPaginated(res, accounts, total, page, limit);
@@ -84,4 +84,12 @@ export const assignEngineer = async (req: AuthRequest, res: Response): Promise<v
     }
     sendSuccess(res, account, 'Engineer assigned');
   } catch { sendError(res, 'Failed', 500); }
+};
+
+export const deleteAccount = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const account = await Account.findByIdAndDelete(req.params.id);
+    if (!account) { sendError(res, 'Account not found', 404); return; }
+    sendSuccess(res, null, 'Account deleted');
+  } catch { sendError(res, 'Failed to delete account', 500); }
 };

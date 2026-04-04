@@ -50,10 +50,11 @@ export const recordPayment = async (req: AuthRequest, res: Response): Promise<vo
     const invoice = await Invoice.findById(req.params.id);
     if (!invoice) { sendError(res, 'Invoice not found', 404); return; }
     const { amountPaid, paymentDate, mode, referenceNumber, notes } = req.body;
-    const payment = await new Payment({ invoiceId: invoice._id, accountId: invoice.accountId, amountPaid, paymentDate, mode, referenceNumber, notes, recordedBy: req.user!.id }).save();
+    const savedPayment = await new Payment({ invoiceId: invoice._id, accountId: invoice.accountId, amountPaid, paymentDate, mode, referenceNumber, notes, recordedBy: req.user!.id }).save();
     invoice.paidAmount += amountPaid;
     invoice.status = invoice.paidAmount >= invoice.totalAmount ? 'Paid' : invoice.paidAmount > 0 ? 'Partially Paid' : invoice.status;
     await invoice.save();
+    const payment = await Payment.findById(savedPayment._id).populate('recordedBy', 'name').populate('invoiceId', 'invoiceNumber');
     notifyRole(['admin', 'hr_finance'], {
       title: invoice.status === 'Paid' ? 'Invoice Fully Paid' : 'Partial Payment Received',
       message: `₹${amountPaid.toLocaleString()} received for invoice ${invoice.invoiceNumber} — status: ${invoice.status}`,
@@ -66,7 +67,7 @@ export const recordPayment = async (req: AuthRequest, res: Response): Promise<vo
 
 export const getPaymentsByInvoice = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const payments = await Payment.find({ invoiceId: req.params.id }).populate('recordedBy', 'name').sort({ paymentDate: -1 });
+    const payments = await Payment.find({ invoiceId: req.params.id }).populate('recordedBy', 'name').populate('invoiceId', 'invoiceNumber').sort({ paymentDate: -1 });
     sendSuccess(res, payments);
   } catch { sendError(res, 'Failed', 500); }
 };

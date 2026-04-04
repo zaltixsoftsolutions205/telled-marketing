@@ -6,6 +6,7 @@ export interface ISalary extends Document {
   year: number;
   baseSalary: number;
   visitChargesTotal: number;
+  claimsTotal: number;
   travelAllowance: number;
   incentives: number;
   deductions: number;
@@ -27,6 +28,7 @@ const SalarySchema = new Schema<ISalary>(
     year: { type: Number, required: true },
     baseSalary: { type: Number, required: true, min: 0 },
     visitChargesTotal: { type: Number, default: 0 },
+    claimsTotal: { type: Number, default: 0 },
     travelAllowance: { type: Number, default: 0 },
     incentives: { type: Number, default: 0 },
     deductions: { type: Number, default: 0 },
@@ -45,7 +47,7 @@ SalarySchema.index({ employeeId: 1, year: -1, month: -1 });
 SalarySchema.index({ employeeId: 1, month: 1, year: 1 }, { unique: true });
 
 SalarySchema.pre('save', function (next) {
-  this.finalSalary = this.baseSalary + this.visitChargesTotal + (this.travelAllowance || 0) + this.incentives - this.deductions;
+  this.finalSalary = this.baseSalary + this.visitChargesTotal + (this.claimsTotal || 0) + (this.travelAllowance || 0) + this.incentives - this.deductions;
   next();
 });
 

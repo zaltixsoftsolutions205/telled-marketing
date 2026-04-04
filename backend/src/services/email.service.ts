@@ -74,7 +74,7 @@ export const sendDRFEmail = async (
         ${row('Address & Location', data.address || '')}
         ${row('Web site', data.website || '')}
         ${row('Annual Turnover', data.annualTurnover || '')}
-        ${row('Contact Person', data.contactName ? `Mr./Ms. ${data.contactName}` : '')}
+        ${row('Contact Person', data.contactName || '')}
         ${row('Designation', data.designation || '')}
         ${row('Contact No.', data.contactNo || '')}
         ${row('E-mail', data.email || '')}

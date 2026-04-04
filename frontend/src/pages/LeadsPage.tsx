@@ -123,7 +123,7 @@ export default function LeadsPage() {
   const openEditModal = (lead: Lead) => {
     const cp = (lead.contactPersonName || lead.contactName || '');
     const prefix = cp.startsWith('Ms.') ? 'Ms.' : cp.startsWith('Dr.') ? 'Dr.' : 'Mr.';
-    const name = cp.replace(/^(Mr\.|Ms\.|Dr\.)\s*/, '');
+    const name = cp.replace(/^((Mr|Ms|Dr)\.\s*)+/i, '').trim();
     setEditForm({
       companyName: lead.companyName || '',
       contactPersonPrefix: prefix,
@@ -221,10 +221,13 @@ export default function LeadsPage() {
 
   const openDrfModal = (lead: Lead) => {
     const assignedUser = lead.assignedTo as User;
+    const cp = lead.contactPersonName || lead.contactName || '';
+    const cpPrefix = cp.startsWith('Ms.') ? 'Ms.' : cp.startsWith('Dr.') ? 'Dr.' : 'Mr.';
+    const cpName = cp.replace(/^((Mr|Ms|Dr)\.\s*)+/i, '').trim();
     setDrfForm({
       accountName: lead.companyName || '',
-      contactPersonPrefix: 'Mr.',
-      contactPerson: lead.contactPersonName || lead.contactName || '',
+      contactPersonPrefix: cpPrefix,
+      contactPerson: cpName,
       designation: (lead as any).designation || '',
       contactNo: lead.phone || '',
       email: lead.email || '',

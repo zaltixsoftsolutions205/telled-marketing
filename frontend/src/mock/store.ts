@@ -351,6 +351,13 @@ export const mockAccounts = {
     ACCOUNTS = ACCOUNTS.map((a: any) => a._id === id && a.organizationId === _currentOrgId ? { ...a, assignedEngineer: engineer } : a);
     return orgAccounts().find((a: any) => a._id === id)!;
   },
+  delete: async (id: string) => {
+    await delay(300);
+    const account = orgAccounts().find((a: any) => a._id === id);
+    if (!account) throw { response: { data: { message: 'Account not found' } } };
+    ACCOUNTS = ACCOUNTS.filter((a: any) => a._id !== id);
+    return { success: true };
+  },
 };
 
 // ─── QUOTATIONS MOCK ─────────────────────────────────────────────────────────
@@ -424,6 +431,13 @@ export const mockQuotations = {
     QUOTATIONS = QUOTATIONS.map((qt: any) => qt._id === id && qt.organizationId === _currentOrgId ? { ...qt, pdfPath } : qt);
     return orgQuotations().find((qt: any) => qt._id === id)!;
   },
+  delete: async (id: string) => {
+    await delay(300);
+    const q = orgQuotations().find((q: any) => q._id === id);
+    if (!q) throw { response: { data: { message: 'Quotation not found' } } };
+    QUOTATIONS = QUOTATIONS.filter((q: any) => q._id !== id);
+    return { success: true };
+  },
 };
 
 // ─── PURCHASE ORDERS MOCK ────────────────────────────────────────────────────
@@ -491,6 +505,13 @@ export const mockPurchases = {
     ACCOUNTS = [...ACCOUNTS, account];
     LEADS = LEADS.map((l: any) => l._id === lead._id ? { ...l, stage: 'Converted', updatedAt: now() } : l);
     return account;
+  },
+  delete: async (id: string) => {
+    await delay(300);
+    const po = orgPOs().find((p: any) => p._id === id);
+    if (!po) throw { response: { data: { message: 'Purchase order not found' } } };
+    PURCHASE_ORDERS = PURCHASE_ORDERS.filter((p: any) => p._id !== id);
+    return { success: true };
   },
 };
 
@@ -582,14 +603,14 @@ export const mockInvoices = {
   },
   recordPayment: async (id: string, data: Record<string, unknown>) => {
     await delay(400);
-    const inv    = orgInvoices().find((i: any) => i._id === id)!;
-    const newPaid = inv.paidAmount + Number(data.amount);
+    const inv     = orgInvoices().find((i: any) => i._id === id)!;
+    const newPaid = inv.paidAmount + Number(data.amountPaid);
     const status  = newPaid >= inv.amount ? 'Paid' : 'Partially Paid';
     INVOICES = INVOICES.map((i: any) => i._id === id ? { ...i, paidAmount: newPaid, status } : i);
-    const recorder = orgUsers().find((u: any) => u.role === 'admin') || orgUsers()[0];
-    const payment = { _id: 'pay' + uid(), organizationId: _currentOrgId, invoiceId: { _id: inv._id, invoiceNumber: inv.invoiceNumber }, amount: Number(data.amount), paymentDate: data.paymentDate, mode: data.mode, reference: data.reference || '', notes: String(data.notes || ''), recordedBy: recorder, createdAt: now() };
+    const recorder = orgUsers().find((u: any) => u.role === 'hr_finance') || orgUsers().find((u: any) => u.role === 'admin') || orgUsers()[0];
+    const payment = { _id: 'pay' + uid(), organizationId: _currentOrgId, invoiceId: { _id: inv._id, invoiceNumber: inv.invoiceNumber }, amountPaid: Number(data.amountPaid), paymentDate: data.paymentDate, mode: data.mode, referenceNumber: data.referenceNumber || '', notes: String(data.notes || ''), recordedBy: { _id: recorder._id, name: recorder.name }, createdAt: now() };
     PAYMENTS = [...PAYMENTS, payment];
-    return orgInvoices().find((i: any) => i._id === id)!;
+    return payment;
   },
   getPayments: async (id: string) => { await delay(); return orgPayments().filter((p: any) => p.invoiceId._id === id); },
 };

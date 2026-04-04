@@ -13,4 +13,8 @@ export const salariesApi = {
     const { data } = await api.patch(`/salaries/${id}/mark-paid`);
     return data.data;
   },
+  getClaimsPreview: async (employeeId: string, month: number, year: number): Promise<number> => {
+    const { data } = await api.get('/salaries/claims-preview', { params: { employeeId, month, year } });
+    return data.data?.claimsTotal ?? 0;
+  },
 };
