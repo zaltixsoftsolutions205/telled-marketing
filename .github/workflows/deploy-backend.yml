@@ -64,6 +64,10 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           envs: AWS_REGION,ECR_REPOSITORY
           script: |
+            # Pull latest code (gets updated docker-compose.yml)
+            cd /home/ubuntu/telled-marketing
+            git pull origin main
+
             # Login to ECR from EC2 using instance IAM role
             aws ecr get-login-password --region ap-south-2 \
               | docker login --username AWS --password-stdin 855250841662.dkr.ecr.ap-south-2.amazonaws.com
