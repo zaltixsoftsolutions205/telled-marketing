@@ -459,7 +459,7 @@ export const generateQuotationPDF = (data: {
 
 export const generatePayslipPDF = (data: {
   employeeName: string; email: string; role: string; month: string; year: number;
-  baseSalary: number; visitChargesTotal: number; incentives: number; deductions: number; finalSalary: number;
+  baseSalary: number; visitChargesTotal: number; travelAllowance?: number; incentives: number; deductions: number; finalSalary: number;
 }): Promise<string> => new Promise((resolve, reject) => {
   const fileName = `payslip-${data.employeeName.replace(/\s/g, '-')}-${data.month}-${data.year}.pdf`;
   const filePath = path.join(uploadDir, fileName);
@@ -659,6 +659,8 @@ export const generatePurchaseOrderPDF = (data: {
   customerCompany: string;
   customerContact?: string;
   customerEmail?: string;
+  customerPhone?: string;
+  customerAddress?: string;
 }): Promise<string> => new Promise((resolve, reject) => {
   const fileName = `po-${data.poNumber}-${Date.now()}.pdf`;
   const filePath = path.join(uploadDir, fileName);

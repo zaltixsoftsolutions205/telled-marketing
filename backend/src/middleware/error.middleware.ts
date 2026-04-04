@@ -10,5 +10,6 @@ export const errorHandler = (err: Error & { statusCode?: number; code?: number }
   sendError(res, err.message || 'Internal server error', err.statusCode || 500);
 };
 
-export const notFound = (req: Request, res: Response): void =>
+export const notFound = (req: Request, res: Response): void => {
   sendError(res, `Route ${req.method} ${req.url} not found`, 404);
+};

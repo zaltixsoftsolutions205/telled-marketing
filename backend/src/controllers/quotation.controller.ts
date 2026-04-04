@@ -466,7 +466,7 @@ export const sendToVendor = async (req: AuthRequest, res: Response): Promise<voi
         <hr style="margin:24px 0 16px">
         <p style="color:#6b7280;font-size:12px;text-align:center">
           Please provide your best quote at your earliest convenience.<br>
-          For any clarifications, contact ${quotation.createdBy?.name || 'Telled Sales'} at ${quotation.createdBy?.email || 'sales@telled.com'}
+          For any clarifications, contact ${(quotation.createdBy as any)?.name || 'Telled Sales'} at ${(quotation.createdBy as any)?.email || 'sales@telled.com'}
         </p>
       </div>
     </div>

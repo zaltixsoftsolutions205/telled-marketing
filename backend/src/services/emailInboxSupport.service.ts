@@ -185,7 +185,8 @@ export async function syncSupportEmails(): Promise<SupportEmailSyncResult> {
       const since = new Date();
       since.setHours(since.getHours() - 24);
       
-      const uids = await client.search({ seen: false }, { uid: true });
+      const uidsResult = await client.search({ seen: false }, { uid: true });
+      const uids: number[] = Array.isArray(uidsResult) ? uidsResult : [];
       console.log(`📧 Found ${uids.length} unread emails`);
 
       for (const uid of uids) {
@@ -271,7 +272,7 @@ export async function syncSupportEmails(): Promise<SupportEmailSyncResult> {
 
         } catch (err) {
           console.error(`❌ Error processing email ${uid}:`, err);
-          result.errors.push(`UID ${uid}: ${err.message}`);
+          result.errors.push(`UID ${uid}: ${(err as any)?.message || String(err)}`);
           await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true });
         }
       }

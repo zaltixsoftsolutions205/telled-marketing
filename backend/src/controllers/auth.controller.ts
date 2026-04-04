@@ -143,14 +143,14 @@ export const login = async (req: Request, res: Response) => {
     const accessToken = jwt.sign(
       { id: user._id.toString(), role: user.role },
       process.env.JWT_ACCESS_SECRET as string,
-      { expiresIn: process.env.JWT_ACCESS_EXPIRES as string }
+      { expiresIn: process.env.JWT_ACCESS_EXPIRES as any }
     );
 
     // 🔁 REFRESH TOKEN
     const refreshToken = jwt.sign(
       { id: user._id.toString() },
       process.env.JWT_REFRESH_SECRET as string,
-      { expiresIn: process.env.JWT_REFRESH_EXPIRES as string }
+      { expiresIn: process.env.JWT_REFRESH_EXPIRES as any }
     );
 
     // ✅ STORE IN REDIS
@@ -206,7 +206,7 @@ export const refreshToken = async (req: Request, res: Response) => {
     const newAccessToken = jwt.sign(
       { id: decoded.id },
       process.env.JWT_ACCESS_SECRET as string,
-      { expiresIn: process.env.JWT_ACCESS_EXPIRES as string }
+      { expiresIn: process.env.JWT_ACCESS_EXPIRES as any }
     );
 
     // 🔥 EXTEND SESSION
