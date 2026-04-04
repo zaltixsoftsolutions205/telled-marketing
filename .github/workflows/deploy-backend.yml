@@ -72,7 +72,7 @@ jobs:
             docker pull ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
 
             # Go to app directory
-            cd /home/ec2-user/telled-marketing/backend
+            cd /home/ubuntu/telled-marketing/backend
 
             # Update ECR_IMAGE env var and restart containers
             export ECR_IMAGE=${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest

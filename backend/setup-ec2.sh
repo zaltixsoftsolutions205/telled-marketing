@@ -70,7 +70,7 @@ echo "Git installed: $(git --version)"
 
 # ─── 6. Clone repository ──────────────────────────────────────────────────────
 echo "[6/8] Cloning repository..."
-APP_DIR="/home/ec2-user/telled-marketing"
+APP_DIR="/home/ubuntu/telled-marketing"
 if [ ! -d "$APP_DIR" ]; then
   # Replace with your actual GitHub repo URL
   git clone https://github.com/YOUR_USERNAME/telled-marketing.git "$APP_DIR"
