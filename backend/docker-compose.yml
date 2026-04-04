@@ -16,11 +16,10 @@ services:
       retries: 3
       start_period: 30s
     logging:
-      driver: "awslogs"
+      driver: "json-file"
       options:
-        awslogs-group: "/telled-crm/backend"
-        awslogs-region: "${AWS_REGION:-ap-south-2}"
-        awslogs-stream-prefix: "backend"
+        max-size: "10m"
+        max-file: "3"
     networks:
       - telled-network
 
