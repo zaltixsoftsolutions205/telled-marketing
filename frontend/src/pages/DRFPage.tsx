@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { drfApi } from '@/api/drf';
 import { quotationsApi } from '@/api/quotations';
+import { notify } from '@/store/notificationStore';
 import { usersApi } from '@/api/users';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
@@ -80,13 +81,17 @@ export default function DRFPage() {
     if (!quickAction) return;
     setQuickSaving(true); setQuickError('');
     try {
+      const company = (quickAction.drf as any).leadId?.companyName || 'DRF';
       if (quickAction.type === 'approve') {
         await drfApi.approve(quickAction.drf._id, { expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] });
+        notify('DRF Approved', `DRF for "${company}" has been approved.`, 'drf', '/drfs');
       } else if (quickAction.type === 'reject') {
         if (!quickReason.trim()) { setQuickError('Reason is required'); setQuickSaving(false); return; }
         await drfApi.reject(quickAction.drf._id, { rejectionReason: quickReason });
+        notify('DRF Rejected', `DRF for "${company}" has been rejected.`, 'drf', '/drfs');
       } else {
         await drfApi.resetToPending(quickAction.drf._id);
+        notify('DRF Reset', `DRF for "${company}" reset to pending.`, 'drf', '/drfs');
       }
       setQuickAction(null); setQuickReason('');
       load();
@@ -104,6 +109,7 @@ export default function DRFPage() {
   const handleDeleteDRF = async () => {
     if (!deleteTarget) return;
     await drfApi.delete(deleteTarget);
+    notify('DRF Deleted', 'DRF record has been deleted.', 'drf');
     setDeleteTarget(null);
     load();
   };
@@ -129,9 +135,21 @@ export default function DRFPage() {
       if (fromDate)     params.from        = fromDate;
       if (toDate)       params.to          = toDate;
       if (multiVersion) params.multiVersion = 'true';
-      const [analyticsData, drfRes] = await Promise.all([drfApi.getAnalytics(), drfApi.getAll(params)]);
+      const [analyticsData, drfRes, quotRes] = await Promise.all([
+        drfApi.getAnalytics(),
+        drfApi.getAll(params),
+        quotationsApi.getAll({ limit: 500 }),
+      ]);
       setAnalytics(analyticsData || {});
-      setDRFs(drfRes.data || []);
+      // Mark DRFs whose lead already has a quotation
+      const leadIdsWithQuotation = new Set(
+        (quotRes.data || []).map((q: any) => q.leadId?._id || q.leadId)
+      );
+      const drfsWithFlag = (drfRes.data || []).map((d: any) => ({
+        ...d,
+        quotationSent: d.quotationSent || leadIdsWithQuotation.has(d.leadId?._id || d.leadId),
+      }));
+      setDRFs(drfsWithFlag);
       setTotal(drfRes.pagination?.total ?? 0);
     } catch (err) {
       console.error('DRFPage load:', err);
@@ -236,6 +254,7 @@ export default function DRFPage() {
         notes: qForm.notes || undefined,
       });
       if (created?._id) await quotationsApi.sendEmail(created._id);
+      notify('Quotation Sent', `Quotation created and sent for "${(quotationDRF.leadId as any)?.companyName || 'lead'}".`, 'quotation', '/quotations');
       // Mark DRF so Send Quotation button disappears
       setDRFs(prev => prev.map(d => d._id === quotationDRF._id ? { ...d, quotationSent: true } : d));
       setQuotationDRF(null);

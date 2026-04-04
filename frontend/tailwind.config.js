@@ -4,10 +4,18 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Zaltix brand — deep geometric purple
         violet: {
-          50: '#f5f3ff', 100: '#ede9fe', 200: '#ddd6fe', 300: '#c4b5fd',
-          400: '#a78bfa', 500: '#8b5cf6', 600: '#7c3aed', 700: '#6d28d9',
-          800: '#5b21b6', 900: '#4c1d95',
+          50:  '#f2eeff',
+          100: '#e4dcff',
+          200: '#c9baff',
+          300: '#a98eff',
+          400: '#8660f5',
+          500: '#6a3de8',
+          600: '#3D1AA0', // primary brand
+          700: '#2D1278', // hover
+          800: '#1f0c56',
+          900: '#130737',
         },
         gold: {
           50: '#fffbeb', 100: '#fef3c7', 200: '#fde68a', 300: '#fcd34d',

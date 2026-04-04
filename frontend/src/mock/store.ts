@@ -170,15 +170,23 @@ export const mockLeads = {
     const imported: any[] = [];
     const defaultSales = orgUsers().find((u: any) => u.role === 'sales');
     for (const row of rows) {
-      if (!row.companyName || !row.contactPersonName) continue;
+      // Try to find company name and contact from any available key
+      const keys = Object.keys(row);
+      const companyName = row.companyName || row.company || keys.find(k => k.toLowerCase().includes('company') || k.toLowerCase().includes('organization') || k.toLowerCase().includes('account'))
+        ? (row.companyName || row.company || row[keys.find(k => k.toLowerCase().includes('company') || k.toLowerCase().includes('organization') || k.toLowerCase().includes('account')) || ''] || '')
+        : '';
+      const contactName = row.contactPersonName || row.contactName || row.name || row.contact ||
+        row[keys.find(k => k.toLowerCase().includes('contact') || k.toLowerCase().includes('name')) || ''] || '';
+      if (!companyName && !contactName) continue;
       const lead = {
         _id: 'l' + uid(), organizationId: _currentOrgId,
-        companyName: row.companyName.trim(),
-        contactPersonName: row.contactPersonName.trim(),
-        contactName: row.contactPersonName.trim(),
+        companyName: String(companyName).trim() || String(contactName).trim(),
+        contactPersonName: String(contactName).trim() || String(companyName).trim(),
+        contactName: String(contactName).trim() || String(companyName).trim(),
         email: row.email?.trim() || '',
         phone: row.phone?.trim() || '',
         oemName: row.oemName?.trim() || '',
+        designation: row.designation?.trim() || '',
         source: row.source?.trim() || 'Import',
         city: row.city?.trim() || '',
         state: row.state?.trim() || '',
@@ -286,6 +294,10 @@ export const mockDRF = {
     LEADS = LEADS.map((l: any) => l._id === drf.leadId._id ? { ...l, assignedTo: newOwner, updatedAt: now() } : l);
     DRFs  = DRFs.map((d: any) => d._id === drfId ? { ...d, createdBy: newOwner } : d);
     return { drfId, newOwner };
+  },
+  markQuotationSent: async (id: string) => {
+    await delay(100);
+    DRFs = DRFs.map((d: any) => d._id === id ? { ...d, quotationSent: true } : d);
   },
   getAnalytics: async () => {
     await delay(300);
@@ -672,6 +684,22 @@ export const mockUsers = {
     await delay(300);
     const user = USERS.find((u: any) => u._id === id && u.organizationId === _currentOrgId);
     if (user) PASSWORDS[user.email] = password;
+    return { success: true };
+  },
+  delete: async (id: string) => {
+    await delay(300);
+    const user = USERS.find((u: any) => u._id === id && u.organizationId === _currentOrgId);
+    if (!user) throw { response: { data: { message: 'User not found' } } };
+    // Remove from all related collections
+    LEADS             = LEADS.map((l: any) => l.assignedTo?._id === id ? { ...l, assignedTo: null } : l);
+    DRFs              = DRFs.filter((d: any) => d.createdBy?._id !== id);
+    INSTALLATIONS     = INSTALLATIONS.filter((i: any) => i.assignedTo?._id !== id);
+    SUPPORT_TICKETS   = SUPPORT_TICKETS.filter((t: any) => t.assignedTo?._id !== id);
+    ENGINEER_VISITS   = ENGINEER_VISITS.filter((v: any) => v.engineerId !== id && v.engineer?._id !== id);
+    SALARIES          = SALARIES.filter((s: any) => s.engineerId !== id && s.engineer?._id !== id);
+    TRAININGS         = TRAININGS.filter((t: any) => t.assignedTo?._id !== id);
+    delete PASSWORDS[user.email];
+    USERS = USERS.filter((u: any) => u._id !== id);
     return { success: true };
   },
   getEngineers: async () => { await delay(200); return orgUsers().filter((u: any) => u.role === 'engineer' && u.isActive); },

@@ -1,5 +1,13 @@
 import { Response } from 'express';
 import User from '../models/User';
+import Lead from '../models/Lead';
+import Installation from '../models/Installation';
+import SupportTicket from '../models/SupportTicket';
+import EngineerVisit from '../models/EngineerVisit';
+import Salary from '../models/Salary';
+import Leave from '../models/Leave';
+import Attendance from '../models/Attendance';
+import Notification from '../models/Notification';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, sanitizeQuery } from '../utils/helpers';
@@ -139,4 +147,33 @@ export const resetPassword = async (req: AuthRequest, res: Response): Promise<vo
     await user.save();
     sendSuccess(res, null, 'Password reset');
   } catch { sendError(res, 'Failed', 500); }
+};
+
+export const deleteUser = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const orgId = req.user!.organizationId;
+
+    if (id === req.user!.id) {
+      sendError(res, 'You cannot delete your own account', 400); return;
+    }
+
+    const user = await User.findOne({ _id: id, organizationId: orgId });
+    if (!user) { sendError(res, 'User not found', 404); return; }
+
+    // Cascade: nullify optional references, delete owned records
+    await Promise.all([
+      Lead.updateMany({ assignedTo: id }, { $unset: { assignedTo: '' } }),
+      Installation.deleteMany({ engineerId: id }),
+      SupportTicket.deleteMany({ createdBy: id }),
+      EngineerVisit.deleteMany({ engineerId: id }),
+      Salary.deleteMany({ employeeId: id }),
+      Leave.deleteMany({ employeeId: id }),
+      Attendance.deleteMany({ employeeId: id }),
+      Notification.deleteMany({ userId: id }),
+    ]);
+
+    await User.deleteOne({ _id: id, organizationId: orgId });
+    sendSuccess(res, null, 'User deleted');
+  } catch { sendError(res, 'Failed to delete user', 500); }
 };

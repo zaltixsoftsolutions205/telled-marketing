@@ -4,7 +4,7 @@
 
 @layer base {
   * { box-sizing: border-box; }
-  body { font-family: 'Inter', system-ui, sans-serif; background: #f4f2ff; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: #f0ecff; }
 }
 
 @layer components {
@@ -65,5 +65,5 @@
 @layer utilities {
   .scrollbar-thin::-webkit-scrollbar { width: 4px; }
   .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
-  .scrollbar-thin::-webkit-scrollbar-thumb { background: #c4b5fd; border-radius: 9999px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: #a98eff; border-radius: 9999px; }
 }

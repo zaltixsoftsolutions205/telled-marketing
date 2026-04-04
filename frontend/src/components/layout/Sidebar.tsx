@@ -148,18 +148,12 @@ export default function Sidebar() {
   return (
     <aside className="w-64 min-h-screen bg-white border-r border-gray-100 flex flex-col">
       {/* Logo */}
-      <div className="p-5 border-b border-gray-100">
-        <div className="flex items-center gap-3">
-          {resolvedLogo ? (
-            <img src={resolvedLogo} alt="Company Logo" className="h-14 w-14 object-contain rounded-xl" />
-          ) : (
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center shadow-lg shadow-violet-200">
-              <span className="text-white font-black text-lg">T</span>
-            </div>
-          )}
+      <div className="py-5 px-4 border-b border-gray-100">
+        <div className="flex flex-col items-center text-center gap-2">
+          <img src={resolvedLogo} alt="Telled Marketing" className="h-11 w-auto object-contain" />
           <div>
-            <p className="font-bold text-gray-900 text-sm leading-tight">{companyName || 'My Company'}</p>
-            <p className="text-xs text-gray-400 mt-0.5">Operations Platform</p>
+            <p className="font-semibold text-gray-900 text-sm leading-tight">{companyName || 'Telled Marketing'}</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">CRM & Operations</p>
           </div>
         </div>
       </div>
@@ -190,15 +184,23 @@ export default function Sidebar() {
       {/* User Footer */}
       <div className="p-4 border-t border-gray-100">
         <div className="flex items-center gap-3 mb-3">
-          <div className="w-9 h-9 rounded-xl bg-violet-100 flex items-center justify-center flex-shrink-0">
-            <span className="text-violet-700 font-bold text-sm">{user?.name?.charAt(0).toUpperCase()}</span>
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-gray-900 truncate">{user?.name}</p>
-            <span className={cn('badge text-[10px] mt-0.5', roleColors[role] || 'bg-gray-100 text-gray-600')}>
-              {role?.replace('_', ' ')}
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center flex-shrink-0 shadow-md shadow-violet-200">
+            <span className="text-white font-bold text-base leading-none">
+              {user?.name?.trim() ? user.name.trim().charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase() ?? 'U'}
             </span>
           </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-gray-900 truncate leading-tight">
+              {user?.name?.trim() || user?.email?.split('@')[0] || 'User'}
+            </p>
+            <p className="text-[11px] text-gray-400 truncate">{user?.email}</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-between mb-2">
+          <span className={cn('badge text-[10px]', roleColors[role] || 'bg-gray-100 text-gray-600')}>
+            {role?.replace('_', ' ')}
+          </span>
+          <span className="text-[10px] text-gray-400">{user?.department || ''}</span>
         </div>
         <button onClick={handleLogout} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors font-medium">
           <LogOut size={15} /> Logout

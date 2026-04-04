@@ -39,15 +39,9 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          {resolvedLogo ? (
-            <img src={resolvedLogo} alt="logo" className="w-16 h-16 object-contain rounded-2xl mx-auto mb-4" />
-          ) : (
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-600 to-violet-800 flex items-center justify-center mx-auto mb-4 shadow-lg">
-              <span className="text-white font-bold text-2xl">{companyName ? companyName.charAt(0).toUpperCase() : 'C'}</span>
-            </div>
-          )}
-          <h1 className="text-3xl font-bold text-gray-900">{companyName || 'CRM Platform'}</h1>
-          <p className="text-gray-500 mt-1 text-sm">Enterprise Operations Platform</p>
+          <img src={resolvedLogo} alt="Telled Marketing" className="h-20 object-contain mx-auto mb-4" />
+          <h1 className="text-3xl font-bold text-gray-900">Telled Marketing</h1>
+          <p className="text-gray-500 mt-1 text-sm">CRM & Operations Platform</p>
         </div>
 
         {/* Card */}

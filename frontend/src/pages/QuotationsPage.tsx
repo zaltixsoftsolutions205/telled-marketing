@@ -1,5 +1,7 @@
 // src/pages/QuotationsPage.tsx
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import {
   Plus, Search, FileText, Mail, Download, Send, Percent, RefreshCw, Eye,
 } from 'lucide-react';
@@ -11,8 +13,20 @@ import Modal from '@/components/common/Modal';
 import Toast from '@/components/common/Toast';
 import { formatDate, formatCurrency } from '@/utils/formatters';
 import type { Quotation, Lead, QuotationItem } from '@/types';
+import { useLogoStore } from '@/store/logoStore';
+import { notify } from '@/store/notificationStore';
 
-const emptyItem: QuotationItem = { description: '', quantity: 1, unitPrice: 0, total: 0 };
+const emptyItem: QuotationItem = { description: '', quantity: 1, listPrice: 0, unitPrice: 0, total: 0 };
+
+// Static Telled company info
+const TELLED_INFO = {
+  gstNo: '36AAKFT2721M1ZV',
+  bank: 'ICICI Bank Ltd.',
+  accountNo: '279905500216',
+  ifsc: 'ICIC0002799',
+  branch: 'Bachupally',
+  address: 'RR Enclave, 3rd Floor, Plot No 231 Part 232,\nNear HI RISE PVR Meadows, Kranti Nagar Colony,\nMallampet, Hyderabad, Telangana, 500090',
+};
 
 const STATUS_COLORS: Record<string, string> = {
   Draft: 'bg-gray-100 text-gray-600',
@@ -36,11 +50,15 @@ export default function QuotationsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedQuotation, setSelectedQuotation] = useState<Quotation | null>(null);
   const [items, setItems] = useState<QuotationItem[]>([{ ...emptyItem }]);
+  const { logoUrl, companyName } = useLogoStore();
+  const printRef = useRef<HTMLDivElement>(null);
+
   const [form, setForm] = useState({
     leadId: '',
     taxRate: 18,
     gstApplicable: true,
     validUntil: '',
+    delivery: '2 Weeks',
     terms: '',
     notes: '',
   });
@@ -75,7 +93,7 @@ export default function QuotationsPage() {
 
   const openCreateModal = async () => {
     setItems([{ ...emptyItem }]);
-    setForm({ leadId: '', taxRate: 18, gstApplicable: true, validUntil: '', terms: '', notes: '' });
+    setForm({ leadId: '', taxRate: 18, gstApplicable: true, validUntil: '', delivery: '2 Weeks', terms: '', notes: '' });
     try {
       const leadsRes = await leadsApi.getAll({ limit: 200, stage: 'OEM Approved' });
       const drfRes = await drfApi.getAll({ status: 'Approved', limit: 200 });
@@ -96,6 +114,7 @@ export default function QuotationsPage() {
       taxRate: quotation.taxRate || 18,
       gstApplicable: quotation.gstApplicable ?? true,
       validUntil: quotation.validUntil ? new Date(quotation.validUntil).toISOString().split('T')[0] : '',
+      delivery: quotation.delivery || '2 Weeks',
       terms: quotation.terms || '',
       notes: quotation.notes || '',
     });
@@ -150,6 +169,7 @@ export default function QuotationsPage() {
       await quotationsApi.create({ ...form, items: validItems, subtotal, taxAmount, total: totalAmount, status: 'Draft' });
       setShowCreateModal(false);
       load();
+      notify('Quotation Created', 'New quotation created successfully.', 'quotation', '/quotations');
       setToast({ message: 'Quotation created successfully', type: 'success' });
     } catch (err: any) {
       setToast({ message: err?.response?.data?.message || 'Failed to create quotation', type: 'error' });
@@ -170,12 +190,14 @@ export default function QuotationsPage() {
         taxRate: form.taxRate,
         gstApplicable: form.gstApplicable,
         validUntil: form.validUntil || undefined,
+        delivery: form.delivery,
         terms: form.terms,
         notes: form.notes,
       });
       setShowEditModal(false);
       setSelectedQuotation(null);
       load();
+      notify('Quotation Updated', 'Quotation updated successfully.', 'quotation', '/quotations');
       setToast({ message: 'Quotation updated successfully', type: 'success' });
     } catch (err: any) {
       setToast({ message: err?.response?.data?.message || 'Failed to update quotation', type: 'error' });
@@ -198,6 +220,7 @@ export default function QuotationsPage() {
       setShowEditModal(false);
       setSelectedQuotation(null);
       load();
+      notify('Sent to Vendor', 'Quotation request sent to vendor.', 'quotation', '/quotations');
       setToast({ message: 'Quotation sent to vendor successfully', type: 'success' });
     } catch (err: any) {
       setToast({ message: err?.response?.data?.message || 'Failed to send to vendor', type: 'error' });
@@ -206,18 +229,251 @@ export default function QuotationsPage() {
     }
   };
 
+  const downloadAsPDF = async (element: HTMLElement, filename: string) => {
+    const canvas = await html2canvas(element, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const imgH = (canvas.height * pageW) / canvas.width;
+    let heightLeft = imgH;
+    let position = 0;
+    pdf.addImage(imgData, 'PNG', 0, position, pageW, imgH);
+    heightLeft -= pageH;
+    while (heightLeft > 0) {
+      position -= pageH;
+      pdf.addPage();
+      pdf.addImage(imgData, 'PNG', 0, position, pageW, imgH);
+      heightLeft -= pageH;
+    }
+    pdf.save(filename);
+  };
+
+  const generateQuotationPDF = async (q: Quotation) => {
+    const lead = q.leadId as Lead;
+    const createdBy = q.createdBy;
+    const finalPrice = q.finalAmount || q.total;
+
+    const logoHtml = logoUrl
+      ? `<img src="${logoUrl}" style="height:50px;object-fit:contain;" />`
+      : `<div style="font-weight:900;font-size:18px;letter-spacing:2px;">${companyName}</div>`;
+
+    const itemsRows = q.items.map((item, i) => `
+      <tr>
+        <td style="border:1px solid #000;padding:4px 8px;text-align:center;">${i + 1}</td>
+        <td style="border:1px solid #000;padding:4px 8px;text-align:center;">${item.description}</td>
+        <td style="border:1px solid #000;padding:4px 8px;text-align:center;">${item.quantity}</td>
+        <td style="border:1px solid #000;padding:4px 8px;text-align:right;">${item.listPrice ? formatCurrency(item.listPrice) : formatCurrency(item.unitPrice)}</td>
+        <td style="border:1px solid #000;padding:4px 8px;text-align:right;">${formatCurrency(item.unitPrice)}</td>
+        <td style="border:1px solid #000;padding:4px 8px;text-align:right;">${formatCurrency(item.total)}</td>
+      </tr>`).join('');
+
+    const gstRow = q.gstApplicable ? `
+      <tr>
+        <td style="border:1px solid #000;padding:4px 8px;"></td>
+        <td style="border:1px solid #000;padding:4px 8px;background:#f5f5f5;font-weight:bold;">GST @ ${q.taxRate}%</td>
+        <td style="border:1px solid #000;padding:4px 8px;text-align:right;">${formatCurrency(q.taxAmount)}</td>
+      </tr>` : '';
+
+    const defaultTerms = `Order: License Form should be duly filled along with the Purchase Order<br/>
+Taxes: Subject to change as per prevailing laws of the Country<br/>
+Delivery: Within 2 weeks from the date of receipt of Purchase Order<br/>
+Payment: 100% Advance<br/>
+Delivery - Electronic Download<br/>
+This offer may be subject to errors and changes.`;
+
+    const B = '#000'; // border color
+    const H = '#e8e8e8'; // header bg
+    const qDate = new Date(q.createdAt).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    const td = (style='') => `border:1px solid ${B};padding:5px 8px;${style}`;
+    const th = (style='') => `border:1px solid ${B};padding:5px 8px;background:${H};font-weight:bold;${style}`;
+
+    const container = document.createElement('div');
+    container.style.cssText = 'position:absolute;left:-9999px;top:0;width:820px;background:#fff;color:#000;font-family:Arial,sans-serif;font-size:11px;padding:16px;box-sizing:border-box;';
+    document.body.appendChild(container);
+    container.innerHTML = `
+      <style>
+        *{box-sizing:border-box;margin:0;padding:0;}
+        table{width:100%;border-collapse:collapse;}
+        td,th{font-family:Arial,sans-serif;font-size:11px;vertical-align:top;}
+      </style>
+
+      <!-- outer wrapper border -->
+      <div style="border:1.5px solid ${B};padding:0;">
+
+        <!-- ══ HEADER: Logo left | OEM right ══ -->
+        <table style="width:100%;border-collapse:collapse;border-bottom:1px solid ${B};">
+          <tr>
+            <td style="padding:12px 16px;width:50%;vertical-align:middle;">
+              ${logoUrl
+                ? `<img src="${logoUrl}" style="height:52px;object-fit:contain;" />`
+                : `<div style="font-weight:900;font-size:18px;letter-spacing:2px;">${companyName}</div>`
+              }
+            </td>
+            <td style="padding:12px 16px;width:50%;vertical-align:middle;text-align:right;border-left:1px solid ${B};">
+              ${lead?.oemName
+                ? `<div style="font-weight:bold;font-size:15px;color:#333;letter-spacing:1px;">${lead.oemName}</div>`
+                : ''
+              }
+            </td>
+          </tr>
+        </table>
+
+        <!-- ══ "To," line ══ -->
+        <div style="padding:6px 16px;border-bottom:1px solid ${B};font-size:11px;">To,</div>
+
+        <!-- ══ Address left | Details right ══ -->
+        <table style="width:100%;border-collapse:collapse;border-bottom:1px solid ${B};">
+          <tr>
+            <td style="width:50%;padding:10px 16px;vertical-align:middle;text-align:center;border-right:1px solid ${B};">
+              <div style="font-weight:bold;font-size:13px;">${lead?.companyName || '—'}</div>
+              ${lead?.address ? `<div style="color:#333;margin-top:3px;font-size:10px;">${lead.address}</div>` : ''}
+              ${(lead?.city || lead?.state) ? `<div style="color:#333;font-size:10px;">${[lead.city, lead.state].filter(Boolean).join(', ')}</div>` : ''}
+            </td>
+            <td style="width:50%;padding:0;vertical-align:top;">
+              <table style="width:100%;border-collapse:collapse;">
+                <tr><td style="${th('white-space:nowrap;')}">Date</td><td style="${td()}">${qDate}</td></tr>
+                <tr><td style="${th('white-space:nowrap;')}">Quotation No.</td><td style="${td()}">${q.quotationNumber}</td></tr>
+                <tr><td style="${th('white-space:nowrap;')}">Customer ID</td><td style="${td()}">${lead?._id?.slice(-6).toUpperCase() || ''}</td></tr>
+                <tr><td style="${th('white-space:nowrap;')}">Quote Validity</td><td style="${td()}">${q.validUntil ? formatDate(q.validUntil) : '15 Days'}</td></tr>
+                <tr><td style="${th('white-space:nowrap;')}">Prepared By</td><td style="${td()}">${createdBy?.name || '—'}</td></tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+
+        <!-- ══ Sub / GST row ══ -->
+        <table style="width:100%;border-collapse:collapse;border-bottom:1px solid ${B};">
+          <tr>
+            <td style="padding:5px 10px;width:60%;border-right:1px solid ${B};">
+              <strong>Sub: Proposal for ${lead?.oemName || 'Software'}</strong><br/>
+              ${lead?.contactPersonName || lead?.contactName ? `Kind Attn.: ${lead.contactPersonName || lead.contactName}` : ''}
+            </td>
+            <td style="padding:5px 10px;">
+              <strong>Telled GST No.: ${TELLED_INFO.gstNo}</strong>
+            </td>
+          </tr>
+        </table>
+
+        <!-- ══ Sales Person ══ -->
+        <table style="width:100%;border-collapse:collapse;border-bottom:1px solid ${B};">
+          <thead>
+            <tr>
+              <th style="${th('text-align:center;')}">Sales Person</th>
+              <th style="${th('text-align:center;')}">Contact Number</th>
+              <th style="${th('text-align:center;')}">Email ID</th>
+              <th style="${th('text-align:center;')}">Delivery</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="${td('text-align:center;')}">${createdBy?.name || '—'}</td>
+              <td style="${td('text-align:center;')}">${createdBy?.phone || lead?.phone || '—'}</td>
+              <td style="${td('text-align:center;')}">${createdBy?.email || '—'}</td>
+              <td style="${td('text-align:center;')}">${q.delivery || '2 Weeks'}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- ══ Items ══ -->
+        <table style="width:100%;border-collapse:collapse;border-bottom:1px solid ${B};">
+          <thead>
+            <tr>
+              <th style="${th('text-align:center;width:5%;')}">Sr. No</th>
+              <th style="${th('text-align:center;')}">Product Description</th>
+              <th style="${th('text-align:center;width:5%;')}">Qty</th>
+              <th style="${th('text-align:center;width:15%;')}">List Price Per Qty</th>
+              <th style="${th('text-align:center;width:18%;')}">Strategic Price Per Qty</th>
+              <th style="${th('text-align:center;width:14%;')}">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${q.items.map((item, i) => `
+            <tr>
+              <td style="${td('text-align:center;')}">${i + 1}</td>
+              <td style="${td('text-align:center;')}">${item.description}</td>
+              <td style="${td('text-align:center;')}">${item.quantity}</td>
+              <td style="${td('text-align:right;')}">${item.listPrice ? formatCurrency(item.listPrice) : formatCurrency(item.unitPrice)}</td>
+              <td style="${td('text-align:right;')}">${formatCurrency(item.unitPrice)}</td>
+              <td style="${td('text-align:right;')}">${formatCurrency(item.total)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+
+        <!-- ══ Totals (right-aligned block) ══ -->
+        <table style="width:100%;border-collapse:collapse;border-bottom:1px solid ${B};">
+          <tr>
+            <td style="width:55%;border-right:1px solid ${B};padding:0;" rowspan="3"></td>
+            <td style="${th('white-space:nowrap;text-align:right;width:20%;')}">Base Price</td>
+            <td style="${td('text-align:right;width:25%;')}">${formatCurrency(q.subtotal)}</td>
+          </tr>
+          ${q.gstApplicable ? `
+          <tr>
+            <td style="${th('white-space:nowrap;text-align:right;')}">GST @ ${q.taxRate}%</td>
+            <td style="${td('text-align:right;')}">${formatCurrency(q.taxAmount)}</td>
+          </tr>` : ''}
+          <tr>
+            <td style="${th('white-space:nowrap;text-align:right;')}">Final Price</td>
+            <td style="${td('text-align:right;font-weight:bold;')}">${formatCurrency(finalPrice)}</td>
+          </tr>
+        </table>
+
+        <!-- ══ Terms + Bank ══ -->
+        <table style="width:100%;border-collapse:collapse;border-bottom:1px solid ${B};">
+          <tr>
+            <td style="width:55%;padding:8px 10px;vertical-align:top;border-right:1px solid ${B};">
+              <div style="font-weight:bold;margin-bottom:5px;">General Terms and Conditions</div>
+              <div style="font-size:10px;line-height:1.7;">${q.terms ? q.terms.replace(/\n/g, '<br/>') : defaultTerms}</div>
+            </td>
+            <td style="width:45%;padding:8px 10px;vertical-align:top;">
+              <div style="font-weight:bold;margin-bottom:5px;">Bank Details</div>
+              <table style="width:100%;border-collapse:collapse;">
+                <tr><td style="padding:2px 0;font-weight:bold;width:38%;">Bank</td><td style="padding:2px 0;">${TELLED_INFO.bank}</td></tr>
+                <tr><td style="padding:2px 0;font-weight:bold;">Account No.</td><td style="padding:2px 0;">${TELLED_INFO.accountNo}</td></tr>
+                <tr><td style="padding:2px 0;font-weight:bold;">IFSC Code</td><td style="padding:2px 0;">${TELLED_INFO.ifsc}</td></tr>
+                <tr><td style="padding:2px 0;font-weight:bold;">Branch</td><td style="padding:2px 0;">${TELLED_INFO.branch}</td></tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+
+        <!-- ══ Signature ══ -->
+        <table style="width:100%;border-collapse:collapse;">
+          <tr>
+            <td style="width:35%;padding:40px 16px 10px;vertical-align:bottom;border-right:1px solid ${B};">
+              <div style="border-top:1px solid #999;padding-top:4px;font-size:10px;text-align:center;">Authorised Signatory</div>
+            </td>
+            <td style="padding:12px 16px;vertical-align:middle;text-align:center;">
+              <div style="font-weight:bold;font-size:13px;letter-spacing:1px;">TELLED MARKETING,</div>
+              <div style="font-size:10px;margin-top:5px;color:#333;line-height:1.6;">${TELLED_INFO.address.replace(/\n/g, '<br/>')}</div>
+            </td>
+          </tr>
+        </table>
+
+      </div><!-- end outer border -->
+    `;
+    try {
+      await downloadAsPDF(container, `${q.quotationNumber}.pdf`);
+    } finally {
+      document.body.removeChild(container);
+    }
+  };
+
   const handleAction = async (action: string, id: string) => {
     if (action === 'sendEmail') {
       const q = quotations.find(qt => qt._id === id);
       if (q) { setSendEmailTarget(q); return; }
     }
+    if (action === 'generatePDF') {
+      const q = quotations.find(qt => qt._id === id);
+      if (q) { generateQuotationPDF(q); return; }
+    }
     setActionLoading(id + action);
     try {
       switch (action) {
-        case 'accept': await quotationsApi.accept(id); setToast({ message: 'Quotation accepted', type: 'success' }); break;
-        case 'reject': await quotationsApi.reject(id); setToast({ message: 'Quotation rejected', type: 'success' }); break;
-        case 'finalize': await quotationsApi.finalize(id); setToast({ message: 'Quotation finalized', type: 'success' }); break;
-        case 'generatePDF': await quotationsApi.generatePDF(id); setToast({ message: 'PDF generation started', type: 'success' }); break;
+        case 'accept': await quotationsApi.accept(id); notify('Quotation Accepted', 'Quotation has been accepted.', 'quotation', '/quotations'); setToast({ message: 'Quotation accepted', type: 'success' }); break;
+        case 'reject': await quotationsApi.reject(id); notify('Quotation Rejected', 'Quotation has been rejected.', 'quotation', '/quotations'); setToast({ message: 'Quotation rejected', type: 'success' }); break;
+        case 'finalize': await quotationsApi.finalize(id); notify('Quotation Finalized', 'Quotation marked as final.', 'quotation', '/quotations'); setToast({ message: 'Quotation finalized', type: 'success' }); break;
       }
       load();
     } catch (err: any) {
@@ -232,6 +488,7 @@ export default function QuotationsPage() {
     setSendEmailSending(true);
     try {
       await quotationsApi.sendEmail(sendEmailTarget._id);
+      notify('Quotation Email Sent', 'Quotation email sent to lead successfully.', 'quotation', '/quotations');
       setToast({ message: 'Email sent to lead successfully', type: 'success' });
       setSendEmailTarget(null);
       load();
@@ -265,13 +522,12 @@ export default function QuotationsPage() {
       );
     }
 
-    // PDF button always
+    // PDF button always — generates in browser
     buttons.push(
-      <button key="pdf" title={q.pdfPath ? 'Download PDF' : 'Generate PDF'}
-        disabled={actionLoading === q._id + 'generatePDF'}
-        onClick={() => handleAction('generatePDF', q._id)}
-        className={`p-1.5 rounded-lg transition-colors ${q.pdfPath ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'} disabled:opacity-50`}>
-        {q.pdfPath ? <Download size={14} /> : <FileText size={14} />}
+      <button key="pdf" title="Download PDF"
+        onClick={() => generateQuotationPDF(q)}
+        className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors">
+        <Download size={14} />
       </button>
     );
 
@@ -419,35 +675,61 @@ export default function QuotationsPage() {
               <label className="label !mb-0">Line Items *</label>
               <button type="button" onClick={addItem} className="text-xs text-violet-600 hover:text-violet-800 font-medium">+ Add Row</button>
             </div>
-            <div className="space-y-2">
-              {items.map((item, i) => (
-                <div key={i} className="grid grid-cols-12 gap-2 items-start">
-                  <div className="col-span-5">
-                    <input className="input-field text-sm" placeholder="Description" value={item.description}
-                      onChange={(e) => updateItem(i, 'description', e.target.value)} required />
-                  </div>
-                  <div className="col-span-2">
-                    <input type="number" className="input-field text-sm" placeholder="Qty" min={1} value={item.quantity}
-                      onChange={(e) => updateItem(i, 'quantity', Number(e.target.value))} required />
-                  </div>
-                  <div className="col-span-3">
-                    <input type="number" className="input-field text-sm" placeholder="Unit Price" min={0} step="0.01"
-                      value={item.unitPrice} onChange={(e) => updateItem(i, 'unitPrice', Number(e.target.value))} required />
-                  </div>
-                  <div className="col-span-2 flex items-center gap-1">
-                    <span className="text-sm font-medium text-gray-700 flex-1">{formatCurrency(item.total)}</span>
-                    <button type="button" onClick={() => removeItem(i)} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
-                  </div>
-                </div>
-              ))}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-2 py-2 text-left text-xs text-gray-500 font-medium w-1/3">Description</th>
+                    <th className="px-2 py-2 text-center text-xs text-gray-500 font-medium w-16">Qty</th>
+                    <th className="px-2 py-2 text-right text-xs text-gray-500 font-medium">List Price</th>
+                    <th className="px-2 py-2 text-right text-xs text-gray-500 font-medium">Strategic Price</th>
+                    <th className="px-2 py-2 text-right text-xs text-gray-500 font-medium w-24">Total</th>
+                    <th className="w-6"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item, i) => (
+                    <tr key={i} className="border-t border-gray-100">
+                      <td className="px-2 py-1">
+                        <input className="input-field text-sm py-1" placeholder="Description" value={item.description}
+                          onChange={(e) => updateItem(i, 'description', e.target.value)} required />
+                      </td>
+                      <td className="px-2 py-1">
+                        <input type="number" className="input-field text-sm py-1 text-center" placeholder="Qty" min={1} value={item.quantity}
+                          onChange={(e) => updateItem(i, 'quantity', Number(e.target.value))} required />
+                      </td>
+                      <td className="px-2 py-1">
+                        <input type="number" className="input-field text-sm py-1 text-right" placeholder="List Price" min={0} step="0.01"
+                          value={item.listPrice ?? ''} onChange={(e) => updateItem(i, 'listPrice', Number(e.target.value))} />
+                      </td>
+                      <td className="px-2 py-1">
+                        <input type="number" className="input-field text-sm py-1 text-right" placeholder="Strategic Price" min={0} step="0.01"
+                          value={item.unitPrice} onChange={(e) => updateItem(i, 'unitPrice', Number(e.target.value))} required />
+                      </td>
+                      <td className="px-2 py-1 text-right font-medium text-gray-700">{formatCurrency(item.total)}</td>
+                      <td className="px-1 py-1">
+                        <button type="button" onClick={() => removeItem(i)} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 
           <div className="bg-gray-50 rounded-xl p-4 text-sm space-y-1">
-            <div className="flex justify-between"><span className="text-gray-500">Subtotal</span><span>{formatCurrency(subtotal)}</span></div>
-            {form.gstApplicable && <div className="flex justify-between"><span className="text-gray-500">GST ({form.taxRate}%)</span><span>{formatCurrency(taxAmount)}</span></div>}
+            <div className="flex justify-between"><span className="text-gray-500">Base Price</span><span>{formatCurrency(subtotal)}</span></div>
+            {form.gstApplicable && <div className="flex justify-between"><span className="text-gray-500">GST @ {form.taxRate}%</span><span>{formatCurrency(taxAmount)}</span></div>}
             <div className="flex justify-between font-bold text-base pt-2 border-t border-gray-200">
-              <span>Total</span><span className="text-violet-700">{formatCurrency(totalAmount)}</span>
+              <span>Final Price</span><span className="text-violet-700">{formatCurrency(totalAmount)}</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Delivery</label>
+              <input className="input-field" value={form.delivery}
+                onChange={(e) => setForm(f => ({ ...f, delivery: e.target.value }))} placeholder="e.g. 2 Weeks" />
             </div>
           </div>
 
@@ -496,37 +778,63 @@ export default function QuotationsPage() {
               <label className="label !mb-0">Line Items</label>
               <button type="button" onClick={addItem} className="text-xs text-violet-600 hover:text-violet-800 font-medium">+ Add Row</button>
             </div>
-            <div className="space-y-2">
-              {items.map((item, i) => (
-                <div key={i} className="grid grid-cols-12 gap-2 items-start">
-                  <div className="col-span-5">
-                    <input className="input-field text-sm" placeholder="Description" value={item.description}
-                      onChange={(e) => updateItem(i, 'description', e.target.value)} required />
-                  </div>
-                  <div className="col-span-2">
-                    <input type="number" className="input-field text-sm" placeholder="Qty" min={1} value={item.quantity}
-                      onChange={(e) => updateItem(i, 'quantity', Number(e.target.value))} required />
-                  </div>
-                  <div className="col-span-3">
-                    <input type="number" className="input-field text-sm" placeholder="Unit Price" min={0} step="0.01"
-                      value={item.unitPrice} onChange={(e) => updateItem(i, 'unitPrice', Number(e.target.value))} required />
-                  </div>
-                  <div className="col-span-2 flex items-center gap-1">
-                    <span className="text-sm font-medium text-gray-700 flex-1">{formatCurrency(item.total)}</span>
-                    {items.length > 1 && (
-                      <button type="button" onClick={() => removeItem(i)} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
-                    )}
-                  </div>
-                </div>
-              ))}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-2 py-2 text-left text-xs text-gray-500 font-medium w-1/3">Description</th>
+                    <th className="px-2 py-2 text-center text-xs text-gray-500 font-medium w-16">Qty</th>
+                    <th className="px-2 py-2 text-right text-xs text-gray-500 font-medium">List Price</th>
+                    <th className="px-2 py-2 text-right text-xs text-gray-500 font-medium">Strategic Price</th>
+                    <th className="px-2 py-2 text-right text-xs text-gray-500 font-medium w-24">Total</th>
+                    <th className="w-6"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item, i) => (
+                    <tr key={i} className="border-t border-gray-100">
+                      <td className="px-2 py-1">
+                        <input className="input-field text-sm py-1" placeholder="Description" value={item.description}
+                          onChange={(e) => updateItem(i, 'description', e.target.value)} required />
+                      </td>
+                      <td className="px-2 py-1">
+                        <input type="number" className="input-field text-sm py-1 text-center" placeholder="Qty" min={1} value={item.quantity}
+                          onChange={(e) => updateItem(i, 'quantity', Number(e.target.value))} required />
+                      </td>
+                      <td className="px-2 py-1">
+                        <input type="number" className="input-field text-sm py-1 text-right" placeholder="List Price" min={0} step="0.01"
+                          value={item.listPrice ?? ''} onChange={(e) => updateItem(i, 'listPrice', Number(e.target.value))} />
+                      </td>
+                      <td className="px-2 py-1">
+                        <input type="number" className="input-field text-sm py-1 text-right" placeholder="Strategic Price" min={0} step="0.01"
+                          value={item.unitPrice} onChange={(e) => updateItem(i, 'unitPrice', Number(e.target.value))} required />
+                      </td>
+                      <td className="px-2 py-1 text-right font-medium text-gray-700">{formatCurrency(item.total)}</td>
+                      <td className="px-1 py-1">
+                        {items.length > 1 && (
+                          <button type="button" onClick={() => removeItem(i)} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 
           <div className="bg-gray-50 rounded-xl p-4 text-sm space-y-1">
-            <div className="flex justify-between"><span className="text-gray-500">Subtotal</span><span>{formatCurrency(subtotal)}</span></div>
-            {form.gstApplicable && <div className="flex justify-between"><span className="text-gray-500">GST ({form.taxRate}%)</span><span>{formatCurrency(taxAmount)}</span></div>}
+            <div className="flex justify-between"><span className="text-gray-500">Base Price</span><span>{formatCurrency(subtotal)}</span></div>
+            {form.gstApplicable && <div className="flex justify-between"><span className="text-gray-500">GST @ {form.taxRate}%</span><span>{formatCurrency(taxAmount)}</span></div>}
             <div className="flex justify-between font-bold text-base pt-2 border-t border-gray-200">
-              <span>Total</span><span className="text-violet-700">{formatCurrency(totalAmount)}</span>
+              <span>Final Price</span><span className="text-violet-700">{formatCurrency(totalAmount)}</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Delivery</label>
+              <input className="input-field" value={form.delivery}
+                onChange={(e) => setForm(f => ({ ...f, delivery: e.target.value }))} placeholder="e.g. 2 Weeks" />
             </div>
           </div>
 
@@ -605,110 +913,231 @@ export default function QuotationsPage() {
         </form>
       </Modal>
 
-      {/* View Quotation Modal */}
+      {/* View Quotation Modal — PDF-style layout */}
       <Modal isOpen={showViewModal} onClose={() => { setShowViewModal(false); setSelectedQuotation(null); }}
-        title={`Quotation Details - ${selectedQuotation?.quotationNumber}`} size="lg">
-        {selectedQuotation && (
-          <div className="space-y-4 max-h-[70vh] overflow-y-auto">
-            <div className="grid grid-cols-2 gap-4 p-3 bg-gray-50 rounded-lg">
-              <div>
-                <p className="text-xs text-gray-500">Customer</p>
-                <p className="font-semibold text-gray-900">{(selectedQuotation.leadId as Lead)?.companyName}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Contact</p>
-                <p className="text-gray-700">
-                  {(selectedQuotation.leadId as Lead)?.contactName || (selectedQuotation.leadId as Lead)?.contactPersonName}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Version</p>
-                <p className="text-gray-700">v{selectedQuotation.version}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Status</p>
+        title={`Quotation — ${selectedQuotation?.quotationNumber}`} size="2xl">
+        {selectedQuotation && (() => {
+          const lead = selectedQuotation.leadId as Lead;
+          const createdBy = selectedQuotation.createdBy;
+          const finalPrice = selectedQuotation.finalAmount || selectedQuotation.total;
+
+          const handleDownload = async () => {
+            const content = printRef.current;
+            if (!content) return;
+            await downloadAsPDF(content, `${selectedQuotation.quotationNumber}.pdf`);
+          };
+
+          return (
+            <div>
+              {/* Print action bar */}
+              <div className="flex justify-end mb-3 gap-2">
                 <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[selectedQuotation.status]}`}>
                   {selectedQuotation.status}
                 </span>
+                <button onClick={handleDownload}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-sm rounded-lg hover:bg-violet-700 transition-colors">
+                  <Download size={14} /> Download PDF
+                </button>
+                <button onClick={() => setShowViewModal(false)} className="btn-secondary py-1.5 text-sm">Close</button>
               </div>
-              {selectedQuotation.validUntil && (
-                <div>
-                  <p className="text-xs text-gray-500">Valid Until</p>
-                  <p className="text-gray-700">{formatDate(selectedQuotation.validUntil)}</p>
-                </div>
-              )}
-              {selectedQuotation.createdAt && (
-                <div>
-                  <p className="text-xs text-gray-500">Created</p>
-                  <p className="text-gray-700">{formatDate(selectedQuotation.createdAt)}</p>
-                </div>
-              )}
-            </div>
 
-            <div>
-              <h3 className="text-sm font-semibold text-gray-800 mb-2">Line Items</h3>
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Description</th>
-                    <th className="px-3 py-2 text-center">Qty</th>
-                    <th className="px-3 py-2 text-right">Unit Price</th>
-                    <th className="px-3 py-2 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {selectedQuotation.items.map((item, i) => (
-                    <tr key={i}>
-                      <td className="px-3 py-2">{item.description}</td>
-                      <td className="px-3 py-2 text-center">{item.quantity}</td>
-                      <td className="px-3 py-2 text-right">{formatCurrency(item.unitPrice)}</td>
-                      <td className="px-3 py-2 text-right">{formatCurrency(item.total)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot className="border-t">
-                  <tr>
-                    <td colSpan={3} className="px-3 py-2 text-right font-medium">Subtotal:</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(selectedQuotation.subtotal)}</td>
-                  </tr>
-                  {selectedQuotation.gstApplicable && (
+              {/* Document preview */}
+              <div ref={printRef} className="bg-white border border-gray-300 p-6 text-xs font-sans" style={{ fontFamily: 'Arial, sans-serif' }}>
+
+                {/* ── HEADER ── */}
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12 }}>
+                  <tbody>
                     <tr>
-                      <td colSpan={3} className="px-3 py-2 text-right font-medium">GST ({selectedQuotation.taxRate}%):</td>
-                      <td className="px-3 py-2 text-right">{formatCurrency(selectedQuotation.taxAmount)}</td>
+                      <td style={{ width: '50%', verticalAlign: 'middle' }}>
+                        {logoUrl
+                          ? <img src={logoUrl} alt="logo" style={{ height: 50, objectFit: 'contain' }} />
+                          : <div style={{ fontWeight: 900, fontSize: 18, letterSpacing: 2, }}>{companyName}</div>}
+                      </td>
+                      <td style={{ width: '50%', textAlign: 'right', verticalAlign: 'middle' }}>
+                        {lead?.oemName && (
+                          <div style={{ fontWeight: 'bold', fontSize: 13, color: '#444' }}>{lead.oemName}</div>
+                        )}
+                      </td>
                     </tr>
-                  )}
-                  <tr className="font-bold">
-                    <td colSpan={3} className="px-3 py-2 text-right text-violet-700">Total:</td>
-                    <td className="px-3 py-2 text-right text-violet-700">{formatCurrency(selectedQuotation.total)}</td>
-                  </tr>
-                  {selectedQuotation.finalAmount && (
-                    <tr className="text-purple-700">
-                      <td colSpan={3} className="px-3 py-2 text-right font-medium">Final Amount:</td>
-                      <td className="px-3 py-2 text-right">{formatCurrency(selectedQuotation.finalAmount)}</td>
+                  </tbody>
+                </table>
+
+                {/* ── TO + INFO TABLE ── */}
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 8 }}>
+                  <tbody>
+                    <tr>
+                      {/* Left: To block */}
+                      <td style={{ width: '55%', verticalAlign: 'top', paddingRight: 16 }}>
+                        <div style={{ marginBottom: 4 }}>To,</div>
+                        <div style={{ fontWeight: 'bold', fontSize: 13 }}>{lead?.companyName}</div>
+                        {lead?.address && <div style={{ color: '#444', marginTop: 2 }}>{lead.address}</div>}
+                        {(lead?.city || lead?.state) && (
+                          <div style={{ color: '#444' }}>{[lead.city, lead.state].filter(Boolean).join(', ')}</div>
+                        )}
+                      </td>
+                      {/* Right: Info table */}
+                      <td style={{ width: '45%', verticalAlign: 'top' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #000' }}>
+                          <tbody>
+                            {[
+                              ['Date', new Date(selectedQuotation.createdAt).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })],
+                              ['Quotation No.', selectedQuotation.quotationNumber],
+                              ['Customer ID', lead?._id?.slice(-6).toUpperCase() || '—'],
+                              ['Quote Validity', selectedQuotation.validUntil ? formatDate(selectedQuotation.validUntil) : '15 Days'],
+                              ['Prepared By', createdBy?.name || '—'],
+                            ].map(([label, value]) => (
+                              <tr key={label}>
+                                <td style={{ border: '1px solid #000', padding: '3px 6px', background: '#f5f5f5', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{label}</td>
+                                <td style={{ border: '1px solid #000', padding: '3px 6px' }}>{value}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </td>
                     </tr>
-                  )}
-                </tfoot>
-              </table>
-            </div>
+                  </tbody>
+                </table>
 
-            {selectedQuotation.terms && (
-              <div>
-                <h3 className="text-sm font-semibold text-gray-800 mb-1">Terms & Conditions</h3>
-                <p className="text-sm text-gray-600 p-3 bg-gray-50 rounded-lg">{selectedQuotation.terms}</p>
-              </div>
-            )}
-            {selectedQuotation.notes && (
-              <div>
-                <h3 className="text-sm font-semibold text-gray-800 mb-1">Notes</h3>
-                <p className="text-sm text-gray-600 p-3 bg-gray-50 rounded-lg">{selectedQuotation.notes}</p>
-              </div>
-            )}
+                {/* ── SUBJECT + GST ── */}
+                <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #000', marginBottom: 0 }}>
+                  <tbody>
+                    <tr>
+                      <td style={{ padding: '4px 8px', width: '60%', border: '1px solid #000' }}>
+                        <strong>Sub: Proposal for {lead?.oemName || 'Software'}</strong><br />
+                        {(lead?.contactPersonName || lead?.contactName) && (
+                          <span>Kind Attn.: {lead.contactPersonName || lead.contactName}</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '4px 8px', border: '1px solid #000', whiteSpace: 'nowrap' }}>
+                        <strong>Telled GST No.: {TELLED_INFO.gstNo}</strong>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
 
-            <div className="flex gap-3 justify-end pt-2">
-              <button onClick={() => setShowViewModal(false)} className="btn-secondary">Close</button>
+                {/* ── SALES PERSON TABLE ── */}
+                <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #000', marginBottom: 0 }}>
+                  <thead>
+                    <tr style={{ background: '#f5f5f5' }}>
+                      {['Sales Person', 'Contact Number', 'Email ID', 'Delivery'].map(h => (
+                        <th key={h} style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'center', fontWeight: 'bold' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'center' }}>{createdBy?.name || '—'}</td>
+                      <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'center' }}>{createdBy?.phone || lead?.phone || '—'}</td>
+                      <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'center', }}>{createdBy?.email || '—'}</td>
+                      <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'center' }}>{selectedQuotation.delivery || '2 Weeks'}</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {/* ── LINE ITEMS TABLE ── */}
+                <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #000', marginBottom: 0 }}>
+                  <thead>
+                    <tr style={{ background: '#f5f5f5' }}>
+                      {['Sr. No', 'Product Description', 'Qty', 'List Price Per Qty', 'Strategic Price Per Qty', 'Total'].map(h => (
+                        <th key={h} style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'center', fontWeight: 'bold' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedQuotation.items.map((item, i) => (
+                      <tr key={i}>
+                        <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'center' }}>{i + 1}</td>
+                        <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'center' }}>{item.description}</td>
+                        <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'center' }}>{item.quantity}</td>
+                        <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right' }}>
+                          {item.listPrice ? formatCurrency(item.listPrice) : formatCurrency(item.unitPrice)}
+                        </td>
+                        <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right' }}>{formatCurrency(item.unitPrice)}</td>
+                        <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right' }}>{formatCurrency(item.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* ── PRICING SUMMARY ── */}
+                <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #000', marginBottom: 0 }}>
+                  <tbody>
+                    <tr>
+                      <td style={{ width: '60%', border: '1px solid #000', padding: '4px 8px' }}></td>
+                      <td style={{ border: '1px solid #000', padding: '4px 8px', background: '#f5f5f5', fontWeight: 'bold', whiteSpace: 'nowrap' }}>Base Price</td>
+                      <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right' }}>{formatCurrency(selectedQuotation.subtotal)}</td>
+                    </tr>
+                    {selectedQuotation.gstApplicable && (
+                      <tr>
+                        <td style={{ border: '1px solid #000', padding: '4px 8px' }}></td>
+                        <td style={{ border: '1px solid #000', padding: '4px 8px', background: '#f5f5f5', fontWeight: 'bold' }}>GST @ {selectedQuotation.taxRate}%</td>
+                        <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right' }}>{formatCurrency(selectedQuotation.taxAmount)}</td>
+                      </tr>
+                    )}
+                    <tr>
+                      <td style={{ border: '1px solid #000', padding: '4px 8px' }}></td>
+                      <td style={{ border: '1px solid #000', padding: '4px 8px', background: '#f5f5f5', fontWeight: 'bold' }}>Final Price</td>
+                      <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right', fontWeight: 'bold' }}>{formatCurrency(finalPrice)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {/* ── TERMS + BANK DETAILS ── */}
+                <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #000', marginBottom: 0 }}>
+                  <tbody>
+                    <tr>
+                      <td style={{ width: '55%', border: '1px solid #000', padding: '6px 8px', verticalAlign: 'top' }}>
+                        <div style={{ fontWeight: 'bold', marginBottom: 4, }}>General Terms and Conditions</div>
+                        {selectedQuotation.terms
+                          ? <div style={{ whiteSpace: 'pre-line', fontSize: 10 }}>{selectedQuotation.terms}</div>
+                          : (
+                            <div style={{ fontSize: 10, lineHeight: 1.6 }}>
+                              <div>Order: License Form should be duly filled along with the Purchase Order</div>
+                              <div>Taxes: Subject to change as per prevailing laws of the Country</div>
+                              <div>Delivery: Within 2 weeks from the date of receipt of Purchase Order</div>
+                              <div>Payment: 100% Advance</div>
+                              <div>Delivery - Electronic Download</div>
+                              <div>This offer may be subject to errors and changes.</div>
+                            </div>
+                          )}
+                      </td>
+                      <td style={{ border: '1px solid #000', padding: '6px 8px', verticalAlign: 'top' }}>
+                        <div style={{ fontWeight: 'bold', marginBottom: 4, }}>Bank Details</div>
+                        {[
+                          ['Bank', TELLED_INFO.bank],
+                          ['Account No.', TELLED_INFO.accountNo],
+                          ['IFSC Code', TELLED_INFO.ifsc],
+                          ['Branch', TELLED_INFO.branch],
+                        ].map(([label, value]) => (
+                          <div key={label} style={{ display: 'flex', gap: 8, marginBottom: 2 }}>
+                            <span style={{ fontWeight: 'bold', minWidth: 90 }}>{label}</span>
+                            <span>{value}</span>
+                          </div>
+                        ))}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {/* ── FOOTER: SIGNATURE + ADDRESS ── */}
+                <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #000', marginTop: 0 }}>
+                  <tbody>
+                    <tr>
+                      <td style={{ width: '40%', border: '1px solid #000', padding: '24px 12px 8px', verticalAlign: 'bottom' }}>
+                        <div style={{ borderTop: '1px solid #000', paddingTop: 4, marginTop: 24, fontSize: 10 }}>Authorised Signatory</div>
+                      </td>
+                      <td style={{ border: '1px solid #000', padding: '12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                        <div style={{ fontWeight: 'bold', fontSize: 13, letterSpacing: 1 }}>TELLED MARKETING,</div>
+                        <div style={{ fontSize: 10, marginTop: 4, whiteSpace: 'pre-line' }}>{TELLED_INFO.address}</div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+
+              </div>{/* end document */}
             </div>
-          </div>
-        )}
+          );
+        })()}
       </Modal>
     </div>
   );

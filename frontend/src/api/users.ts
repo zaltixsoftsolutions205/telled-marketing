@@ -25,6 +25,10 @@ export const usersApi = {
     const { data } = await api.patch(`/users/${id}/reset-password`, { password });
     return data.data;
   },
+  delete: async (id: string) => {
+    const { data } = await api.delete(`/users/${id}`);
+    return data.data;
+  },
   getEngineers: async () => {
     const { data } = await api.get('/users', { params: { role: 'engineer', limit: 200 } });
     return data.data;

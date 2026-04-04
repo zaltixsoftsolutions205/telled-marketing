@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, Search, ToggleLeft, ToggleRight, KeyRound, Eye, EyeOff } from 'lucide-react';
+import { Plus, Search, ToggleLeft, ToggleRight, KeyRound, Eye, EyeOff, Trash2 } from 'lucide-react';
 import { usersApi } from '@/api/users';
 import StatusBadge from '@/components/common/StatusBadge';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
@@ -53,6 +53,7 @@ export default function UsersPage() {
   const [showCreatePwd, setShowCreatePwd] = useState(false);
   const [showResetPwd, setShowResetPwd]   = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,13 +73,14 @@ export default function UsersPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      await usersApi.create({
+      const newUser = await usersApi.create({
         ...form,
         baseSalary: form.baseSalary ? Number(form.baseSalary) : 0,
       });
       setShowCreate(false);
       setForm({ name: '', email: '', password: '', role: 'sales', department: '', phone: '', baseSalary: '' });
-      load();
+      setUsers(prev => [newUser, ...prev]);
+      setTotal(prev => prev + 1);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       alert(msg || 'Failed to create user');
@@ -87,9 +89,17 @@ export default function UsersPage() {
 
   const handleToggle = async () => {
     if (!toggleTarget) return;
-    await usersApi.toggleStatus(toggleTarget._id);
+    const { isActive } = await usersApi.toggleStatus(toggleTarget._id);
+    setUsers(prev => prev.map(u => u._id === toggleTarget._id ? { ...u, isActive } : u));
     setToggleTarget(null);
-    load();
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    await usersApi.delete(deleteTarget._id);
+    setUsers(prev => prev.filter(u => u._id !== deleteTarget._id));
+    setTotal(prev => prev - 1);
+    setDeleteTarget(null);
   };
 
   const handleReset = async (e: React.FormEvent) => {
@@ -175,6 +185,10 @@ export default function UsersPage() {
                         <button onClick={() => { setSelected(u); setShowReset(true); }}
                           title="Reset Password" className="p-1 text-gray-400 hover:text-violet-600">
                           <KeyRound size={15} />
+                        </button>
+                        <button onClick={() => setDeleteTarget(u)}
+                          title="Delete User" className="p-1 text-gray-400 hover:text-red-600">
+                          <Trash2 size={15} />
                         </button>
                       </div>
                     </td>
@@ -285,6 +299,17 @@ export default function UsersPage() {
         message={`Are you sure you want to ${toggleTarget?.isActive ? 'deactivate' : 'activate'} ${toggleTarget?.name}?`}
         confirmLabel={toggleTarget?.isActive ? 'Deactivate' : 'Activate'}
         danger={toggleTarget?.isActive}
+      />
+
+      {/* Delete confirmation */}
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
+        title="Delete User"
+        message={`Permanently delete "${deleteTarget?.name}"? This will remove them from all leads, visits, installations, and other records. This cannot be undone.`}
+        confirmLabel="Delete"
+        danger
       />
     </div>
   );

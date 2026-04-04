@@ -1,5 +1,7 @@
 import { useLogoStore } from '@/store/logoStore';
 
+export const DEFAULT_LOGO = '/zaltix-logo.png';
+
 export const settingsApi = {
   getLogo: async (): Promise<string | null> => {
     return useLogoStore.getState().logoUrl;
@@ -21,6 +23,9 @@ export const settingsApi = {
   },
 };
 
-export function resolveLogoUrl(logoUrl: string | null): string | null {
-  return logoUrl; // DataURLs are self-contained
+export function resolveLogoUrl(logoUrl: string | null): string {
+  // Custom uploaded logo (base64 DataURL)
+  if (logoUrl) return logoUrl;
+  // Default Zaltix logo from public folder
+  return DEFAULT_LOGO;
 }

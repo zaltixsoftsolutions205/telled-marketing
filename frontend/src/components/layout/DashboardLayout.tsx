@@ -46,7 +46,7 @@ export default function DashboardLayout() {
   const title = subtitle ? `${baseTitle} / ${subtitle}` : baseTitle;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f4f2ff]">
+    <div className="flex h-screen overflow-hidden bg-[#f0ecff]">
       {/* Mobile backdrop */}
       {sidebarOpen && (
         <div

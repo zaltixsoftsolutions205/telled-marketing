@@ -110,6 +110,7 @@ export interface Account {
 export interface QuotationItem {
   description: string;
   quantity: number;
+  listPrice?: number;
   unitPrice: number;
   total: number;
 }
@@ -126,6 +127,7 @@ export interface Quotation {
   total: number;
   status: QuotationStatus;
   validUntil?: string;
+  delivery?: string;
   terms?: string;
   notes?: string;
   gstApplicable?: boolean;

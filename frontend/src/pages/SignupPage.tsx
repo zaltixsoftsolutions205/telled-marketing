@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { authApi, otpApi } from '@/api/auth';
 import { Building2, User, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { useLogoStore } from '@/store/logoStore';
+import { resolveLogoUrl } from '@/api/settings';
 
 export default function SignupPage() {
   const [step, setStep] = useState<1 | 2>(1);
@@ -18,6 +20,9 @@ export default function SignupPage() {
 
   const { setAuth } = useAuthStore();
   const navigate = useNavigate();
+  const setCompanyName = useLogoStore((s) => s.setCompanyName);
+  const logoUrl = useLogoStore((s) => s.logoUrl);
+  const resolvedLogo = resolveLogoUrl(logoUrl);
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [sendingOtp, setSendingOtp] = useState(false);
@@ -85,6 +90,7 @@ export default function SignupPage() {
         otp // ✅ IMPORTANT
       );
       setAuth(data.user, data.accessToken);
+      setCompanyName(orgName.trim());
       navigate('/dashboard');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -99,11 +105,9 @@ export default function SignupPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-600 to-violet-800 flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <span className="text-white font-bold text-2xl">T</span>
-          </div>
-          <h1 className="text-3xl font-bold text-gray-900">{orgName || 'CRM Platform'}</h1>
-          <p className="text-gray-500 mt-1 text-sm">Create your organization</p>
+          <img src={resolvedLogo} alt="Telled Marketing" className="h-20 object-contain mx-auto mb-4" />
+          <h1 className="text-3xl font-bold text-gray-900">Telled Marketing</h1>
+          <p className="text-gray-500 mt-1 text-sm">CRM & Operations Platform</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">

@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Search, ExternalLink, Upload, X, CheckCircle, Trash2, Send, Mail, Pencil } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { notify } from '@/store/notificationStore';
 import { leadsApi } from '@/api/leads';
 import { usersApi } from '@/api/users';
 import { useAuthStore } from '@/store/authStore';
@@ -23,12 +25,61 @@ const STATUS_TABS: Array<LeadStatus | 'All'> = ['All', 'New', 'Contacted', 'Qual
 function parseCSV(text: string): Array<Record<string, string>> {
   const lines = text.trim().split('\n').filter(Boolean);
   if (lines.length < 2) return [];
-  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+  const headers = lines[0].split(',').map(h => normalizeHeader(h.replace(/^"|"$/g, '')));
   return lines.slice(1).map(line => {
     const vals = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
     const row: Record<string, string> = {};
     headers.forEach((h, i) => { row[h] = vals[i] || ''; });
     return row;
+  });
+}
+
+// Maps common Excel column header variations → internal field names
+const COLUMN_ALIASES: Record<string, string> = {
+  // companyName
+  'company name': 'companyName', 'company': 'companyName', 'organization': 'companyName',
+  'org name': 'companyName', 'firm name': 'companyName', 'business name': 'companyName',
+  'account name': 'companyName', 'client name': 'companyName',
+  // contactPersonName
+  'contact person name': 'contactPersonName', 'contact person': 'contactPersonName',
+  'contact name': 'contactPersonName', 'name': 'contactPersonName',
+  'person name': 'contactPersonName', 'full name': 'contactPersonName',
+  'contact': 'contactPersonName',
+  // email
+  'email address': 'email', 'e-mail': 'email', 'mail': 'email', 'email id': 'email',
+  // phone
+  'phone number': 'phone', 'mobile': 'phone', 'mobile number': 'phone',
+  'contact number': 'phone', 'cell': 'phone', 'telephone': 'phone',
+  // oemName
+  'oem name': 'oemName', 'oem': 'oemName', 'vendor': 'oemName', 'vendor name': 'oemName',
+  'product': 'oemName', 'product name': 'oemName',
+  // source
+  'lead source': 'source', 'referred by': 'source',
+  // city / state
+  'city name': 'city', 'location': 'city',
+  'state name': 'state', 'province': 'state',
+  // notes
+  'note': 'notes', 'remarks': 'notes', 'comment': 'notes', 'comments': 'notes',
+  // designation
+  'designation': 'designation', 'title': 'designation', 'job title': 'designation',
+};
+
+function normalizeHeader(h: string): string {
+  const lower = h.trim().toLowerCase();
+  return COLUMN_ALIASES[lower] || h.trim();
+}
+
+function parseExcel(buffer: ArrayBuffer): Array<Record<string, string>> {
+  const wb = XLSX.read(buffer, { type: 'array' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
+  return json.map(row => {
+    const out: Record<string, string> = {};
+    for (const key of Object.keys(row)) {
+      const normalized = normalizeHeader(key);
+      out[normalized] = String(row[key] ?? '').trim();
+    }
+    return out;
   });
 }
 
@@ -108,6 +159,7 @@ export default function LeadsPage() {
         contactPersonName: `${contactPersonPrefix} ${editForm.contactPersonName}`.trim(),
       });
       setLeads(prev => prev.map(l => l._id === editTarget._id ? { ...l, ...updated } : l));
+      notify('Lead Updated', `Lead "${editForm.companyName}" updated.`, 'lead', '/leads');
       setEditTarget(null);
     } finally { setEditSaving(false); }
   };
@@ -152,6 +204,7 @@ export default function LeadsPage() {
         ...rest,
         contactPersonName: `${contactPersonPrefix} ${form.contactPersonName}`.trim(),
       });
+      notify('Lead Created', `New lead "${form.companyName}" added successfully.`, 'lead', '/leads');
       setShowModal(false);
       setForm({ ...emptyForm });
       load();
@@ -210,6 +263,7 @@ export default function LeadsPage() {
         partnerSalesRep: drfForm.partnerSalesRep,
       });
       setLeads(prev => prev.map(l => l._id === drfTarget._id ? { ...l, drfEmailSent: true } as any : l));
+      notify('DRF Sent', `DRF email sent for "${drfTarget.companyName}".`, 'drf', '/drfs');
       setDrfTarget(null);
     } catch (err: any) {
       setDrfError(err?.response?.data?.message || 'Failed to send DRF');
@@ -219,6 +273,7 @@ export default function LeadsPage() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     await leadsApi.delete(deleteTarget);
+    notify('Lead Deleted', 'Lead has been removed.', 'lead');
     setDeleteTarget(null);
     load();
   };
@@ -226,9 +281,19 @@ export default function LeadsPage() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
     const reader = new FileReader();
-    reader.onload = (ev) => { setImportRows(parseCSV(ev.target?.result as string)); setImportDone(0); };
-    reader.readAsText(file);
+    if (isExcel) {
+      reader.onload = (ev) => {
+        const rows = parseExcel(ev.target?.result as ArrayBuffer);
+        setImportRows(rows);
+        setImportDone(0);
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.onload = (ev) => { setImportRows(parseCSV(ev.target?.result as string)); setImportDone(0); };
+      reader.readAsText(file);
+    }
   };
 
   const handleImport = async () => {
@@ -237,6 +302,7 @@ export default function LeadsPage() {
     try {
       const res = await leadsApi.importLeads(importRows);
       setImportDone(res.imported);
+      notify('Leads Imported', `${res.imported} lead(s) imported from file.`, 'lead', '/leads');
       setImportRows([]);
       load();
     } finally { setImporting(false); }
@@ -256,7 +322,7 @@ export default function LeadsPage() {
         </div>
         <div className="flex gap-2 flex-wrap">
           <button onClick={() => { setShowImport(true); setImportDone(0); setImportRows([]); }} className="btn-secondary flex items-center gap-2 text-sm">
-            <Upload size={14} /> <span className="hidden sm:inline">Import CSV</span><span className="sm:hidden">Import</span>
+            <Upload size={14} /> <span className="hidden sm:inline">Import Excel / CSV</span><span className="sm:hidden">Import</span>
           </button>
           <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 text-sm">
             <Plus size={15} /> <span className="hidden sm:inline">New Lead</span><span className="sm:hidden">New</span>
@@ -733,7 +799,7 @@ export default function LeadsPage() {
       </Modal>
 
       {/* CSV Import Modal */}
-      <Modal isOpen={showImport} onClose={() => setShowImport(false)} title="Import Leads from CSV">
+      <Modal isOpen={showImport} onClose={() => setShowImport(false)} title="Import Leads from Excel / CSV">
         <div className="space-y-4">
           {importDone > 0 ? (
             <div className="text-center py-6">
@@ -744,12 +810,18 @@ export default function LeadsPage() {
           ) : (
             <>
               <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 text-sm text-violet-700">
-                <p className="font-semibold mb-1">Expected CSV columns:</p>
-                <p className="text-xs font-mono">companyName, contactPersonName, email, phone, oemName, source, city, state, notes</p>
+                <p className="font-semibold mb-1">Supported columns (any order, flexible naming):</p>
+                <p className="text-xs font-mono">companyName, contactPersonName, email, phone, oemName, source, city, state, notes, designation</p>
+                <p className="text-xs mt-1 text-violet-500">Common variations like "Company Name", "Contact Person", "Mobile", "Organization" are auto-mapped.</p>
               </div>
+              {importRows.length > 0 && (
+                <div className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                  Detected columns: <span className="font-mono text-gray-700">{Object.keys(importRows[0]).join(', ')}</span>
+                </div>
+              )}
               <div>
-                <label className="label">Upload CSV file</label>
-                <input ref={fileRef} type="file" accept=".csv,.txt" className="input-field" onChange={handleFileChange} />
+                <label className="label">Upload Excel or CSV file</label>
+                <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls" className="input-field" onChange={handleFileChange} />
               </div>
               {importRows.length > 0 && (
                 <div className="bg-gray-50 rounded-xl p-3 text-sm">

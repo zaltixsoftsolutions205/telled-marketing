@@ -1,8 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, DollarSign, Download } from 'lucide-react';
+import { Plus, DollarSign, FileDown } from 'lucide-react';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import { salariesApi } from '@/api/salaries';
 import { usersApi } from '@/api/users';
 import { useAuthStore } from '@/store/authStore';
+import { useLogoStore } from '@/store/logoStore';
 import StatusBadge from '@/components/common/StatusBadge';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
@@ -15,6 +18,7 @@ const MONTHS = ['January','February','March','April','May','June','July','August
 export default function SalaryPage() {
   const user = useAuthStore((s) => s.user);
   const isHR = user?.role === 'admin' || user?.role === 'hr_finance';
+  const { logoUrl, companyName } = useLogoStore();
 
   const [salaries, setSalaries] = useState<Salary[]>([]);
   const [total, setTotal] = useState(0);
@@ -88,8 +92,154 @@ export default function SalaryPage() {
   const handleMarkPaid = async () => {
     if (!payTarget) return;
     await salariesApi.markPaid(payTarget._id);
+    setSalaries(prev => prev.map(s => s._id === payTarget._id ? { ...s, status: 'Paid' as const } : s));
     setPayTarget(null);
-    load();
+  };
+
+  const generatePayslip = async (sal: Salary) => {
+    const emp = sal.employeeId as User;
+    const monthName = MONTHS[sal.month - 1];
+    const B = '#000';
+    const H = '#f0f0f0';
+    const BRAND = '#4f46e5';
+    const td = (style = '') => `border:1px solid ${B};padding:6px 10px;${style}`;
+    const th = (style = '') => `border:1px solid ${B};padding:6px 10px;background:${H};font-weight:bold;${style}`;
+
+    const earnings = [
+      { label: 'Basic Salary',      amount: sal.baseSalary },
+      { label: 'Visit Charges',     amount: sal.visitChargesTotal },
+      { label: 'Travel Allowance',  amount: sal.travelAllowance || 0 },
+      { label: 'Incentives',        amount: sal.incentives },
+    ];
+    const totalEarnings = earnings.reduce((s, e) => s + e.amount, 0);
+    const totalDeductions = sal.deductions;
+
+    const container = document.createElement('div');
+    container.style.cssText = 'position:absolute;left:-9999px;top:0;width:720px;background:#fff;font-family:Arial,sans-serif;font-size:11px;padding:24px;box-sizing:border-box;';
+    document.body.appendChild(container);
+    container.innerHTML = `
+      <style>*{box-sizing:border-box;margin:0;padding:0;}table{width:100%;border-collapse:collapse;}td,th{font-family:Arial,sans-serif;font-size:11px;vertical-align:middle;}</style>
+      <div style="border:1.5px solid ${B};">
+
+        <!-- Header -->
+        <table style="border-bottom:1.5px solid ${B};">
+          <tr>
+            <td style="padding:14px 18px;width:50%;vertical-align:middle;">
+              ${logoUrl
+                ? `<img src="${logoUrl}" style="height:46px;object-fit:contain;" />`
+                : `<div style="font-weight:900;font-size:17px;letter-spacing:2px;">${companyName}</div>`
+              }
+            </td>
+            <td style="padding:14px 18px;width:50%;text-align:right;vertical-align:middle;">
+              <div style="font-size:18px;font-weight:900;letter-spacing:2px;color:${BRAND};">PAYSLIP</div>
+              <div style="font-size:11px;color:#555;margin-top:3px;">${monthName} ${sal.year}</div>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Employee Details -->
+        <table style="border-bottom:1px solid ${B};">
+          <tr>
+            <td style="${th('width:25%;')}">Employee Name</td>
+            <td style="${td('width:25%;')}">${emp?.name || '—'}</td>
+            <td style="${th('width:20%;')}">Pay Period</td>
+            <td style="${td()}">${monthName} ${sal.year}</td>
+          </tr>
+          <tr>
+            <td style="${th()}">Designation</td>
+            <td style="${td()}">${emp?.role?.replace('_', ' ') || '—'}</td>
+            <td style="${th()}">Department</td>
+            <td style="${td()}">${emp?.department || '—'}</td>
+          </tr>
+          <tr>
+            <td style="${th()}">Employee ID</td>
+            <td style="${td()}">${String(emp?._id || '').slice(-8).toUpperCase()}</td>
+            <td style="${th()}">Payment Status</td>
+            <td style="${td()}">
+              <span style="background:${sal.status === 'Paid' ? '#dcfce7' : '#fef9c3'};color:${sal.status === 'Paid' ? '#166534' : '#92400e'};padding:2px 10px;border-radius:3px;font-weight:bold;">
+                ${sal.status}
+              </span>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Earnings & Deductions -->
+        <table style="border-bottom:1px solid ${B};">
+          <tr>
+            <th style="${th('width:35%;text-align:left;background:${BRAND};color:#fff;')}">Earnings</th>
+            <th style="${th('width:15%;text-align:right;background:${BRAND};color:#fff;')}">Amount (₹)</th>
+            <th style="${th('width:35%;text-align:left;background:${BRAND};color:#fff;')}">Deductions</th>
+            <th style="${th('width:15%;text-align:right;background:${BRAND};color:#fff;')}">Amount (₹)</th>
+          </tr>
+          ${earnings.map((e, i) => `
+          <tr>
+            <td style="${td()}">${e.label}</td>
+            <td style="${td('text-align:right;')}">${formatCurrency(e.amount)}</td>
+            ${i === 0 ? `<td style="${td()}">Deductions</td><td style="${td('text-align:right;color:#dc2626;')}">${formatCurrency(sal.deductions)}</td>` : `<td style="${td()}"></td><td style="${td()}"></td>`}
+          </tr>`).join('')}
+          <tr style="background:${H};">
+            <td style="${td('font-weight:bold;')}">Total Earnings</td>
+            <td style="${td('text-align:right;font-weight:bold;')}">${formatCurrency(totalEarnings)}</td>
+            <td style="${td('font-weight:bold;')}">Total Deductions</td>
+            <td style="${td('text-align:right;font-weight:bold;color:#dc2626;')}">${formatCurrency(totalDeductions)}</td>
+          </tr>
+        </table>
+
+        <!-- Net Pay -->
+        <table style="border-bottom:1px solid ${B};">
+          <tr style="background:${BRAND};">
+            <td style="padding:10px 18px;color:#fff;font-size:13px;font-weight:bold;width:70%;">
+              Net Pay — ${monthName} ${sal.year}
+            </td>
+            <td style="padding:10px 18px;color:#fff;font-size:15px;font-weight:900;text-align:right;">
+              ${formatCurrency(sal.finalSalary)}
+            </td>
+          </tr>
+        </table>
+
+        ${sal.notes ? `
+        <!-- Notes -->
+        <table style="border-bottom:1px solid ${B};">
+          <tr>
+            <td style="${th('width:15%;')}">Notes</td>
+            <td style="${td()}">${sal.notes}</td>
+          </tr>
+        </table>` : ''}
+
+        <!-- Footer -->
+        <table>
+          <tr>
+            <td style="padding:12px 18px;width:50%;vertical-align:bottom;">
+              <div style="margin-top:36px;border-top:1px solid #999;padding-top:4px;font-size:10px;color:#555;text-align:center;">Employee Signature</div>
+            </td>
+            <td style="padding:12px 18px;width:50%;vertical-align:bottom;text-align:center;">
+              <div style="margin-top:36px;border-top:1px solid #999;padding-top:4px;font-size:10px;color:#555;text-align:center;">Authorised Signatory</div>
+            </td>
+          </tr>
+          <tr>
+            <td colspan="2" style="padding:6px 18px;text-align:center;border-top:1px solid #eee;">
+              <span style="font-size:9px;color:#999;">This is a computer generated payslip. Generated on ${new Date().toLocaleDateString('en-IN')}.</span>
+            </td>
+          </tr>
+        </table>
+
+      </div>
+    `;
+    try {
+      const canvas = await html2canvas(container, { scale: 2, useCORS: true, logging: false, backgroundColor: '#fff' });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pw = pdf.internal.pageSize.getWidth();
+      const ph = pdf.internal.pageSize.getHeight();
+      const ih = (canvas.height * pw) / canvas.width;
+      let left = ih; let pos = 0;
+      pdf.addImage(imgData, 'PNG', 0, pos, pw, ih);
+      left -= ph;
+      while (left > 0) { pos -= ph; pdf.addPage(); pdf.addImage(imgData, 'PNG', 0, pos, pw, ih); left -= ph; }
+      pdf.save(`Payslip_${emp?.name?.replace(/\s+/g, '_')}_${monthName}_${sal.year}.pdf`);
+    } finally {
+      document.body.removeChild(container);
+    }
   };
 
   return (
@@ -169,22 +319,18 @@ export default function SalaryPage() {
                     <td className="table-cell"><StatusBadge status={sal.status} /></td>
                     <td className="table-cell">
                       <div className="flex items-center gap-2">
-                        {sal.status === 'Calculated' && (
+                        {sal.status === 'Calculated' && isHR && (
                           <button onClick={() => setPayTarget(sal)} className="flex items-center gap-1 text-xs bg-green-100 hover:bg-green-200 text-green-800 px-2.5 py-1 rounded-lg font-medium">
                             <DollarSign size={12} /> Mark Paid
                           </button>
                         )}
-                        {(sal.payslipPdf || sal.pdfPath) && (
-                          <a
-                            href={`/uploads/${sal.payslipPdf || sal.pdfPath}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="flex items-center gap-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-800 px-2.5 py-1 rounded-lg font-medium"
-                            title="Download Payslip"
-                          >
-                            <Download size={12} /> Payslip
-                          </a>
-                        )}
+                        <button
+                          onClick={() => generatePayslip(sal)}
+                          className="flex items-center gap-1 text-xs bg-violet-100 hover:bg-violet-200 text-violet-800 px-2.5 py-1 rounded-lg font-medium"
+                          title="Download Payslip PDF"
+                        >
+                          <FileDown size={12} /> Payslip
+                        </button>
                       </div>
                     </td>
                   </tr>
