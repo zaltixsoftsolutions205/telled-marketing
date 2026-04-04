@@ -21,7 +21,7 @@ services:
       driver: "awslogs"
       options:
         awslogs-group: "/telled-crm/backend"
-        awslogs-region: "${AWS_REGION:-ap-south-1}"
+        awslogs-region: "${AWS_REGION:-ap-south-2}"
         awslogs-stream-prefix: "backend"
     networks:
       - telled-network

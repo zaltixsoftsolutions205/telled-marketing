@@ -8,8 +8,8 @@ on:
       - '.github/workflows/deploy-backend.yml'
 
 env:
-  AWS_REGION: ap-south-1                        # Change to your AWS region
-  ECR_REPOSITORY: telled-crm-backend            # Your ECR repo name
+  AWS_REGION: ap-south-2                        # Asia Pacific (Hyderabad)
+  ECR_REPOSITORY: teld                          # Your ECR repo name
   CONTAINER_NAME: telled-backend
 
 jobs:
