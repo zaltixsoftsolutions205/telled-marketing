@@ -1,3 +1,4 @@
+// src/App.tsx
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
@@ -24,10 +25,10 @@ import EngineerPerformancePage from '@/pages/EngineerPerformancePage';
 import AttendancePage from '@/pages/AttendancePage';
 import LeavePage from '@/pages/LeavePage';
 import SettingsPage from '@/pages/SettingsPage';
+import VisitsAndClaimsPage from '@/pages/VisitsAndClaimsPage'; // Import the new page
 import type { Role } from '@/types';
 
-// ─── Route guards ─────────────────────────────────────────────────────────────
-
+// Route guards
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token);
   return token ? <>{children}</> : <Navigate to="/login" replace />;
@@ -38,8 +39,6 @@ function GuestRoute({ children }: { children: React.ReactNode }) {
   return !token ? <>{children}</> : <Navigate to="/dashboard" replace />;
 }
 
-/** Renders children only if the logged-in user has one of the allowed roles.
- *  Otherwise redirects to /dashboard (which shows a role-specific view). */
 function RoleRoute({ children, roles }: { children: React.ReactNode; roles: Role[] }) {
   const user = useAuthStore((s) => s.user);
   if (!user) return <Navigate to="/login" replace />;
@@ -50,94 +49,68 @@ function RoleRoute({ children, roles }: { children: React.ReactNode; roles: Role
 export default function App() {
   return (
     <ErrorBoundary>
-    <BrowserRouter>
-      <Routes>
-        {/* Public routes */}
-        <Route path="/login"  element={<GuestRoute><LoginPage  /></GuestRoute>} />
-        <Route path="/signup" element={<GuestRoute><SignupPage /></GuestRoute>} />
+      <BrowserRouter>
+        <Routes>
+          {/* Public routes */}
+          <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
+          <Route path="/signup" element={<GuestRoute><SignupPage /></GuestRoute>} />
 
-        {/* Protected layout */}
-        <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
+          {/* Protected layout */}
+          <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
+            <Route index element={<Navigate to="/dashboard" replace />} />
 
-          {/* All roles */}
-          <Route path="dashboard" element={<DashboardPage />} />
+            {/* All roles */}
+            <Route path="dashboard" element={<DashboardPage />} />
 
-          {/* Admin + Sales */}
-          <Route path="leads" element={
-            <RoleRoute roles={['admin','sales']}><LeadsPage /></RoleRoute>
-          } />
-          <Route path="leads/:id" element={
-            <RoleRoute roles={['admin','sales']}><LeadDetailPage /></RoleRoute>
-          } />
-          <Route path="drfs" element={
-            <RoleRoute roles={['admin','sales']}><DRFPage /></RoleRoute>
-          } />
-          <Route path="quotations" element={
-            <RoleRoute roles={['admin','sales']}><QuotationsPage /></RoleRoute>
-          } />
-          <Route path="purchases" element={
-            <RoleRoute roles={['admin','sales']}><PurchasesPage /></RoleRoute>
-          } />
+            {/* Admin + Sales */}
+            <Route path="leads" element={<RoleRoute roles={['admin', 'sales']}><LeadsPage /></RoleRoute>} />
+            <Route path="leads/:id" element={<RoleRoute roles={['admin', 'sales']}><LeadDetailPage /></RoleRoute>} />
+            <Route path="drfs" element={<RoleRoute roles={['admin', 'sales']}><DRFPage /></RoleRoute>} />
+            <Route path="quotations" element={<RoleRoute roles={['admin', 'sales']}><QuotationsPage /></RoleRoute>} />
+            <Route path="purchases" element={<RoleRoute roles={['admin', 'sales']}><PurchasesPage /></RoleRoute>} />
 
-          {/* Admin + Sales + Engineer (shared modules) */}
-          <Route path="accounts" element={
-            <RoleRoute roles={['admin','sales','engineer','hr_finance']}><AccountsPage /></RoleRoute>
-          } />
-          <Route path="accounts/:id" element={
-            <RoleRoute roles={['admin','sales','engineer','hr_finance']}><AccountDetailPage /></RoleRoute>
-          } />
-          <Route path="support" element={
-            <RoleRoute roles={['admin','sales','engineer']}><SupportPage /></RoleRoute>
-          } />
+            {/* Admin + Sales + Engineer + HR */}
+            <Route path="accounts" element={<RoleRoute roles={['admin', 'sales', 'engineer', 'hr_finance']}><AccountsPage /></RoleRoute>} />
+            <Route path="accounts/:id" element={<RoleRoute roles={['admin', 'sales', 'engineer', 'hr_finance']}><AccountDetailPage /></RoleRoute>} />
+            <Route path="support" element={<RoleRoute roles={['admin', 'sales', 'engineer']}><SupportPage /></RoleRoute>} />
 
-          {/* Engineer */}
-          <Route path="installations" element={
-            <RoleRoute roles={['admin','engineer']}><InstallationsPage /></RoleRoute>
-          } />
-          <Route path="training" element={
-            <RoleRoute roles={['admin','engineer']}><TrainingPage /></RoleRoute>
-          } />
+            {/* Engineer */}
+            <Route path="installations" element={<RoleRoute roles={['admin', 'engineer']}><InstallationsPage /></RoleRoute>} />
+            <Route path="training" element={<RoleRoute roles={['admin', 'engineer']}><TrainingPage /></RoleRoute>} />
 
-          {/* HR & Finance + Admin */}
-          <Route path="invoices" element={
-            <RoleRoute roles={['admin','hr_finance']}><InvoicesPage /></RoleRoute>
-          } />
-          <Route path="payments" element={
-            <RoleRoute roles={['admin','hr_finance']}><PaymentsPage /></RoleRoute>
-          } />
-          <Route path="salary" element={
-            <RoleRoute roles={['admin','hr_finance']}><SalaryPage /></RoleRoute>
-          } />
+            {/* HR & Finance */}
+            <Route path="invoices" element={<RoleRoute roles={['admin', 'hr_finance']}><InvoicesPage /></RoleRoute>} />
+            <Route path="payments" element={<RoleRoute roles={['admin', 'hr_finance']}><PaymentsPage /></RoleRoute>} />
+            <Route path="salary" element={<RoleRoute roles={['admin', 'hr_finance']}><SalaryPage /></RoleRoute>} />
 
-          {/* Engineer visits — engineer submits, HR approves */}
-          <Route path="engineer-visits" element={
-            <RoleRoute roles={['admin','engineer','hr_finance']}><EngineerVisitsPage /></RoleRoute>
-          } />
-          <Route path="engineer-performance" element={
-            <RoleRoute roles={['admin','engineer']}><EngineerPerformancePage /></RoleRoute>
-          } />
+            {/* Engineer Visits & Claims - Combined Page */}
+            <Route path="visits-and-claims" element={
+              <RoleRoute roles={['admin', 'engineer', 'hr_finance']}>
+                <VisitsAndClaimsPage />
+              </RoleRoute>
+            } />
 
-          {/* Attendance & Leave — HR, Admin, Engineers */}
-          <Route path="attendance" element={
-            <RoleRoute roles={['admin','hr_finance','engineer','sales']}><AttendancePage /></RoleRoute>
-          } />
-          <Route path="leaves" element={
-            <RoleRoute roles={['admin','hr_finance','engineer','sales']}><LeavePage /></RoleRoute>
-          } />
+            {/* Keep old route for backward compatibility (optional) */}
+            <Route path="engineer-visits" element={
+              <RoleRoute roles={['admin', 'engineer', 'hr_finance']}>
+                <EngineerVisitsPage />
+              </RoleRoute>
+            } />
 
-          {/* Admin only */}
-          <Route path="users" element={
-            <RoleRoute roles={['admin']}><UsersPage /></RoleRoute>
-          } />
-          <Route path="settings" element={
-            <RoleRoute roles={['admin']}><SettingsPage /></RoleRoute>
-          } />
-        </Route>
+            <Route path="engineer-performance" element={<RoleRoute roles={['admin', 'engineer']}><EngineerPerformancePage /></RoleRoute>} />
 
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
-    </BrowserRouter>
+            {/* Attendance & Leave */}
+            <Route path="attendance" element={<RoleRoute roles={['admin', 'hr_finance', 'engineer', 'sales']}><AttendancePage /></RoleRoute>} />
+            <Route path="leaves" element={<RoleRoute roles={['admin', 'hr_finance', 'engineer', 'sales']}><LeavePage /></RoleRoute>} />
+
+            {/* Admin only */}
+            <Route path="users" element={<RoleRoute roles={['admin']}><UsersPage /></RoleRoute>} />
+            <Route path="settings" element={<RoleRoute roles={['admin']}><SettingsPage /></RoleRoute>} />
+          </Route>
+
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </BrowserRouter>
     </ErrorBoundary>
   );
 }

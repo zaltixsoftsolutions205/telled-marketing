@@ -1,3 +1,4 @@
+// src/components/layout/Sidebar.tsx
 import { useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -29,20 +30,20 @@ const salesNav = [
 ];
 
 const engineerNav = [
-  { to: '/accounts',             label: 'Accounts',       icon: Building2 },
-  { to: '/installations',        label: 'Installations',  icon: Wrench },
-  { to: '/support',              label: 'Support',        icon: Headphones },
-  { to: '/training',             label: 'Training',       icon: GraduationCap },
-  { to: '/engineer-visits',      label: 'Visit Claims',   icon: CalendarCheck },
-  { to: '/engineer-performance', label: 'My Performance', icon: TrendingUp },
-  { to: '/attendance',           label: 'My Attendance',  icon: CalendarDays },
-  { to: '/leaves',               label: 'My Leaves',      icon: Calendar },
+  { to: '/accounts',             label: 'Accounts',          icon: Building2 },
+  { to: '/installations',        label: 'Installations',     icon: Wrench },
+  { to: '/support',              label: 'Support',           icon: Headphones },
+  { to: '/training',             label: 'Training',          icon: GraduationCap },
+  { to: '/visits-and-claims',    label: 'Visits & Claims',   icon: CalendarCheck }, // Updated path
+  { to: '/engineer-performance', label: 'My Performance',    icon: TrendingUp },
+  { to: '/attendance',           label: 'My Attendance',     icon: CalendarDays },
+  { to: '/leaves',               label: 'My Leaves',         icon: Calendar },
 ];
 
 const hrNav = [
   { to: '/invoices',        label: 'Invoices',          icon: Receipt },
   { to: '/payments',        label: 'Payments',          icon: CreditCard },
-  { to: '/engineer-visits', label: 'Engineer Visits',   icon: CalendarCheck },
+  { to: '/visits-and-claims', label: 'Visits & Claims', icon: CalendarCheck }, // Updated path
   { to: '/salary',          label: 'Salary',            icon: DollarSign },
   { to: '/attendance',      label: 'Attendance',        icon: CalendarDays },
   { to: '/leaves',          label: 'Leave Management',  icon: CalendarDays },
@@ -66,7 +67,7 @@ const adminSections = [
       { to: '/installations',        label: 'Installations',   icon: Wrench },
       { to: '/support',              label: 'Support',         icon: Headphones },
       { to: '/training',             label: 'Training',        icon: GraduationCap },
-      { to: '/engineer-visits',      label: 'Engineer Visits', icon: CalendarCheck },
+      { to: '/visits-and-claims',    label: 'Visits & Claims', icon: CalendarCheck }, // Updated path
       { to: '/engineer-performance', label: 'Performance',     icon: TrendingUp },
     ],
   },
@@ -75,7 +76,7 @@ const adminSections = [
     items: [
       { to: '/invoices',        label: 'Invoices',          icon: Receipt },
       { to: '/payments',        label: 'Payments',          icon: CreditCard },
-      { to: '/engineer-visits', label: 'Engineer Visits',   icon: CalendarCheck },
+      { to: '/visits-and-claims', label: 'Visits & Claims', icon: CalendarCheck }, // Updated path
       { to: '/salary',          label: 'Salary',            icon: DollarSign },
       { to: '/attendance',      label: 'Attendance',        icon: CalendarDays },
       { to: '/leaves',          label: 'Leave Management',  icon: CalendarDays },
