@@ -1,0 +1,91 @@
+name: Deploy Backend to AWS EC2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-backend.yml'
+
+env:
+  AWS_REGION: ap-south-2                        # Asia Pacific (Hyderabad)
+  ECR_REPOSITORY: teld                          # Your ECR repo name
+  CONTAINER_NAME: telled-backend
+
+jobs:
+  # ─── Job 1: Build & Push Docker image to ECR ────────────────────────────────
+  build:
+    name: Build & Push to ECR
+    runs-on: ubuntu-latest
+
+    outputs:
+      image: ${{ steps.build-image.outputs.image }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag & push Docker image to ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        working-directory: backend
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+  # ─── Job 2: Deploy to EC2 ────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: AWS_REGION,ECR_REPOSITORY
+          script: |
+            # Pull latest code (gets updated docker-compose.yml)
+            cd /home/ubuntu/telled-marketing
+            git pull origin main
+
+            # Login to ECR from EC2 using instance IAM role
+            aws ecr get-login-password --region ap-south-2 \
+              | docker login --username AWS --password-stdin 855250841662.dkr.ecr.ap-south-2.amazonaws.com
+
+            # Pull the latest image
+            docker pull 855250841662.dkr.ecr.ap-south-2.amazonaws.com/teld:latest
+
+            # Go to app directory
+            cd /home/ubuntu/telled-marketing/backend
+
+            # Update ECR_IMAGE and restart containers
+            export ECR_IMAGE=855250841662.dkr.ecr.ap-south-2.amazonaws.com/teld:latest
+            docker compose pull
+            docker compose up -d --no-build --remove-orphans
+
+            # Clean up old images
+            docker image prune -f
+
+            # Verify container is healthy
+            sleep 15
+            docker ps | grep telled-backend

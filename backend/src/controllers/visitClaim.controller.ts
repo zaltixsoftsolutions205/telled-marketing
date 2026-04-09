@@ -243,8 +243,9 @@ export const getClaimStats = async (req: AuthRequest, res: Response): Promise<vo
     };
     
     stats.forEach(stat => {
-      if (result[stat._id]) {
-        result[stat._id] = { count: stat.count, amount: stat.totalAmount };
+      const key = stat._id as keyof typeof result;
+      if (result[key]) {
+        result[key] = { count: stat.count, amount: stat.totalAmount };
       }
     });
     
