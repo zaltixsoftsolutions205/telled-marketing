@@ -12,6 +12,8 @@ import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import Toast from '@/components/common/Toast';
+import ContactEmailPicker from '@/components/common/ContactEmailPicker';
+import ExcelImportButton from '@/components/common/ExcelImportButton';
 import { formatDate, formatCurrency } from '@/utils/formatters';
 import type { Quotation, Lead, QuotationItem } from '@/types';
 import { useLogoStore } from '@/store/logoStore';
@@ -58,10 +60,14 @@ export default function QuotationsPage() {
   const resolvedLogo = resolveLogoUrl(logoUrl);
   const printRef = useRef<HTMLDivElement>(null);
 
+  const [showItemDiscount, setShowItemDiscount] = useState(false);
   const [form, setForm] = useState({
     leadId: '',
     taxRate: 18,
     gstApplicable: true,
+    discountApplicable: false,
+    discountType: 'percent' as 'percent' | 'flat',
+    discountValue: 0,
     validUntil: '',
     delivery: '2 Weeks',
     terms: '',
@@ -76,6 +82,8 @@ export default function QuotationsPage() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [sendEmailTarget, setSendEmailTarget] = useState<Quotation | null>(null);
   const [sendEmailSending, setSendEmailSending] = useState(false);
+  const [sendToEmail, setSendToEmail] = useState('');
+  const [sendCcEmail, setSendCcEmail] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -98,7 +106,8 @@ export default function QuotationsPage() {
 
   const openCreateModal = async () => {
     setItems([{ ...emptyItem }]);
-    setForm({ leadId: '', taxRate: 18, gstApplicable: true, validUntil: '', delivery: '2 Weeks', terms: '', notes: '' });
+    setShowItemDiscount(false);
+    setForm({ leadId: '', taxRate: 18, gstApplicable: true, discountApplicable: false, discountType: 'percent', discountValue: 0, validUntil: '', delivery: '2 Weeks', terms: '', notes: '' });
     try {
       const leadsRes = await leadsApi.getAll({ limit: 200, stage: 'OEM Approved' });
       const drfRes = await drfApi.getAll({ status: 'Approved', limit: 200 });
@@ -114,10 +123,14 @@ export default function QuotationsPage() {
   const openEditModal = (quotation: Quotation) => {
     setSelectedQuotation(quotation);
     setItems(quotation.items || [{ ...emptyItem }]);
+    setShowItemDiscount(quotation.items?.some(i => (i.discount ?? 0) > 0) ?? false);
     setForm({
       leadId: (quotation.leadId as Lead)?._id || '',
       taxRate: quotation.taxRate || 18,
       gstApplicable: quotation.gstApplicable ?? true,
+      discountApplicable: quotation.discountApplicable ?? false,
+      discountType: quotation.discountType ?? 'percent',
+      discountValue: quotation.discountValue ?? 0,
       validUntil: quotation.validUntil ? new Date(quotation.validUntil).toISOString().split('T')[0] : '',
       delivery: quotation.delivery || '2 Weeks',
       terms: quotation.terms || '',
@@ -148,9 +161,9 @@ export default function QuotationsPage() {
     setItems(prev => {
       const next = [...prev];
       next[index] = { ...next[index], [field]: value };
-      if (field === 'quantity' || field === 'unitPrice') {
-        next[index].total = Number(next[index].quantity) * Number(next[index].unitPrice);
-      }
+      const { quantity, unitPrice, discount } = next[index];
+      const disc = Number(discount ?? 0);
+      next[index].total = Number(quantity) * Number(unitPrice) * (1 - disc / 100);
       return next;
     });
   };
@@ -161,8 +174,12 @@ export default function QuotationsPage() {
   };
 
   const subtotal = items.reduce((sum, i) => sum + (i.total || 0), 0);
-  const taxAmount = form.gstApplicable ? subtotal * (Number(form.taxRate) / 100) : 0;
-  const totalAmount = subtotal + taxAmount;
+  const discountAmount = form.discountApplicable
+    ? (form.discountType === 'percent' ? subtotal * (Number(form.discountValue) / 100) : Number(form.discountValue))
+    : 0;
+  const discountedSubtotal = subtotal - discountAmount;
+  const taxAmount = form.gstApplicable ? discountedSubtotal * (Number(form.taxRate) / 100) : 0;
+  const totalAmount = discountedSubtotal + taxAmount;
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -171,7 +188,7 @@ export default function QuotationsPage() {
     if (!validItems.length) { setToast({ message: 'Add at least one line item', type: 'error' }); return; }
     setSaving(true);
     try {
-      await quotationsApi.create({ ...form, items: validItems, subtotal, taxAmount, total: totalAmount, status: 'Draft' });
+      await quotationsApi.create({ ...form, items: validItems, subtotal, discountAmount, taxAmount, total: totalAmount, status: 'Draft' });
       setShowCreateModal(false);
       load();
       notify('Quotation Created', 'New quotation created successfully.', 'quotation', '/quotations');
@@ -192,8 +209,15 @@ export default function QuotationsPage() {
     try {
       await quotationsApi.update(selectedQuotation._id, {
         items: validItems,
+        subtotal,
+        discountApplicable: form.discountApplicable,
+        discountType: form.discountType,
+        discountValue: form.discountValue,
+        discountAmount,
         taxRate: form.taxRate,
         gstApplicable: form.gstApplicable,
+        taxAmount,
+        total: totalAmount,
         validUntil: form.validUntil || undefined,
         delivery: form.delivery,
         terms: form.terms,
@@ -219,8 +243,10 @@ export default function QuotationsPage() {
       setQuotations(prev => prev.filter(q => q._id !== deleteTarget._id));
       setTotal(prev => prev - 1);
       setDeleteTarget(null);
+      setToast({ message: 'Quotation deleted successfully', type: 'success' });
     } catch (err: any) {
-      setToast({ message: err?.response?.data?.message || 'Failed to delete quotation', type: 'error' });
+      const msg = err?.response?.data?.message || err?.message || 'Failed to delete quotation';
+      setToast({ message: msg, type: 'error' });
     } finally {
       setDeleting(false);
     }
@@ -286,11 +312,20 @@ export default function QuotationsPage() {
         <td style="border:1px solid #000;padding:4px 8px;text-align:right;">${formatCurrency(item.total)}</td>
       </tr>`).join('');
 
-    const gstRow = q.gstApplicable ? `
+    const hasItemDiscount = q.items.some(i => (i.discount ?? 0) > 0);
+
+    const gstRow = q.gstApplicable && q.taxAmount > 0 ? `
       <tr>
         <td style="border:1px solid #000;padding:4px 8px;"></td>
         <td style="border:1px solid #000;padding:4px 8px;background:#f5f5f5;font-weight:bold;">GST @ ${q.taxRate}%</td>
         <td style="border:1px solid #000;padding:4px 8px;text-align:right;">${formatCurrency(q.taxAmount)}</td>
+      </tr>` : '';
+
+    const discountRow = q.discountApplicable && (q.discountAmount ?? 0) > 0 ? `
+      <tr>
+        <td style="border:1px solid #000;padding:4px 8px;"></td>
+        <td style="border:1px solid #000;padding:4px 8px;background:#fff8f8;font-weight:bold;color:#dc2626;">${q.discountType === 'percent' ? `Discount (${q.discountValue}%)` : 'Discount (Flat)'}</td>
+        <td style="border:1px solid #000;padding:4px 8px;text-align:right;color:#dc2626;">− ${formatCurrency(q.discountAmount ?? 0)}</td>
       </tr>` : '';
 
     const defaultTerms = `Order: License Form should be duly filled along with the Purchase Order<br/>
@@ -398,7 +433,8 @@ This offer may be subject to errors and changes.`;
               <th style="${th('text-align:center;')}">Product Description</th>
               <th style="${th('text-align:center;width:5%;')}">Qty</th>
               <th style="${th('text-align:center;width:15%;')}">List Price Per Qty</th>
-              <th style="${th('text-align:center;width:18%;')}">Strategic Price Per Qty</th>
+              <th style="${th('text-align:center;width:16%;')}">Strategic Price Per Qty</th>
+              ${hasItemDiscount ? `<th style="${th('text-align:center;width:8%;')}">Disc %</th>` : ''}
               <th style="${th('text-align:center;width:14%;')}">Total</th>
             </tr>
           </thead>
@@ -410,6 +446,7 @@ This offer may be subject to errors and changes.`;
               <td style="${td('text-align:center;')}">${item.quantity}</td>
               <td style="${td('text-align:right;')}">${item.listPrice ? formatCurrency(item.listPrice) : formatCurrency(item.unitPrice)}</td>
               <td style="${td('text-align:right;')}">${formatCurrency(item.unitPrice)}</td>
+              ${hasItemDiscount ? `<td style="${td('text-align:center;')}">${(item.discount ?? 0) > 0 ? item.discount + '%' : '—'}</td>` : ''}
               <td style="${td('text-align:right;')}">${formatCurrency(item.total)}</td>
             </tr>`).join('')}
           </tbody>
@@ -418,15 +455,12 @@ This offer may be subject to errors and changes.`;
         <!-- ══ Totals (right-aligned block) ══ -->
         <table style="width:100%;border-collapse:collapse;border-bottom:1px solid ${B};">
           <tr>
-            <td style="width:55%;border-right:1px solid ${B};padding:0;" rowspan="3"></td>
+            <td style="width:55%;border-right:1px solid ${B};padding:0;" rowspan="${1 + (q.discountApplicable && (q.discountAmount ?? 0) > 0 ? 1 : 0) + (q.gstApplicable && q.taxAmount > 0 ? 1 : 0) + 1}"></td>
             <td style="${th('white-space:nowrap;text-align:right;width:20%;')}">Base Price</td>
             <td style="${td('text-align:right;width:25%;')}">${formatCurrency(q.subtotal)}</td>
           </tr>
-          ${q.gstApplicable ? `
-          <tr>
-            <td style="${th('white-space:nowrap;text-align:right;')}">GST @ ${q.taxRate}%</td>
-            <td style="${td('text-align:right;')}">${formatCurrency(q.taxAmount)}</td>
-          </tr>` : ''}
+          ${discountRow}
+          ${gstRow}
           <tr>
             <td style="${th('white-space:nowrap;text-align:right;')}">Final Price</td>
             <td style="${td('text-align:right;font-weight:bold;')}">${formatCurrency(finalPrice)}</td>
@@ -477,7 +511,12 @@ This offer may be subject to errors and changes.`;
   const handleAction = async (action: string, id: string) => {
     if (action === 'sendEmail') {
       const q = quotations.find(qt => qt._id === id);
-      if (q) { setSendEmailTarget(q); return; }
+      if (q) {
+        setSendEmailTarget(q);
+        setSendToEmail((q.leadId as any)?.email || '');
+        setSendCcEmail('');
+        return;
+      }
     }
     if (action === 'generatePDF') {
       const q = quotations.find(qt => qt._id === id);
@@ -502,9 +541,9 @@ This offer may be subject to errors and changes.`;
     if (!sendEmailTarget) return;
     setSendEmailSending(true);
     try {
-      await quotationsApi.sendEmail(sendEmailTarget._id);
+      await quotationsApi.sendEmail(sendEmailTarget._id, sendToEmail.trim() || undefined, sendCcEmail.trim() || undefined);
       notify('Quotation Email Sent', 'Quotation email sent to lead successfully.', 'quotation', '/quotations');
-      setToast({ message: 'Email sent to lead successfully', type: 'success' });
+      setToast({ message: 'Email sent successfully', type: 'success' });
       setSendEmailTarget(null);
       load();
     } catch (err: any) {
@@ -569,9 +608,33 @@ This offer may be subject to errors and changes.`;
           <h1 className="page-header">Quotations</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} total quotations</p>
         </div>
-        <button onClick={openCreateModal} className="btn-primary flex items-center gap-2">
-          <Plus size={16} /> New Quotation
-        </button>
+        <div className="flex items-center gap-2">
+          <ExcelImportButton
+            entityName="Quotations"
+            columnHint="leadName (company to match), subtotal, taxRate (%), delivery, terms, notes"
+            onImport={async (rows) => {
+              let imported = 0;
+              const leadsRes = await leadsApi.getAll({ limit: 500 });
+              const leadList: { _id: string; companyName: string }[] = leadsRes.data || [];
+              for (const row of rows) {
+                const ln = (row.leadName || row.company || row.companyName || '').toLowerCase();
+                const lead = leadList.find(l => l.companyName.toLowerCase().includes(ln));
+                if (!lead) continue;
+                const subtotal = parseFloat(row.subtotal || row.amount || '0') || 0;
+                const taxRate  = parseFloat(row.taxRate  || row.gst   || '18') || 18;
+                try {
+                  await quotationsApi.create({ leadId: lead._id, items: [{ description: row.description || 'Item', quantity: 1, unitPrice: subtotal, total: subtotal }], subtotal, taxRate, taxAmount: subtotal * taxRate / 100, total: subtotal * (1 + taxRate / 100), delivery: row.delivery || '', terms: row.terms || '', notes: row.notes || '' });
+                  imported++;
+                } catch { /* skip */ }
+              }
+              load();
+              return { imported };
+            }}
+          />
+          <button onClick={openCreateModal} className="btn-primary flex items-center gap-2">
+            <Plus size={16} /> New Quotation
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -677,7 +740,8 @@ This offer may be subject to errors and changes.`;
             </div>
           </div>
 
-          <div className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 p-3 bg-gray-50 rounded-lg">
+            {/* GST */}
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={form.gstApplicable}
                 onChange={(e) => setForm(f => ({ ...f, gstApplicable: e.target.checked }))}
@@ -687,9 +751,30 @@ This offer may be subject to errors and changes.`;
             {form.gstApplicable && (
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-500">Tax Rate:</span>
-                <input type="number" className="input-field w-20 text-sm" value={form.taxRate}
+                <input type="number" className="input-field w-20 text-sm py-1" value={form.taxRate}
                   onChange={(e) => setForm(f => ({ ...f, taxRate: Number(e.target.value) }))} min="0" max="100" />
                 <span className="text-sm text-gray-500">%</span>
+              </div>
+            )}
+            {/* Divider */}
+            <div className="h-4 w-px bg-gray-300" />
+            {/* Discount */}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={form.discountApplicable}
+                onChange={(e) => setForm(f => ({ ...f, discountApplicable: e.target.checked, discountValue: 0 }))}
+                className="w-4 h-4 accent-violet-600" />
+              <span className="text-sm font-medium text-gray-700">Discount</span>
+            </label>
+            {form.discountApplicable && (
+              <div className="flex items-center gap-2">
+                <select className="input-field py-1 text-sm w-24"
+                  value={form.discountType}
+                  onChange={(e) => setForm(f => ({ ...f, discountType: e.target.value as 'percent' | 'flat' }))}>
+                  <option value="percent">%</option>
+                  <option value="flat">₹ Flat</option>
+                </select>
+                <input type="number" className="input-field w-24 text-sm py-1" value={form.discountValue}
+                  onChange={(e) => setForm(f => ({ ...f, discountValue: Number(e.target.value) }))} min="0" step="0.01" />
               </div>
             )}
           </div>
@@ -697,52 +782,74 @@ This offer may be subject to errors and changes.`;
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="label !mb-0">Line Items *</label>
-              <button type="button" onClick={addItem} className="text-xs text-violet-600 hover:text-violet-800 font-medium">+ Add Row</button>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-500">
+                  <input type="checkbox" checked={showItemDiscount}
+                    onChange={(e) => {
+                      setShowItemDiscount(e.target.checked);
+                      if (!e.target.checked) setItems(prev => prev.map(it => ({ ...it, discount: 0, total: it.quantity * it.unitPrice })));
+                    }}
+                    className="w-3.5 h-3.5 accent-violet-600" />
+                  Item Discount
+                </label>
+                <button type="button" onClick={addItem} className="text-xs text-violet-600 hover:text-violet-800 font-medium">+ Add Row</button>
+              </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-2 py-2 text-left text-xs text-gray-500 font-medium w-1/3">Description</th>
-                    <th className="px-2 py-2 text-center text-xs text-gray-500 font-medium w-16">Qty</th>
-                    <th className="px-2 py-2 text-right text-xs text-gray-500 font-medium">List Price</th>
-                    <th className="px-2 py-2 text-right text-xs text-gray-500 font-medium">Strategic Price</th>
-                    <th className="px-2 py-2 text-right text-xs text-gray-500 font-medium w-24">Total</th>
-                    <th className="w-6"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item, i) => (
-                    <tr key={i} className="border-t border-gray-100">
-                      <td className="px-2 py-1">
-                        <input className="input-field text-sm py-1" placeholder="Description" value={item.description}
-                          onChange={(e) => updateItem(i, 'description', e.target.value)} required />
-                      </td>
-                      <td className="px-2 py-1">
-                        <input type="number" className="input-field text-sm py-1 text-center" placeholder="Qty" min={1} value={item.quantity}
-                          onChange={(e) => updateItem(i, 'quantity', Number(e.target.value))} required />
-                      </td>
-                      <td className="px-2 py-1">
-                        <input type="number" className="input-field text-sm py-1 text-right" placeholder="List Price" min={0} step="0.01"
-                          value={item.listPrice ?? ''} onChange={(e) => updateItem(i, 'listPrice', Number(e.target.value))} />
-                      </td>
-                      <td className="px-2 py-1">
-                        <input type="number" className="input-field text-sm py-1 text-right" placeholder="Strategic Price" min={0} step="0.01"
-                          value={item.unitPrice} onChange={(e) => updateItem(i, 'unitPrice', Number(e.target.value))} required />
-                      </td>
-                      <td className="px-2 py-1 text-right font-medium text-gray-700">{formatCurrency(item.total)}</td>
-                      <td className="px-1 py-1">
-                        <button type="button" onClick={() => removeItem(i)} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-2">
+              {items.map((item, i) => (
+                <div key={i} className="border border-gray-200 rounded-xl bg-gray-50/50 p-3 space-y-2">
+                  {/* Row 1 */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <p className="text-[10px] text-gray-400 mb-0.5 ml-0.5">Description</p>
+                      <input className="input-field text-sm py-1.5 w-full bg-white" placeholder="e.g. Ansys RF License" value={item.description}
+                        onChange={(e) => updateItem(i, 'description', e.target.value)} required />
+                    </div>
+                    <div className="w-20 shrink-0">
+                      <p className="text-[10px] text-gray-400 mb-0.5 ml-0.5">Qty</p>
+                      <input type="number" className="input-field text-sm py-1.5 text-center w-full bg-white" min={1} value={item.quantity}
+                        onChange={(e) => updateItem(i, 'quantity', Number(e.target.value))} required />
+                    </div>
+                    <div className="w-32 shrink-0 text-right">
+                      <p className="text-[10px] text-gray-400 mb-0.5">Total</p>
+                      <p className="text-sm font-bold text-violet-700 py-1.5">{formatCurrency(item.total)}</p>
+                    </div>
+                    <button type="button" onClick={() => removeItem(i)}
+                      className="shrink-0 mt-4 w-6 h-6 flex items-center justify-center rounded-full text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors text-base leading-none">×</button>
+                  </div>
+                  {/* Row 2 */}
+                  <div className={`grid gap-2 ${showItemDiscount ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                    <div>
+                      <p className="text-[10px] text-gray-400 mb-0.5 ml-0.5">List Price (₹)</p>
+                      <input type="number" className="input-field text-sm py-1.5 text-right w-full bg-white" placeholder="0" min={0} step="0.01"
+                        value={item.listPrice ?? ''} onChange={(e) => updateItem(i, 'listPrice', Number(e.target.value))} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-gray-400 mb-0.5 ml-0.5">Strategic Price (₹)</p>
+                      <input type="number" className="input-field text-sm py-1.5 text-right w-full bg-white" placeholder="0" min={0} step="0.01"
+                        value={item.unitPrice} onChange={(e) => updateItem(i, 'unitPrice', Number(e.target.value))} required />
+                    </div>
+                    {showItemDiscount && (
+                      <div>
+                        <p className="text-[10px] text-gray-400 mb-0.5 ml-0.5">Discount (%)</p>
+                        <input type="number" className="input-field text-sm py-1.5 text-center w-full bg-white" placeholder="0" min={0} max={100} step="0.01"
+                          value={item.discount ?? ''} onChange={(e) => updateItem(i, 'discount', Number(e.target.value))} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
           <div className="bg-gray-50 rounded-xl p-4 text-sm space-y-1">
             <div className="flex justify-between"><span className="text-gray-500">Base Price</span><span>{formatCurrency(subtotal)}</span></div>
+            {form.discountApplicable && discountAmount > 0 && (
+              <div className="flex justify-between text-red-600">
+                <span>Discount {form.discountType === 'percent' ? `(${form.discountValue}%)` : '(Flat)'}</span>
+                <span>− {formatCurrency(discountAmount)}</span>
+              </div>
+            )}
             {form.gstApplicable && <div className="flex justify-between"><span className="text-gray-500">GST @ {form.taxRate}%</span><span>{formatCurrency(taxAmount)}</span></div>}
             <div className="flex justify-between font-bold text-base pt-2 border-t border-gray-200">
               <span>Final Price</span><span className="text-violet-700">{formatCurrency(totalAmount)}</span>
@@ -780,7 +887,22 @@ This offer may be subject to errors and changes.`;
       {/* Edit Quotation Modal */}
       <Modal isOpen={showEditModal} onClose={() => { setShowEditModal(false); setSelectedQuotation(null); }} title="Edit Quotation" size="xl">
         <form onSubmit={handleEdit} className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-          <div className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Lead</label>
+              <div className="input-field bg-gray-50 text-gray-600 cursor-not-allowed">
+                {(selectedQuotation?.leadId as Lead)?.companyName || '—'}
+              </div>
+            </div>
+            <div>
+              <label className="label">Valid Until</label>
+              <input type="date" className="input-field" value={form.validUntil}
+                onChange={(e) => setForm(f => ({ ...f, validUntil: e.target.value }))} />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 p-3 bg-gray-50 rounded-lg">
+            {/* GST */}
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={form.gstApplicable}
                 onChange={(e) => setForm(f => ({ ...f, gstApplicable: e.target.checked }))}
@@ -790,9 +912,30 @@ This offer may be subject to errors and changes.`;
             {form.gstApplicable && (
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-500">Tax Rate:</span>
-                <input type="number" className="input-field w-20 text-sm" value={form.taxRate}
+                <input type="number" className="input-field w-20 text-sm py-1" value={form.taxRate}
                   onChange={(e) => setForm(f => ({ ...f, taxRate: Number(e.target.value) }))} min="0" max="100" />
                 <span className="text-sm text-gray-500">%</span>
+              </div>
+            )}
+            {/* Divider */}
+            <div className="h-4 w-px bg-gray-300" />
+            {/* Discount */}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={form.discountApplicable}
+                onChange={(e) => setForm(f => ({ ...f, discountApplicable: e.target.checked, discountValue: 0 }))}
+                className="w-4 h-4 accent-violet-600" />
+              <span className="text-sm font-medium text-gray-700">Discount</span>
+            </label>
+            {form.discountApplicable && (
+              <div className="flex items-center gap-2">
+                <select className="input-field py-1 text-sm w-24"
+                  value={form.discountType}
+                  onChange={(e) => setForm(f => ({ ...f, discountType: e.target.value as 'percent' | 'flat' }))}>
+                  <option value="percent">%</option>
+                  <option value="flat">₹ Flat</option>
+                </select>
+                <input type="number" className="input-field w-24 text-sm py-1" value={form.discountValue}
+                  onChange={(e) => setForm(f => ({ ...f, discountValue: Number(e.target.value) }))} min="0" step="0.01" />
               </div>
             )}
           </div>
@@ -800,7 +943,18 @@ This offer may be subject to errors and changes.`;
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="label !mb-0">Line Items</label>
-              <button type="button" onClick={addItem} className="text-xs text-violet-600 hover:text-violet-800 font-medium">+ Add Row</button>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-500">
+                  <input type="checkbox" checked={showItemDiscount}
+                    onChange={(e) => {
+                      setShowItemDiscount(e.target.checked);
+                      if (!e.target.checked) setItems(prev => prev.map(it => ({ ...it, discount: 0, total: it.quantity * it.unitPrice })));
+                    }}
+                    className="w-3.5 h-3.5 accent-violet-600" />
+                  Item Discount
+                </label>
+                <button type="button" onClick={addItem} className="text-xs text-violet-600 hover:text-violet-800 font-medium">+ Add Row</button>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
@@ -810,6 +964,7 @@ This offer may be subject to errors and changes.`;
                     <th className="px-2 py-2 text-center text-xs text-gray-500 font-medium w-16">Qty</th>
                     <th className="px-2 py-2 text-right text-xs text-gray-500 font-medium">List Price</th>
                     <th className="px-2 py-2 text-right text-xs text-gray-500 font-medium">Strategic Price</th>
+                    {showItemDiscount && <th className="px-2 py-2 text-right text-xs text-gray-500 font-medium w-20">Disc %</th>}
                     <th className="px-2 py-2 text-right text-xs text-gray-500 font-medium w-24">Total</th>
                     <th className="w-6"></th>
                   </tr>
@@ -833,6 +988,12 @@ This offer may be subject to errors and changes.`;
                         <input type="number" className="input-field text-sm py-1 text-right" placeholder="Strategic Price" min={0} step="0.01"
                           value={item.unitPrice} onChange={(e) => updateItem(i, 'unitPrice', Number(e.target.value))} required />
                       </td>
+                      {showItemDiscount && (
+                        <td className="px-2 py-1">
+                          <input type="number" className="input-field text-sm py-1 text-right" placeholder="0" min={0} max={100} step="0.01"
+                            value={item.discount ?? ''} onChange={(e) => updateItem(i, 'discount', Number(e.target.value))} />
+                        </td>
+                      )}
                       <td className="px-2 py-1 text-right font-medium text-gray-700">{formatCurrency(item.total)}</td>
                       <td className="px-1 py-1">
                         {items.length > 1 && (
@@ -846,8 +1007,15 @@ This offer may be subject to errors and changes.`;
             </div>
           </div>
 
+          {/* Overall Discount */}
           <div className="bg-gray-50 rounded-xl p-4 text-sm space-y-1">
             <div className="flex justify-between"><span className="text-gray-500">Base Price</span><span>{formatCurrency(subtotal)}</span></div>
+            {form.discountApplicable && discountAmount > 0 && (
+              <div className="flex justify-between text-red-600">
+                <span>Discount {form.discountType === 'percent' ? `(${form.discountValue}%)` : '(Flat)'}</span>
+                <span>− {formatCurrency(discountAmount)}</span>
+              </div>
+            )}
             {form.gstApplicable && <div className="flex justify-between"><span className="text-gray-500">GST @ {form.taxRate}%</span><span>{formatCurrency(taxAmount)}</span></div>}
             <div className="flex justify-between font-bold text-base pt-2 border-t border-gray-200">
               <span>Final Price</span><span className="text-violet-700">{formatCurrency(totalAmount)}</span>
@@ -884,22 +1052,38 @@ This offer may be subject to errors and changes.`;
         </form>
       </Modal>
 
-      {/* Send Email Confirmation Modal */}
-      <Modal isOpen={!!sendEmailTarget} onClose={() => setSendEmailTarget(null)} title="Send Quotation Email" size="sm">
+      {/* Send Email Modal */}
+      <Modal isOpen={!!sendEmailTarget} onClose={() => setSendEmailTarget(null)} title="Send Quotation Email" size="md">
         {sendEmailTarget && (
           <div className="space-y-4">
             <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-800">
               <p className="font-semibold mb-1">{sendEmailTarget.quotationNumber}</p>
               <p className="text-xs text-blue-600">{(sendEmailTarget.leadId as any)?.companyName}</p>
             </div>
-            <div className="flex items-center gap-2 text-sm text-gray-700">
-              <Mail size={14} className="text-gray-400 flex-shrink-0" />
-              <span>Sending to: <strong className="text-violet-700">{(sendEmailTarget.leadId as any)?.email || 'Lead email on file'}</strong></span>
+            <div>
+              <label className="label">Send To *</label>
+              <ContactEmailPicker
+                required
+                placeholder="Recipient email"
+                value={sendToEmail}
+                onChange={setSendToEmail}
+                defaultContactType="CUSTOMER"
+              />
             </div>
-            <p className="text-xs text-gray-500">The quotation PDF will be attached and sent to the lead's contact email address.</p>
+            <div>
+              <label className="label">CC</label>
+              <ContactEmailPicker
+                placeholder="CC recipients (optional)"
+                value={sendCcEmail}
+                onChange={setSendCcEmail}
+                defaultContactType="ALL"
+                applyLabel="Add to CC"
+              />
+            </div>
+            <p className="text-xs text-gray-500">The quotation PDF will be attached to the email.</p>
             <div className="flex gap-2 justify-end pt-1">
               <button onClick={() => setSendEmailTarget(null)} className="btn-secondary py-1.5 text-sm">Cancel</button>
-              <button onClick={handleConfirmSendEmail} disabled={sendEmailSending} className="btn-primary py-1.5 text-sm flex items-center gap-2">
+              <button onClick={handleConfirmSendEmail} disabled={sendEmailSending || !sendToEmail.trim()} className="btn-primary py-1.5 text-sm flex items-center gap-2">
                 <Send size={13} />
                 {sendEmailSending ? 'Sending…' : 'Send Email'}
               </button>
@@ -915,9 +1099,13 @@ This offer may be subject to errors and changes.`;
             <p className="text-sm text-purple-800 mb-3">Send this quotation request to the vendor for pricing.</p>
             <div className="mb-3">
               <label className="label">Vendor Email *</label>
-              <input type="email" className="input-field" value={vendorForm.vendorEmail}
-                onChange={(e) => setVendorForm(f => ({ ...f, vendorEmail: e.target.value }))}
-                required placeholder="vendor@example.com" />
+              <ContactEmailPicker
+                required
+                placeholder="vendor@example.com"
+                value={vendorForm.vendorEmail}
+                onChange={(val) => setVendorForm(f => ({ ...f, vendorEmail: val }))}
+                defaultContactType="ARK"
+              />
               <p className="text-xs text-gray-500 mt-1">Email where the quotation request will be sent</p>
             </div>
             <div>

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, ExternalLink, Plus, Trash2 } from 'lucide-react';
+import ExcelImportButton from '@/components/common/ExcelImportButton';
 import { accountsApi } from '@/api/accounts';
 import { leadsApi } from '@/api/leads';
 import { useAuthStore } from '@/store/authStore';
@@ -107,9 +108,32 @@ export default function AccountsPage() {
           <h1 className="page-header">Accounts</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} total accounts</p>
         </div>
-        <button onClick={openConvert} className="btn-primary flex items-center gap-2">
-          <Plus size={16} /> Convert Lead
-        </button>
+        <div className="flex items-center gap-2">
+          <ExcelImportButton
+            entityName="Accounts"
+            columnHint="leadName (company name to match lead), accountName (optional override), notes"
+            onImport={async (rows) => {
+              let imported = 0;
+              const leadsRes = await leadsApi.getAll({ limit: 500 });
+              const leadList: { _id: string; companyName: string }[] = leadsRes.data || [];
+              for (const row of rows) {
+                const ln = (row.leadName || row.companyName || row.company || row['lead name'] || '').toLowerCase();
+                if (!ln) continue;
+                const lead = leadList.find(l => l.companyName.toLowerCase().includes(ln));
+                if (!lead) continue;
+                try {
+                  await accountsApi.convert({ leadId: lead._id, accountName: row.accountName || row['account name'] || lead.companyName, notes: row.notes || '' });
+                  imported++;
+                } catch { /* skip duplicate or invalid */ }
+              }
+              load();
+              return { imported };
+            }}
+          />
+          <button onClick={openConvert} className="btn-primary flex items-center gap-2">
+            <Plus size={16} /> Convert Lead
+          </button>
+        </div>
       </div>
 
       <div className="relative max-w-xs">

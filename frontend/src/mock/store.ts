@@ -56,6 +56,9 @@ export let SALARIES: any[] = [];
 // ─── TRAININGS ───────────────────────────────────────────────────────────────
 export let TRAININGS: any[] = [];
 
+// ─── CONTACTS ────────────────────────────────────────────────────────────────
+export let CONTACTS: any[] = [];
+
 // ─── CRUD HELPERS ────────────────────────────────────────────────────────────
 const delay = (ms = 300) => new Promise(r => setTimeout(r, ms));
 
@@ -73,6 +76,7 @@ const orgPayments     = () => PAYMENTS.filter((p: any) => p.organizationId === _
 const orgVisits       = () => ENGINEER_VISITS.filter((v: any) => v.organizationId === _currentOrgId);
 const orgSalaries     = () => SALARIES.filter((s: any) => s.organizationId === _currentOrgId);
 const orgTrainings    = () => TRAININGS.filter((t: any) => t.organizationId === _currentOrgId);
+const orgContacts     = () => CONTACTS.filter((c: any) => c.organizationId === _currentOrgId);
 
 export const mockPaginate = <T>(items: T[], page = 1, limit = 15) => {
   const total = items.length;
@@ -908,5 +912,76 @@ export const mockDashboard = {
       pendingVisitsList: visits.filter((v: any) => v.hrStatus === 'Pending').slice(0, 10),
       recentSalaries:   salaries.slice(-10).reverse(),
     };
+  },
+};
+
+// ─── CONTACTS MOCK ───────────────────────────────────────────────────────────
+export const mockContacts = {
+  getAll: async (params: Record<string, unknown> = {}) => {
+    await delay();
+    let items = [...orgContacts()];
+    if (params.contactType) items = items.filter((c: any) => c.contactType === params.contactType);
+    if (params.search) {
+      const s = (params.search as string).toLowerCase();
+      items = items.filter((c: any) =>
+        c.name.toLowerCase().includes(s) ||
+        c.email.toLowerCase().includes(s) ||
+        (c.companyName || '').toLowerCase().includes(s)
+      );
+    }
+    items.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return mockPaginate(items, Number(params.page) || 1, Number(params.limit) || 15);
+  },
+  getById: async (id: string) => {
+    await delay();
+    return orgContacts().find((c: any) => c._id === id) || null;
+  },
+  getByAccount: async (accountId: string) => {
+    await delay();
+    return orgContacts().filter((c: any) =>
+      c.linkedAccountId?._id === accountId || c.linkedAccountId === accountId
+    );
+  },
+  create: async (data: Record<string, unknown>, currentUser: any) => {
+    await delay(400);
+    const account = data.linkedAccountId
+      ? orgAccounts().find((a: any) => a._id === data.linkedAccountId)
+      : null;
+    const contact = {
+      _id: 'c' + uid(),
+      organizationId: _currentOrgId,
+      ...data,
+      linkedAccountId: account
+        ? { _id: account._id, accountName: account.accountName }
+        : undefined,
+      createdBy: {
+        _id: currentUser._id,
+        name: currentUser.name,
+        email: currentUser.email,
+      },
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    CONTACTS = [contact, ...CONTACTS];
+    return contact;
+  },
+  update: async (id: string, data: Record<string, unknown>) => {
+    await delay(300);
+    const account = data.linkedAccountId
+      ? orgAccounts().find((a: any) => a._id === data.linkedAccountId)
+      : undefined;
+    const patch: any = { ...data, updatedAt: now() };
+    if (account) patch.linkedAccountId = { _id: account._id, accountName: account.accountName };
+    CONTACTS = CONTACTS.map((c: any) =>
+      c._id === id && c.organizationId === _currentOrgId ? { ...c, ...patch } : c
+    );
+    return orgContacts().find((c: any) => c._id === id)!;
+  },
+  delete: async (id: string) => {
+    await delay(300);
+    CONTACTS = CONTACTS.filter(
+      (c: any) => !(c._id === id && c.organizationId === _currentOrgId)
+    );
+    return { success: true };
   },
 };

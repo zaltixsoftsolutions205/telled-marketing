@@ -25,7 +25,8 @@ import EngineerPerformancePage from '@/pages/EngineerPerformancePage';
 import AttendancePage from '@/pages/AttendancePage';
 import LeavePage from '@/pages/LeavePage';
 import SettingsPage from '@/pages/SettingsPage';
-import VisitsAndClaimsPage from '@/pages/VisitsAndClaimsPage'; // Import the new page
+import VisitsAndClaimsPage from '@/pages/VisitsAndClaimsPage';
+import ContactsPage from '@/pages/ContactsPage';
 import type { Role } from '@/types';
 
 // Route guards
@@ -102,6 +103,9 @@ export default function App() {
             {/* Attendance & Leave */}
             <Route path="attendance" element={<RoleRoute roles={['admin', 'hr_finance', 'engineer', 'sales']}><AttendancePage /></RoleRoute>} />
             <Route path="leaves" element={<RoleRoute roles={['admin', 'hr_finance', 'engineer', 'sales']}><LeavePage /></RoleRoute>} />
+
+            {/* Contacts — all roles */}
+            <Route path="contacts" element={<RoleRoute roles={['admin', 'sales', 'engineer', 'hr_finance']}><ContactsPage /></RoleRoute>} />
 
             {/* Admin only */}
             <Route path="users" element={<RoleRoute roles={['admin']}><UsersPage /></RoleRoute>} />

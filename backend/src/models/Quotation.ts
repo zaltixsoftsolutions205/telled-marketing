@@ -4,7 +4,9 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface IQuotationItem {
   description: string;
   quantity: number;
+  listPrice?: number;
   unitPrice: number;
+  discount?: number; // per-item discount %
   total: number;
 }
 
@@ -17,6 +19,10 @@ export interface IQuotation extends Document {
   taxRate: number;
   gstApplicable: boolean;
   taxAmount: number;
+  discountApplicable: boolean;
+  discountType: 'percent' | 'flat';
+  discountValue: number;
+  discountAmount: number;
   total: number;
   finalAmount?: number;
   status: 'Draft' | 'Sent' | 'Accepted' | 'Rejected' | 'Final';
@@ -45,7 +51,9 @@ export interface IQuotation extends Document {
 const ItemSchema = new Schema<IQuotationItem>({
   description: { type: String, required: true },
   quantity: { type: Number, required: true, min: 1 },
+  listPrice: { type: Number, default: 0 },
   unitPrice: { type: Number, required: true, min: 0 },
+  discount: { type: Number, default: 0, min: 0, max: 100 },
   total: { type: Number, required: true }
 }, { _id: false });
 
@@ -59,6 +67,10 @@ const QuotationSchema = new Schema<IQuotation>(
     taxRate: { type: Number, default: 18 },
     gstApplicable: { type: Boolean, default: true },
     taxAmount: { type: Number, required: true },
+    discountApplicable: { type: Boolean, default: false },
+    discountType: { type: String, enum: ['percent', 'flat'], default: 'percent' },
+    discountValue: { type: Number, default: 0 },
+    discountAmount: { type: Number, default: 0 },
     total: { type: Number, required: true },
     finalAmount: { type: Number },
     status: {

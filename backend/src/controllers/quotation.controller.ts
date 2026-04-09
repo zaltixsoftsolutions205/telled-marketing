@@ -9,6 +9,26 @@ import sendEmail from '../services/email.service';
 import { generateQuotationPDF as generateQuotationPDFService } from '../services/pdf.service';
 import logger from '../utils/logger';
 import path from 'path';
+import fs from 'fs';
+
+const SETTINGS_FILE = path.join(process.cwd(), 'uploads', 'settings.json');
+function getLogoPath(): string | undefined {
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      const s = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+      if (s.logoUrl) {
+        // logoUrl stored as '/uploads/filename.png' — strip leading slash before joining
+        const rel = s.logoUrl.replace(/^\/+/, '');
+        const fullPath = path.join(process.cwd(), rel);
+        if (fs.existsSync(fullPath)) return fullPath;
+        logger.warn(`Logo file not found at: ${fullPath}`);
+      }
+    }
+  } catch (e) {
+    logger.warn('getLogoPath error:', e);
+  }
+  return undefined;
+}
 
 // Generate quotation number: QT-YYYY-XXXX
 const generateQuotationNumber = () => {
@@ -300,10 +320,16 @@ export const sendQuotationEmail = async (req: AuthRequest, res: Response): Promi
     }
 
     const lead = quotation.leadId as any;
-    if (!lead?.email) {
-      sendError(res, 'Lead email not found', 400);
+
+    // Allow caller to override recipient(s); fall back to lead email
+    const toEmail: string = req.body?.toEmail || lead?.email;
+    if (!toEmail) {
+      sendError(res, 'Recipient email not found. Please provide a toEmail or ensure the lead has an email.', 400);
       return;
     }
+
+    // Optional CC recipients (comma-separated)
+    const ccEmail: string | undefined = req.body?.cc || undefined;
 
     // Generate PDF
     const pdfFile = await generateQuotationPDFService({
@@ -320,16 +346,24 @@ export const sendQuotationEmail = async (req: AuthRequest, res: Response): Promi
       items: quotation.items.map(i => ({
         description: i.description,
         quantity: i.quantity,
+        listPrice: (i as any).listPrice,
         unitPrice: i.unitPrice,
+        discount: (i as any).discount,
         total: i.total,
       })),
-      subtotal: quotation.subtotal,
-      taxRate: quotation.taxRate,
-      taxAmount: quotation.taxAmount,
-      total: quotation.total,
+      subtotal: quotation.subtotal ?? 0,
+      taxRate: quotation.taxRate ?? 0,
+      taxAmount: quotation.taxAmount ?? 0,
+      total: quotation.total ?? 0,
+      gstApplicable: quotation.gstApplicable ?? false,
+      discountApplicable: quotation.discountApplicable ?? false,
+      discountType: quotation.discountType ?? 'percent',
+      discountValue: quotation.discountValue ?? 0,
+      discountAmount: quotation.discountAmount ?? 0,
       validUntil: quotation.validUntil,
       notes: quotation.notes,
       terms: quotation.terms,
+      logoPath: getLogoPath(),
     });
 
     const uploadDir = process.env.UPLOAD_PATH || './uploads';
@@ -352,27 +386,29 @@ export const sendQuotationEmail = async (req: AuthRequest, res: Response): Promi
     </div>
     <div class="b">
       <p>Dear <b>${lead.contactPersonName || lead.companyName}</b>,</p>
-      <p>Please find the quotation from <b>Telled CRM</b>. Details are summarised below:</p>
+      <p>Please find the quotation from <b>Telled Marketing</b>. Details are summarised below:</p>
       <table>
         <tr><td class="lbl">Quotation #</td><td>${quotation.quotationNumber}</td></tr>
         <tr><td class="lbl">Date</td><td>${new Date().toLocaleDateString('en-IN')}</td></tr>
-        <tr><td class="lbl">Sub Total</td><td>₹ ${quotation.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></tr>
-        ${quotation.gstApplicable ? `<tr><td class="lbl">GST (${quotation.taxRate}%)</td><td>₹ ${quotation.taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></tr>` : ''}
-        <tr><td class="lbl" style="background:#6d28d9;color:#fff">Total Amount</td><td style="font-weight:bold;font-size:15px">₹ ${quotation.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></tr>
+        <tr><td class="lbl">Sub Total</td><td>₹ ${(quotation.subtotal ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></tr>
+        ${quotation.discountApplicable && (quotation.discountAmount ?? 0) > 0 ? `<tr><td class="lbl" style="color:#dc2626">${quotation.discountType === 'percent' ? `Discount (${quotation.discountValue}%)` : 'Discount (Flat)'}</td><td style="color:#dc2626">− ₹ ${(quotation.discountAmount ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></tr>` : ''}
+        ${quotation.gstApplicable && quotation.taxAmount > 0 ? `<tr><td class="lbl">GST (${quotation.taxRate}%)</td><td>₹ ${quotation.taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></tr>` : ''}
+        <tr><td class="lbl" style="background:#6d28d9;color:#fff">Total Amount</td><td style="font-weight:bold;font-size:15px">₹ ${(quotation.total ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></tr>
         ${quotation.validUntil ? `<tr><td class="lbl">Valid Until</td><td>${new Date(quotation.validUntil).toLocaleDateString('en-IN')}</td></tr>` : ''}
         ${quotation.notes ? `<tr><td class="lbl">Notes</td><td>${quotation.notes}</td></tr>` : ''}
       </table>
       <p style="margin-top:16px;color:#666;font-size:13px">The detailed quotation PDF is attached to this email. Please review and revert at your earliest convenience.</p>
       <p style="color:#666;font-size:13px">For any queries, feel free to reach us at <b>${process.env.EMAIL_FROM}</b>.</p>
     </div>
-    <div class="f">© ${new Date().getFullYear()} Telled CRM &nbsp;|&nbsp; Thanks for your business!</div>
+    <div class="f">© ${new Date().getFullYear()} Telled Marketing &nbsp;|&nbsp; Thanks for your business!</div>
     </div></body></html>`;
 
     await sendEmail(
-      lead.email,
-      `Quotation ${quotation.quotationNumber} from Telled CRM`,
+      toEmail,
+      `Quotation ${quotation.quotationNumber} from Telled Marketing`,
       html,
-      [{ filename: `Quotation-${quotation.quotationNumber}.pdf`, path: pdfPath }]
+      [{ filename: `Quotation-${quotation.quotationNumber}.pdf`, path: pdfPath }],
+      ccEmail
     );
     
     await Quotation.findByIdAndUpdate(req.params.id, { 
@@ -523,18 +559,26 @@ export const generateQuotationPDF = async (req: AuthRequest, res: Response): Pro
       items: quotation.items.map(i => ({
         description: i.description,
         quantity: i.quantity,
+        listPrice: (i as any).listPrice,
         unitPrice: i.unitPrice,
+        discount: (i as any).discount,
         total: i.total,
       })),
-      subtotal: quotation.subtotal,
-      taxRate: quotation.taxRate,
-      taxAmount: quotation.taxAmount,
-      total: quotation.total,
+      subtotal: quotation.subtotal ?? 0,
+      taxRate: quotation.taxRate ?? 0,
+      taxAmount: quotation.taxAmount ?? 0,
+      total: quotation.total ?? 0,
+      gstApplicable: quotation.gstApplicable ?? false,
+      discountApplicable: quotation.discountApplicable ?? false,
+      discountType: quotation.discountType ?? 'percent',
+      discountValue: quotation.discountValue ?? 0,
+      discountAmount: quotation.discountAmount ?? 0,
       validUntil: quotation.validUntil,
       notes: quotation.notes,
       terms: quotation.terms,
+      logoPath: getLogoPath(),
     });
-    
+
     await Quotation.findByIdAndUpdate(req.params.id, { pdfPath: pdfFile });
     
     sendSuccess(res, { pdfPath: pdfFile, downloadUrl: `/uploads/${pdfFile}` }, 'PDF generated');

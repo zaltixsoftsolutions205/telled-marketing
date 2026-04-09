@@ -39,6 +39,6 @@ router.post('/:id/send-email', authorize('admin', 'sales'), sendQuotationEmail);
 router.post('/:id/send-to-vendor', authorize('admin', 'sales'), sendToVendor);
 router.post('/:id/generate-pdf', authorize('admin', 'sales'), generateQuotationPDF);
 router.patch('/:id/archive', authorize('admin'), archiveQuotation);
-router.delete('/:id', authorize('admin'), deleteQuotation);
+router.delete('/:id', authorize('admin', 'sales'), deleteQuotation);
 
 export default router;

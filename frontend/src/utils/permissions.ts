@@ -15,4 +15,8 @@ export const can = {
   approveVisits: (role: Role) => role === 'admin' || role === 'hr_finance',
   manageSalary: (role: Role) => role === 'admin' || role === 'hr_finance',
   viewDashboard: (_role: Role) => true,
+  viewContacts: (_role: Role) => true,
+  createContact: (_role: Role) => true,
+  manageAllContacts: (role: Role) => role === 'admin',
+  manageTelledContacts: (role: Role) => role === 'admin' || role === 'hr_finance',
 };

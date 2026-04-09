@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Plus, Search } from 'lucide-react';
+import ExcelImportButton from '@/components/common/ExcelImportButton';
 import { trainingApi } from '@/api/training';
 import { accountsApi } from '@/api/accounts';
 import { useAuthStore } from '@/store/authStore';
@@ -87,11 +88,37 @@ export default function TrainingPage() {
           <h1 className="page-header">Training</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} training records</p>
         </div>
-        {(user?.role === 'engineer' || user?.role === 'admin') && (
-          <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-            <Plus size={16} /> Record Training
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <ExcelImportButton
+            entityName="Trainings"
+            columnHint="accountName, customerName, trainingDate (YYYY-MM-DD), mode (Online/Offline/Hybrid), notes"
+            onImport={async (rows) => {
+              let imported = 0;
+              const accs = await accountsApi.getAll({ limit: 500 });
+              const accList: { _id: string; accountName: string }[] = accs.data || [];
+              for (const row of rows) {
+                const date = row.trainingDate || row['training date'] || row.date || '';
+                if (!date) continue;
+                const name = (row.accountName || row.account || '').toLowerCase();
+                const acc = accList.find(a => a.accountName.toLowerCase().includes(name));
+                if (!acc && !row.customerName) continue;
+                const modeRaw = (row.mode || 'Offline');
+                const mode = (['Online','Offline','Hybrid'].includes(modeRaw) ? modeRaw : 'Offline') as 'Online'|'Offline'|'Hybrid';
+                try {
+                  await trainingApi.create({ accountId: acc?._id, customerName: row.customerName || row['customer name'] || '', trainingDate: date, mode, notes: row.notes || '' });
+                  imported++;
+                } catch { /* skip */ }
+              }
+              load();
+              return { imported };
+            }}
+          />
+          {(user?.role === 'engineer' || user?.role === 'admin') && (
+            <button onClick={openCreate} className="btn-primary flex items-center gap-2">
+              <Plus size={16} /> Record Training
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filters */}

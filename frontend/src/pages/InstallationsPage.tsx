@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Plus, Search } from 'lucide-react';
+import ExcelImportButton from '@/components/common/ExcelImportButton';
 import { installationsApi } from '@/api/installations';
 import { accountsApi } from '@/api/accounts';
 import { usersApi } from '@/api/users';
@@ -90,9 +91,33 @@ export default function InstallationsPage() {
           <h1 className="page-header">Installations</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} total</p>
         </div>
-        {(user?.role === 'admin' || user?.role === 'engineer') && (
-          <button onClick={openCreate} className="btn-primary flex items-center gap-2"><Plus size={16} /> Schedule</button>
-        )}
+        <div className="flex items-center gap-2">
+          <ExcelImportButton
+            entityName="Installations"
+            columnHint="accountName, scheduledDate (YYYY-MM-DD), siteAddress, licenseVersion, notes"
+            onImport={async (rows) => {
+              let imported = 0;
+              const accs = await accountsApi.getAll({ limit: 500 });
+              const accList: { _id: string; accountName: string }[] = accs.data || [];
+              for (const row of rows) {
+                const date = row.scheduledDate || row['scheduled date'] || row.date || '';
+                if (!date) continue;
+                const name = (row.accountName || row.account || '').toLowerCase();
+                const acc = accList.find(a => a.accountName.toLowerCase().includes(name));
+                if (!acc) continue;
+                try {
+                  await installationsApi.create({ accountId: acc._id, scheduledDate: date, siteAddress: row.siteAddress || row['site address'] || '', licenseVersion: row.licenseVersion || row.version || '', notes: row.notes || '' });
+                  imported++;
+                } catch { /* skip */ }
+              }
+              load();
+              return { imported };
+            }}
+          />
+          {(user?.role === 'admin' || user?.role === 'engineer') && (
+            <button onClick={openCreate} className="btn-primary flex items-center gap-2"><Plus size={16} /> Schedule</button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3">

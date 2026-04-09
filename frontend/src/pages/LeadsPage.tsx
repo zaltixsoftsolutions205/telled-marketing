@@ -10,6 +10,7 @@ import StatusBadge from '@/components/common/StatusBadge';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
+import ContactEmailPicker from '@/components/common/ContactEmailPicker';
 import { formatDate } from '@/utils/formatters';
 import type { Lead, User, LeadStatus } from '@/types';
 
@@ -566,7 +567,12 @@ export default function LeadsPage() {
             </div>
             <div>
               <label className="label text-xs">OEM Email</label>
-              <input type="email" className="input-field py-1.5 text-sm" placeholder="oem@company.com" value={form.oemEmail} onChange={(e) => f('oemEmail', e.target.value)} />
+              <ContactEmailPicker
+                placeholder="oem@company.com"
+                value={form.oemEmail}
+                onChange={(val) => f('oemEmail', val)}
+                defaultContactType="ARK"
+              />
             </div>
             <div>
               <label className="label text-xs">Channel Partner</label>
@@ -683,7 +689,13 @@ export default function LeadsPage() {
               </div>
               <div className="sm:col-span-2">
                 <label className="label">Send To — OEM Email *</label>
-                <input required type="email" className="input-field" placeholder="oem@company.com" value={drfForm.oemEmail} onChange={(e) => df('oemEmail', e.target.value)} />
+                <ContactEmailPicker
+                  required
+                  placeholder="oem@company.com"
+                  value={drfForm.oemEmail}
+                  onChange={(val) => df('oemEmail', val)}
+                  defaultContactType="ARK"
+                />
               </div>
             </div>
 
@@ -748,7 +760,12 @@ export default function LeadsPage() {
               </div>
               <div>
                 <label className="label text-xs">OEM Email</label>
-                <input type="email" className="input-field py-1.5 text-sm" placeholder="oem@company.com" value={editForm.oemEmail} onChange={(e) => ef('oemEmail', e.target.value)} />
+                <ContactEmailPicker
+                  placeholder="oem@company.com"
+                  value={editForm.oemEmail}
+                  onChange={(val) => ef('oemEmail', val)}
+                  defaultContactType="ARK"
+                />
               </div>
               <div>
                 <label className="label text-xs">Channel Partner</label>

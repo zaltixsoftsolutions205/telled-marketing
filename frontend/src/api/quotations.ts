@@ -42,8 +42,11 @@ export const quotationsApi = {
     return data.data;
   },
 
-  sendEmail: async (id: string) => {
-    const { data } = await api.post(`/quotations/${id}/send-email`);
+  sendEmail: async (id: string, toEmail?: string, cc?: string) => {
+    const { data } = await api.post(`/quotations/${id}/send-email`, {
+      ...(toEmail ? { toEmail } : {}),
+      ...(cc ? { cc } : {}),
+    });
     return data.data;
   },
 

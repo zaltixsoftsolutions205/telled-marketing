@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { CalendarCheck, Plus, Users, UserCheck, UserX, Clock, LogIn, LogOut } from 'lucide-react';
+import ExcelImportButton from '@/components/common/ExcelImportButton';
 import { attendanceApi } from '@/api/attendance';
 import { usersApi } from '@/api/users';
 import { useAuthStore } from '@/store/authStore';
@@ -198,11 +199,34 @@ export default function AttendancePage() {
           <h1 className="page-header">Attendance</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} records</p>
         </div>
-        {isHR && (
-          <button onClick={openMark} className="btn-primary flex items-center gap-2">
-            <Plus size={16} /> Mark Attendance
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {isHR && (
+            <ExcelImportButton
+              entityName="Attendance"
+              columnHint="date (YYYY-MM-DD), status (Present/Absent/Half Day/Leave/Holiday), checkIn (HH:MM), checkOut (HH:MM), notes"
+              onImport={async (rows) => {
+                let imported = 0;
+                for (const row of rows) {
+                  const date = row.date || row.Date || '';
+                  if (!date) continue;
+                  const st = row.status || row.Status || 'Present';
+                  const status = (['Present','Absent','Half Day','Leave','Holiday'].includes(st) ? st : 'Present') as 'Present'|'Absent'|'Half Day'|'Leave'|'Holiday';
+                  try {
+                    await attendanceApi.mark({ date, status, checkIn: row.checkIn || row['check in'] || undefined, checkOut: row.checkOut || row['check out'] || undefined, notes: row.notes || '' });
+                    imported++;
+                  } catch { /* skip */ }
+                }
+                load();
+                return { imported };
+              }}
+            />
+          )}
+          {isHR && (
+            <button onClick={openMark} className="btn-primary flex items-center gap-2">
+              <Plus size={16} /> Mark Attendance
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Employee Check-In / Check-Out Panel */}

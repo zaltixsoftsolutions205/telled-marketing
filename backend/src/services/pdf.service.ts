@@ -181,7 +181,7 @@ export const generateDRFPDF = (data: {
   // ── Footer ────────────────────────────────────────────────────────────────
   doc.fillColor(VIOLET).rect(0, y + 8, W, 22).fill();
   doc.fillColor('#d4c5f0').fontSize(7.5).font('Helvetica')
-     .text('This is a system-generated document from Telled CRM  |  Confidential', 0, y + 13, { width: W, align: 'center' });
+     .text('This is a system-generated document from Telled Marketing  |  Confidential', 0, y + 13, { width: W, align: 'center' });
 
   doc.end();
   stream.on('finish', () => { logger.info(`DRF PDF generated: ${fileName}`); resolve(fileName); });
@@ -223,9 +223,11 @@ export const generateQuotationPDF = (data: {
   salesPersonName?: string;
   salesPersonEmail?: string;
   salesPersonPhone?: string;
-  items: Array<{ description: string; quantity: number; unitPrice: number; total: number }>;
-  subtotal: number; taxRate: number; taxAmount: number; total: number;
+  items: Array<{ description: string; quantity: number; listPrice?: number; discount?: number; unitPrice: number; total: number }>;
+  subtotal: number; taxRate: number; taxAmount: number; total: number; gstApplicable?: boolean;
+  discountApplicable?: boolean; discountType?: 'percent' | 'flat'; discountValue?: number; discountAmount?: number;
   validUntil?: Date; notes?: string; terms?: string;
+  logoPath?: string;
 }): Promise<string> => new Promise((resolve, reject) => {
   const fileName = `quotation-${data.quotationNumber}-${Date.now()}.pdf`;
   const filePath = path.join(uploadDir, fileName);
@@ -253,11 +255,15 @@ export const generateQuotationPDF = (data: {
 
   // ── 1. LOGOS ROW ──────────────────────────────────────────────────────────
   let y = 20;
-  // Telled logo text (left)
-  doc.fillColor(VIOLET).fontSize(18).font('Helvetica-Bold')
-     .text('TELLED', M + 8, y + 8);
-  doc.fillColor(GRAY).fontSize(9).font('Helvetica')
-     .text('MARKETING', M + 8, y + 28);
+  // Telled logo (left) — image if available, text fallback
+  const logoH = 40;
+  const supportedExt = /\.(png|jpg|jpeg)$/i;
+  if (data.logoPath && fs.existsSync(data.logoPath) && supportedExt.test(data.logoPath)) {
+    doc.image(data.logoPath, M + 8, y + 6, { height: logoH, fit: [160, logoH] });
+  } else {
+    doc.fillColor(VIOLET).fontSize(18).font('Helvetica-Bold').text('TELLED', M + 8, y + 8);
+    doc.fillColor(GRAY).fontSize(9).font('Helvetica').text('MARKETING', M + 8, y + 28);
+  }
   // OEM badge (right)
   const oemLabel = data.oemName || 'OEM';
   doc.fillColor(DARK).fontSize(11).font('Helvetica-Bold')
@@ -347,13 +353,15 @@ export const generateQuotationPDF = (data: {
   y += 18;
 
   // ── 5. ITEMS TABLE ────────────────────────────────────────────────────────
+  const hasItemDiscount = data.items.some(i => (i as any).discount > 0);
   const iCols = [
     { lbl: 'Sr. No',               w: 35,  al: 'center' as const },
-    { lbl: 'Product Description',  w: 155, al: 'center' as const },
+    { lbl: 'Product Description',  w: hasItemDiscount ? 130 : 155, al: 'center' as const },
     { lbl: 'Qty',                  w: 30,  al: 'center' as const },
-    { lbl: 'List Price Per Qty',   w: 95,  al: 'center' as const },
-    { lbl: 'Strategic Price Per Qty', w: 95, al: 'center' as const },
-    { lbl: 'Total',                w: 125, al: 'center' as const },
+    { lbl: 'List Price Per Qty',   w: 85,  al: 'center' as const },
+    { lbl: 'Strategic Price Per Qty', w: 85, al: 'center' as const },
+    ...(hasItemDiscount ? [{ lbl: 'Disc %', w: 45, al: 'center' as const }] : []),
+    { lbl: 'Total',                w: hasItemDiscount ? 125 : 125, al: 'center' as const },
   ];
   let ix = M;
   iCols.forEach(c => {
@@ -368,12 +376,14 @@ export const generateQuotationPDF = (data: {
   data.items.forEach((item, idx) => {
     const rh = 20;
     ix = M;
+    const itemDisc = (item as any).discount ?? 0;
     const vals = [
       String(idx + 1),
       item.description,
       String(item.quantity),
+      fmtINR((item as any).listPrice || item.unitPrice),
       fmtINR(item.unitPrice),
-      fmtINR(item.unitPrice),
+      ...(hasItemDiscount ? [`${itemDisc > 0 ? itemDisc + '%' : '—'}`] : []),
       fmtINR(item.total),
     ];
     iCols.forEach((c, ci) => {
@@ -390,17 +400,22 @@ export const generateQuotationPDF = (data: {
   const sumW = 220, sumLW = 100, sumVW = 120, sumH = 18;
   const sumX = W - M - sumW;
   const pricingRows = [
-    { lbl: 'Base Price',  val: fmtINR(data.subtotal), bold: false, bg: '#fff' },
-    { lbl: `GST @ ${data.taxRate}%`, val: fmtINR(data.taxAmount), bold: false, bg: '#fff' },
-    { lbl: 'Final Price', val: fmtINR(data.total),    bold: true,  bg: LVIO   },
+    { lbl: 'Base Price',  val: fmtINR(data.subtotal), bold: false, bg: '#fff', color: DARK },
+    ...(data.discountApplicable && (data.discountAmount ?? 0) > 0
+      ? [{ lbl: data.discountType === 'percent' ? `Discount (${data.discountValue ?? 0}%)` : 'Discount (Flat)', val: `- ${fmtINR(data.discountAmount ?? 0)}`, bold: false, bg: '#fff8f8', color: '#dc2626' }]
+      : []),
+    ...(data.gstApplicable && data.taxAmount > 0
+      ? [{ lbl: `GST @ ${data.taxRate}%`, val: fmtINR(data.taxAmount), bold: false, bg: '#fff', color: DARK }]
+      : []),
+    { lbl: 'Final Price', val: fmtINR(data.total),    bold: true,  bg: LVIO, color: DARK },
   ];
   pricingRows.forEach(r => {
     fillCell(sumX, y, sumW, sumH, r.bg);
     drawBorder(sumX, y, sumW, sumH);
     doc.moveTo(sumX + sumLW, y).lineTo(sumX + sumLW, y + sumH).stroke(BORDER);
-    doc.fillColor(DARK).fontSize(8).font(r.bold ? 'Helvetica-Bold' : 'Helvetica')
+    doc.fillColor(r.color ?? DARK).fontSize(8).font(r.bold ? 'Helvetica-Bold' : 'Helvetica')
        .text(r.lbl, sumX + 4, y + 5, { width: sumLW - 8, align: 'right', lineBreak: false });
-    doc.fillColor(DARK).fontSize(8).font(r.bold ? 'Helvetica-Bold' : 'Helvetica')
+    doc.fillColor(r.color ?? DARK).fontSize(8).font(r.bold ? 'Helvetica-Bold' : 'Helvetica')
        .text(r.val, sumX + sumLW + 4, y + 5, { width: sumVW - 8, align: 'right', lineBreak: false });
     y += sumH;
   });
@@ -468,7 +483,7 @@ export const generatePayslipPDF = (data: {
   doc.pipe(stream);
 
   doc.fontSize(20).fillColor('#4f2d7f').text('PAYSLIP', { align: 'center' });
-  doc.fontSize(12).fillColor('#666').text('Telled CRM', { align: 'center' }); doc.moveDown();
+  doc.fontSize(12).fillColor('#666').text('Telled Marketing', { align: 'center' }); doc.moveDown();
   doc.moveTo(50, 110).lineTo(550, 110).stroke('#ddd');
   doc.fontSize(12).fillColor('#333');
   doc.text(`Employee: ${data.employeeName}`, 50, 125); doc.text(`Role: ${data.role}`, 50, 143);

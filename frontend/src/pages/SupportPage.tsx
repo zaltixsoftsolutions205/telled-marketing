@@ -1,6 +1,7 @@
 // frontend/src/pages/SupportPage.tsx
 import { useEffect, useState, useCallback } from 'react';
 import { Plus, Search, MessageSquarePlus, Eye, CheckCircle, XCircle, Clock } from 'lucide-react';
+import ExcelImportButton from '@/components/common/ExcelImportButton';
 import { supportApi } from '@/api/support';
 import { accountsApi } from '@/api/accounts';
 import { useAuthStore } from '@/store/authStore';
@@ -207,6 +208,30 @@ export default function SupportPage() {
           <p className="text-sm text-gray-500 mt-1">{total} total tickets</p>
         </div>
         <div className="flex gap-3">
+          <ExcelImportButton
+            entityName="Support Tickets"
+            columnHint="accountName, subject, description, priority (Low/Medium/High/Critical)"
+            onImport={async (rows) => {
+              let imported = 0;
+              const accs = await accountsApi.getAll({ limit: 500 });
+              const accList: { _id: string; accountName: string }[] = accs.data || [];
+              for (const row of rows) {
+                const subject = row.subject || row.Subject || '';
+                if (!subject) continue;
+                const name = (row.accountName || row.account || '').toLowerCase();
+                const acc = accList.find(a => a.accountName.toLowerCase().includes(name));
+                if (!acc) continue;
+                const p = row.priority || 'Medium';
+                const priority = (['Low','Medium','High','Critical'].includes(p) ? p : 'Medium') as 'Low'|'Medium'|'High'|'Critical';
+                try {
+                  await supportApi.create({ accountId: acc._id, subject, description: row.description || row.desc || '', priority });
+                  imported++;
+                } catch { /* skip */ }
+              }
+              loadTickets();
+              return { imported };
+            }}
+          />
           <button
             onClick={openCreate}
             className="flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors"

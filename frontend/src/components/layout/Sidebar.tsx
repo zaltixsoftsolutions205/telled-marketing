@@ -6,6 +6,7 @@ import {
   ShoppingCart, Wrench, Headphones, Receipt, CreditCard,
   CalendarCheck, DollarSign, UserCog, LogOut, ChevronDown, ChevronRight,
   FileBadge, GraduationCap, TrendingUp, CalendarDays, Calendar, Settings,
+  BookUser,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useLogoStore } from '@/store/logoStore';
@@ -22,11 +23,12 @@ const roleColors: Record<string, string> = {
 };
 
 const salesNav = [
-  { to: '/leads',       label: 'Leads',           icon: Users },
-  { to: '/drfs',        label: 'DRF Management',  icon: FileBadge },
-  { to: '/quotations',  label: 'Quotations',       icon: FileText },
-  { to: '/purchases',   label: 'Purchase Orders',  icon: ShoppingCart },
-  { to: '/accounts',    label: 'Accounts',         icon: Building2 },
+  { to: '/leads',      label: 'Leads',          icon: Users },
+  { to: '/drfs',       label: 'DRF Management', icon: FileBadge },
+  { to: '/quotations', label: 'Quotations',      icon: FileText },
+  { to: '/purchases',  label: 'Purchase Orders', icon: ShoppingCart },
+  { to: '/accounts',   label: 'Accounts',        icon: Building2 },
+  { to: '/contacts',   label: 'Contacts',        icon: BookUser },
 ];
 
 const engineerNav = [
@@ -34,10 +36,11 @@ const engineerNav = [
   { to: '/installations',        label: 'Installations',     icon: Wrench },
   { to: '/support',              label: 'Support',           icon: Headphones },
   { to: '/training',             label: 'Training',          icon: GraduationCap },
-  { to: '/visits-and-claims',    label: 'Visits & Claims',   icon: CalendarCheck }, // Updated path
+  { to: '/visits-and-claims',    label: 'Visits & Claims',   icon: CalendarCheck },
   { to: '/engineer-performance', label: 'My Performance',    icon: TrendingUp },
   { to: '/attendance',           label: 'My Attendance',     icon: CalendarDays },
   { to: '/leaves',               label: 'My Leaves',         icon: Calendar },
+  { to: '/contacts',             label: 'Contacts',          icon: BookUser },
 ];
 
 const hrNav = [
@@ -47,7 +50,8 @@ const hrNav = [
   { to: '/salary',          label: 'Salary',            icon: DollarSign },
   { to: '/attendance',      label: 'Attendance',        icon: CalendarDays },
   { to: '/leaves',          label: 'Leave Management',  icon: CalendarDays },
-  { to: '/accounts',        label: 'Accounts',          icon: Building2 },
+  { to: '/accounts',   label: 'Accounts',  icon: Building2 },
+  { to: '/contacts',   label: 'Contacts',  icon: BookUser },
 ];
 
 const adminSections = [
@@ -169,6 +173,7 @@ export default function Sidebar() {
               <SidebarSection key={section.label} label={section.label} items={section.items} />
             ))}
             <div className="mt-2 border-t border-gray-100 pt-2 space-y-0.5">
+              <NavItem to="/contacts" label="Contacts" icon={BookUser} />
               <NavItem to="/users" label="Users" icon={UserCog} />
               <NavItem to="/settings" label="Settings" icon={Settings} />
             </div>

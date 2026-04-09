@@ -1,6 +1,7 @@
 // frontend/src/pages/VisitsAndClaimsPage.tsx
 import { useState, useEffect } from 'react';
 import { CalendarCheck, Receipt, Plus, Eye, CheckCircle, XCircle, Send } from 'lucide-react';
+import ExcelImportButton from '@/components/common/ExcelImportButton';
 import { engineerVisitsApi } from '@/api/engineerVisits';
 import { visitClaimsApi, VisitClaim, Expense } from '@/api/visitClaims';
 import { accountsApi } from '@/api/accounts';
@@ -285,16 +286,41 @@ export default function VisitsAndClaimsPage() {
             {activeTab === 'visits' ? 'Schedule and track engineer visits' : 'Submit and manage expense claims'}
           </p>
         </div>
-        {activeTab === 'visits' && isEngineer && (
-          <button onClick={openScheduleModal} className="btn-primary flex items-center gap-2">
-            <Plus size={16} /> Schedule Visit
-          </button>
-        )}
-        {activeTab === 'claims' && isEngineer && (
-          <button onClick={openClaimModal} className="btn-primary flex items-center gap-2">
-            <Plus size={16} /> New Claim
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {activeTab === 'visits' && (
+            <ExcelImportButton
+              entityName="Visits"
+              columnHint="visitDate (YYYY-MM-DD), visitCharges, travelAllowance, additionalExpense, purpose, accountName"
+              onImport={async (rows) => {
+                let imported = 0;
+                const accs = await accountsApi.getAll({ limit: 500 });
+                const accList: { _id: string; accountName: string }[] = accs.data || [];
+                for (const row of rows) {
+                  const date = row.visitDate || row['visit date'] || row.date || '';
+                  if (!date) continue;
+                  const name = (row.accountName || row.account || '').toLowerCase();
+                  const acc = name ? accList.find(a => a.accountName.toLowerCase().includes(name)) : undefined;
+                  try {
+                    await engineerVisitsApi.create({ visitDate: date, visitCharges: parseFloat(row.visitCharges || '0') || 0, travelAllowance: parseFloat(row.travelAllowance || '0') || 0, additionalExpense: parseFloat(row.additionalExpense || '0') || 0, purpose: row.purpose || '', accountId: acc?._id });
+                    imported++;
+                  } catch { /* skip */ }
+                }
+                loadVisits();
+                return { imported };
+              }}
+            />
+          )}
+          {activeTab === 'visits' && isEngineer && (
+            <button onClick={openScheduleModal} className="btn-primary flex items-center gap-2">
+              <Plus size={16} /> Schedule Visit
+            </button>
+          )}
+          {activeTab === 'claims' && isEngineer && (
+            <button onClick={openClaimModal} className="btn-primary flex items-center gap-2">
+              <Plus size={16} /> New Claim
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}

@@ -231,7 +231,7 @@ router.post('/:id/send-to-vendor', authorize('admin', 'sales', 'engineer', 'hr_f
             GST: 36AAKFT2721M1ZV</p>
           </div>
           <div class="footer">
-            <p>This is an automated notification from Telled CRM. Please do not reply to this email.</p>
+            <p>This is an automated notification from Telled Marketing. Please do not reply to this email.</p>
             <p>&copy; ${new Date().getFullYear()} Telled Marketing. All rights reserved.</p>
           </div>
         </div>
@@ -239,9 +239,10 @@ router.post('/:id/send-to-vendor', authorize('admin', 'sales', 'engineer', 'hr_f
       </html>
     `;
 
+    const ccEmail: string | undefined = req.body.cc || undefined;
     await sendEmail(vendorEmailToUse, `Purchase Order ${po.poNumber} from Telled Marketing`, html, [
       { filename: `PO-${po.poNumber}.pdf`, path: pdfPath },
-    ]);
+    ], ccEmail);
 
     await PurchaseOrder.findByIdAndUpdate(req.params.id, { 
       vendorEmailSent: true, 

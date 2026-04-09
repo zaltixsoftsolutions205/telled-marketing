@@ -21,8 +21,8 @@ export const purchasesApi = {
     const { data } = await api.put(`/purchase-orders/${id}`, body);
     return data.data;
   },
-  sendToVendor: async (id: string, vendorEmail: string) => {
-    const { data } = await api.post(`/purchase-orders/${id}/send-to-vendor`, { vendorEmail });
+  sendToVendor: async (id: string, vendorEmail: string, cc?: string) => {
+    const { data } = await api.post(`/purchase-orders/${id}/send-to-vendor`, { vendorEmail, ...(cc ? { cc } : {}) });
     return data.data;
   },
   convertToAccount: async (poId: string, body: { accountName?: string; notes?: string }) => {

@@ -14,22 +14,23 @@ body{font-family:Arial,sans-serif;background:#f4f4f4;margin:0}
 table{width:100%;border-collapse:collapse;margin:16px 0}
 td{padding:8px;border:1px solid #eee}
 </style></head><body><div class="c">
-<div class="h"><h1>Telled CRM</h1><p>${title}</p></div>
+<div class="h"><h1>Telled Marketing</h1><p>${title}</p></div>
 <div class="b">${content}</div>
-<div class="f">© ${new Date().getFullYear()} Telled CRM</div>
+<div class="f">© ${new Date().getFullYear()} Telled Marketing</div>
 </div></body></html>`;
 
-const send = async (to: string, subject: string, html: string, attachments?: Array<{ filename: string; path: string }>) => {
+const send = async (to: string, subject: string, html: string, attachments?: Array<{ filename: string; path: string }>, cc?: string) => {
   try {
     const transporter = createTransporter();
     await transporter.sendMail({
-      from: `"${process.env.EMAIL_FROM_NAME || 'Telled CRM'}" <${process.env.EMAIL_FROM || process.env.SMTP_USER}>`,
+      from: `"${process.env.EMAIL_FROM_NAME || 'Telled Marketing'}" <${process.env.EMAIL_FROM || process.env.SMTP_USER}>`,
       to,
       subject,
       html,
+      ...(cc ? { cc } : {}),
       ...(attachments && attachments.length > 0 ? { attachments } : {}),
     });
-    logger.info(`Email sent to ${to}: ${subject}`);
+    logger.info(`Email sent to ${to}${cc ? ` (cc: ${cc})` : ''}: ${subject}`);
   } catch (e) {
     logger.error('Email failed:', e);
     throw e;
@@ -192,10 +193,10 @@ export const sendTicketStatusUpdate = async (
             ` : ''}
           </table>
           
-          <p>You can view the full ticket details by logging into the Telled CRM portal.</p>
+          <p>You can view the full ticket details by logging into the Telled Marketing portal.</p>
         </div>
         <div class="footer">
-          <p>This is an automated notification from Telled CRM. Please do not reply to this email.</p>
+          <p>This is an automated notification from Telled Marketing. Please do not reply to this email.</p>
         </div>
       </div>
     </body>
@@ -212,7 +213,7 @@ export const sendOTPEmail = async (to: string, otp: string) => {
   transporter.sendMail({
     from: process.env.EMAIL_FROM,
     to,
-    subject: 'Your OTP for Telled CRM',
+    subject: 'Your OTP for Telled Marketing',
     html: `
       <h2>OTP Verification</h2>
       <h1>${otp}</h1>
@@ -261,10 +262,10 @@ export const sendTicketAssignmentNotification = async (
             </tr>
           </table>
           
-          <p>Please log into the Telled CRM system to view and respond to this ticket.</p>
+          <p>Please log into the Telled Marketing system to view and respond to this ticket.</p>
         </div>
         <div class="footer">
-          <p>This is an automated notification from Telled CRM.</p>
+          <p>This is an automated notification from Telled Marketing.</p>
         </div>
       </div>
     </body>
@@ -292,7 +293,7 @@ export const sendUserCredentialsEmail = async (
     });
 
     await transporter.sendMail({
-      from: `"Telled CRM" <${process.env.USER_EMAIL_FROM}>`,
+      from: `"Telled Marketing" <${process.env.USER_EMAIL_FROM}>`,
       to,
       subject: 'Your Login Credentials',
       html: `

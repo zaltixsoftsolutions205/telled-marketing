@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Plus, DollarSign, FileDown } from 'lucide-react';
+import ExcelImportButton from '@/components/common/ExcelImportButton';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { salariesApi } from '@/api/salaries';
@@ -261,9 +262,37 @@ export default function SalaryPage() {
           <h1 className="page-header">Salary Management</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} records</p>
         </div>
-        {isHR && (
-          <button onClick={openCalc} className="btn-primary flex items-center gap-2"><Plus size={16} /> Calculate Salary</button>
-        )}
+        <div className="flex items-center gap-2">
+          {isHR && (
+            <ExcelImportButton
+              entityName="Salaries"
+              columnHint="employeeEmail or employeeName, month (1-12), year (YYYY), baseSalary, incentives, deductions"
+              onImport={async (rows) => {
+                let imported = 0;
+                const usersRes = await (await import('@/api/users')).usersApi.getAll({ limit: 500 });
+                const userList: { _id: string; name: string; email: string }[] = usersRes.data || [];
+                for (const row of rows) {
+                  const emailKey = row.employeeEmail || row.email || row.Email || '';
+                  const nameKey  = (row.employeeName || row.name || '').toLowerCase();
+                  const emp = userList.find(u => u.email === emailKey || u.name.toLowerCase().includes(nameKey));
+                  if (!emp) continue;
+                  const month = parseInt(row.month || '1');
+                  const year  = parseInt(row.year  || String(new Date().getFullYear()));
+                  if (!month || !year) continue;
+                  try {
+                    await salariesApi.calculate({ employeeId: emp._id, month, year, baseSalary: parseFloat(row.baseSalary || '0') || 0, incentives: parseFloat(row.incentives || '0') || 0, deductions: parseFloat(row.deductions || '0') || 0 });
+                    imported++;
+                  } catch { /* skip */ }
+                }
+                load();
+                return { imported };
+              }}
+            />
+          )}
+          {isHR && (
+            <button onClick={openCalc} className="btn-primary flex items-center gap-2"><Plus size={16} /> Calculate Salary</button>
+          )}
+        </div>
       </div>
 
       {/* Filters */}

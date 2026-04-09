@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Plus, Search, FileText, CreditCard, Download, Receipt, TrendingUp, AlertCircle } from 'lucide-react';
+import ExcelImportButton from '@/components/common/ExcelImportButton';
 import { invoicesApi } from '@/api/invoices';
 import { accountsApi } from '@/api/accounts';
 import StatusBadge from '@/components/common/StatusBadge';
@@ -97,7 +98,31 @@ export default function InvoicesPage() {
           <h1 className="page-header">Invoices</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} total</p>
         </div>
-        <button onClick={openCreate} className="btn-primary flex items-center gap-2"><Plus size={16} /> New Invoice</button>
+        <div className="flex items-center gap-2">
+          <ExcelImportButton
+            entityName="Invoices"
+            columnHint="accountName, amount, dueDate (YYYY-MM-DD), notes"
+            onImport={async (rows) => {
+              let imported = 0;
+              const accs = await accountsApi.getAll({ limit: 500 });
+              const accList: { _id: string; accountName: string }[] = accs.data || [];
+              for (const row of rows) {
+                const amount = parseFloat(row.amount || row.Amount || '0');
+                if (!amount) continue;
+                const name = (row.accountName || row.account || '').toLowerCase();
+                const acc = accList.find(a => a.accountName.toLowerCase().includes(name));
+                if (!acc) continue;
+                try {
+                  await invoicesApi.create({ accountId: acc._id, amount, dueDate: row.dueDate || row['due date'] || '', notes: row.notes || '' });
+                  imported++;
+                } catch { /* skip */ }
+              }
+              load();
+              return { imported };
+            }}
+          />
+          <button onClick={openCreate} className="btn-primary flex items-center gap-2"><Plus size={16} /> New Invoice</button>
+        </div>
       </div>
 
       {/* Stats */}

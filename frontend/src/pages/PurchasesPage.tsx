@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Plus, Search, Send, Building2, Pencil, CheckCircle, RefreshCw, Receipt, CreditCard, Edit, Mail, Trash2 } from 'lucide-react';
+import ExcelImportButton from '@/components/common/ExcelImportButton';
 import { purchasesApi } from '@/api/purchases';
 import { leadsApi } from '@/api/leads';
 import { accountsApi } from '@/api/accounts';
@@ -9,6 +10,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import Toast from '@/components/common/Toast';
+import ContactEmailPicker from '@/components/common/ContactEmailPicker';
 import { formatDate, formatCurrency } from '@/utils/formatters';
 import { useAuthStore } from '@/store/authStore';
 import type { PurchaseOrder, Lead, Account } from '@/types';
@@ -45,6 +47,7 @@ export default function PurchasesPage() {
   // Send to vendor modal
   const [sendTarget, setSendTarget] = useState<PurchaseOrder | null>(null);
   const [sendVendorEmail, setSendVendorEmail] = useState('');
+  const [sendVendorCc, setSendVendorCc] = useState('');
   const [sending, setSending] = useState(false);
 
   // Convert modal
@@ -193,6 +196,7 @@ export default function PurchasesPage() {
   const openSendModal = (po: PurchaseOrder) => {
     setSendTarget(po);
     setSendVendorEmail(po.vendorEmail || '');
+    setSendVendorCc('');
   };
 
   const handleSendToVendor = async (e: React.FormEvent) => {
@@ -204,9 +208,10 @@ export default function PurchasesPage() {
     }
     setSending(true);
     try {
-      await purchasesApi.sendToVendor(sendTarget._id, sendVendorEmail.trim());
+      await purchasesApi.sendToVendor(sendTarget._id, sendVendorEmail.trim(), sendVendorCc.trim() || undefined);
       setSendTarget(null);
       setSendVendorEmail('');
+      setSendVendorCc('');
       setToast({ message: `PO ${sendTarget.poNumber} sent to vendor successfully`, type: 'success' });
       load();
     } catch (err: any) {
@@ -340,8 +345,33 @@ export default function PurchasesPage() {
           <p className="text-sm text-gray-500 mt-0.5">{total} total</p>
         </div>
         <div className="flex items-center gap-2">
-          <button 
-            onClick={handleSyncEmails} 
+          <ExcelImportButton
+            entityName="Purchase Orders"
+            columnHint="poNumber, amount, vendorName, vendorEmail, receivedDate (YYYY-MM-DD), product, notes"
+            onImport={async (rows) => {
+              let imported = 0;
+              for (const row of rows) {
+                const amount = parseFloat(row.amount || row.Amount || '0');
+                if (!amount) continue;
+                try {
+                  await purchasesApi.create({
+                    poNumber:    row.poNumber || row['po number'] || row['PO Number'] || `PO-${Date.now()}`,
+                    amount,
+                    vendorName:  row.vendorName || row.vendor || row['vendor name'] || '',
+                    vendorEmail: row.vendorEmail || row['vendor email'] || '',
+                    receivedDate:row.receivedDate || row['received date'] || new Date().toISOString().split('T')[0],
+                    product:     row.product || '',
+                    notes:       row.notes || row.remarks || '',
+                  });
+                  imported++;
+                } catch { /* skip */ }
+              }
+              load();
+              return { imported };
+            }}
+          />
+          <button
+            onClick={handleSyncEmails}
             disabled={syncing}
             className="btn-secondary flex items-center gap-2"
           >
@@ -623,7 +653,12 @@ export default function PurchasesPage() {
               </div>
               <div>
                 <label className="label">Vendor Email</label>
-                <input type="email" className="input-field" placeholder="vendor@example.com" value={createForm.vendorEmail} onChange={(e) => setCreateForm(f => ({...f, vendorEmail: e.target.value}))} />
+                <ContactEmailPicker
+                  placeholder="vendor@example.com"
+                  value={createForm.vendorEmail}
+                  onChange={(val) => setCreateForm(f => ({...f, vendorEmail: val}))}
+                  defaultContactType="ARK"
+                />
               </div>
             </div>
           </div>
@@ -685,7 +720,12 @@ export default function PurchasesPage() {
               </div>
               <div>
                 <label className="label">Vendor Email</label>
-                <input type="email" className="input-field" placeholder="vendor@example.com" value={editForm.vendorEmail} onChange={(e) => setEditForm(f => ({...f, vendorEmail: e.target.value}))} />
+                <ContactEmailPicker
+                  placeholder="vendor@example.com"
+                  value={editForm.vendorEmail}
+                  onChange={(val) => setEditForm(f => ({...f, vendorEmail: val}))}
+                  defaultContactType="ARK"
+                />
               </div>
             </div>
           </div>
@@ -835,7 +875,7 @@ export default function PurchasesPage() {
       </Modal>
 
       {/* Send to Vendor Modal */}
-      <Modal isOpen={!!sendTarget} onClose={() => { setSendTarget(null); setSendVendorEmail(''); }} title={`Send PO to Vendor — ${sendTarget?.poNumber}`}>
+      <Modal isOpen={!!sendTarget} onClose={() => { setSendTarget(null); setSendVendorEmail(''); setSendVendorCc(''); }} title={`Send PO to Vendor — ${sendTarget?.poNumber}`}>
         <form onSubmit={handleSendToVendor} className="space-y-4">
           <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-sm">
             <p><strong>Customer:</strong> {(sendTarget?.leadId as Lead)?.companyName}</p>
@@ -844,19 +884,28 @@ export default function PurchasesPage() {
           </div>
           <div>
             <label className="label">Vendor Email *</label>
-            <input
+            <ContactEmailPicker
               required
-              type="email"
               autoFocus
-              className="input-field"
               placeholder="Enter vendor email to send PO"
               value={sendVendorEmail}
-              onChange={(e) => setSendVendorEmail(e.target.value)}
+              onChange={(val) => setSendVendorEmail(val)}
+              defaultContactType="ARK"
             />
             <p className="text-xs text-gray-400 mt-1">The PO will be sent to this email address with PDF attachment.</p>
           </div>
+          <div>
+            <label className="label">CC</label>
+            <ContactEmailPicker
+              placeholder="CC recipients (optional)"
+              value={sendVendorCc}
+              onChange={(val) => setSendVendorCc(val)}
+              defaultContactType="ALL"
+              applyLabel="Add to CC"
+            />
+          </div>
           <div className="flex gap-3 justify-end">
-            <button type="button" onClick={() => { setSendTarget(null); setSendVendorEmail(''); }} className="btn-secondary">Cancel</button>
+            <button type="button" onClick={() => { setSendTarget(null); setSendVendorEmail(''); setSendVendorCc(''); }} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={sending} className="btn-primary flex items-center gap-2">
               <Mail size={14} />{sending ? 'Sending…' : 'Send to Vendor'}
             </button>

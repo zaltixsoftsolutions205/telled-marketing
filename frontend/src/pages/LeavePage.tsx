@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Calendar, Plus, CheckCircle, XCircle, Clock } from 'lucide-react';
+import ExcelImportButton from '@/components/common/ExcelImportButton';
 import { leavesApi } from '@/api/leaves';
 import { usersApi } from '@/api/users';
 import { useAuthStore } from '@/store/authStore';
@@ -154,11 +155,33 @@ export default function LeavePage() {
           <h1 className="page-header">Leave Management</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} records</p>
         </div>
-        {(isEngineer || isHR) && (
-          <button onClick={() => setShowApply(true)} className="btn-primary flex items-center gap-2 bg-green-600 hover:bg-green-700">
-            <Plus size={16} /> Apply Leave
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <ExcelImportButton
+            entityName="Leaves"
+            columnHint="type (Casual/Sick/Annual/Unpaid), startDate (YYYY-MM-DD), endDate (YYYY-MM-DD), days, reason"
+            onImport={async (rows) => {
+              let imported = 0;
+              for (const row of rows) {
+                const startDate = row.startDate || row['start date'] || row.from || '';
+                const endDate   = row.endDate   || row['end date']   || row.to   || '';
+                if (!startDate || !endDate) continue;
+                const t = row.type || row.Type || 'Casual';
+                const type = (['Casual','Sick','Annual','Unpaid'].includes(t) ? t : 'Casual') as 'Casual'|'Sick'|'Annual'|'Unpaid';
+                try {
+                  await leavesApi.apply({ type, startDate, endDate, days: parseInt(row.days || '1'), reason: row.reason || '' });
+                  imported++;
+                } catch { /* skip */ }
+              }
+              load();
+              return { imported };
+            }}
+          />
+          {(isEngineer || isHR) && (
+            <button onClick={() => setShowApply(true)} className="btn-primary flex items-center gap-2 bg-green-600 hover:bg-green-700">
+              <Plus size={16} /> Apply Leave
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Stats */}

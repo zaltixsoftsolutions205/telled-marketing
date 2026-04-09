@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Plus, Search, ToggleLeft, ToggleRight, KeyRound, Eye, EyeOff, Trash2 } from 'lucide-react';
+import ExcelImportButton from '@/components/common/ExcelImportButton';
 import { usersApi } from '@/api/users';
 import StatusBadge from '@/components/common/StatusBadge';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
@@ -122,9 +123,30 @@ export default function UsersPage() {
           <h1 className="page-header">User Management</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} users in your organization</p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
-          <Plus size={16} /> Add User
-        </button>
+        <div className="flex items-center gap-2">
+          <ExcelImportButton
+            entityName="Users"
+            columnHint="name, email, role (admin/sales/engineer/hr_finance), department, phone, baseSalary"
+            onImport={async (rows) => {
+              let imported = 0;
+              for (const row of rows) {
+                const name = row.name || row.Name || '';
+                const email = row.email || row.Email || '';
+                if (!name || !email) continue;
+                const role = (['admin','sales','engineer','hr_finance'].includes(row.role) ? row.role : 'sales');
+                try {
+                  await usersApi.create({ name, email, role, department: row.department || '', phone: row.phone || '', baseSalary: parseFloat(row.baseSalary || '0') || 0, password: 'Telled@123' });
+                  imported++;
+                } catch { /* skip */ }
+              }
+              load();
+              return { imported };
+            }}
+          />
+          <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
+            <Plus size={16} /> Add User
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
