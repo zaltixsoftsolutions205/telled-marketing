@@ -3,9 +3,9 @@ import { X } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
 interface Props {
-  isOpen: boolean;
+  isOpen?: boolean;
   onClose: () => void;
-  title: string;
+  title: React.ReactNode;
   children: React.ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
 }
@@ -18,7 +18,7 @@ const sizeMap = {
   '2xl': 'max-w-5xl',
 };
 
-export default function Modal({ isOpen, onClose, title, children, size = 'md' }: Props) {
+export default function Modal({ isOpen = true, onClose, title, children, size = 'md' }: Props) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     if (isOpen) document.addEventListener('keydown', handler);

@@ -59,6 +59,9 @@ export let TRAININGS: any[] = [];
 // ─── CONTACTS ────────────────────────────────────────────────────────────────
 export let CONTACTS: any[] = [];
 
+// ─── PO EXECUTION WORKFLOWS ──────────────────────────────────────────────────
+export let PO_EXECUTION_WORKFLOWS: any[] = [];
+
 // ─── CRUD HELPERS ────────────────────────────────────────────────────────────
 const delay = (ms = 300) => new Promise(r => setTimeout(r, ms));
 
@@ -77,6 +80,7 @@ const orgVisits       = () => ENGINEER_VISITS.filter((v: any) => v.organizationI
 const orgSalaries     = () => SALARIES.filter((s: any) => s.organizationId === _currentOrgId);
 const orgTrainings    = () => TRAININGS.filter((t: any) => t.organizationId === _currentOrgId);
 const orgContacts     = () => CONTACTS.filter((c: any) => c.organizationId === _currentOrgId);
+const orgPOWorkflows  = () => PO_EXECUTION_WORKFLOWS.filter((w: any) => w.organizationId === _currentOrgId);
 
 export const mockPaginate = <T>(items: T[], page = 1, limit = 15) => {
   const total = items.length;
@@ -516,6 +520,28 @@ export const mockPurchases = {
     if (!po) throw { response: { data: { message: 'Purchase order not found' } } };
     PURCHASE_ORDERS = PURCHASE_ORDERS.filter((p: any) => p._id !== id);
     return { success: true };
+  },
+  generateInvoice: async (id: string, data: Record<string, unknown>) => {
+    await delay(400);
+    const num = `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9000) + 1000)}`;
+    PURCHASE_ORDERS = PURCHASE_ORDERS.map((p: any) => p._id === id
+      ? { ...p, invoiceGenerated: true, invoiceGeneratedAt: now(), poInvoiceNumber: num, invoiceAmount: data.amount || p.amount }
+      : p);
+    return orgPOs().find((p: any) => p._id === id);
+  },
+  generateLicense: async (id: string, data: Record<string, unknown>) => {
+    await delay(400);
+    PURCHASE_ORDERS = PURCHASE_ORDERS.map((p: any) => p._id === id
+      ? { ...p, licenseGenerated: true, licenseGeneratedAt: now(), licenseKey: data.licenseKey || '', licenseFile: data.licenseFile || '' }
+      : p);
+    return orgPOs().find((p: any) => p._id === id);
+  },
+  sendCustomerInvoice: async (id: string) => {
+    await delay(500);
+    PURCHASE_ORDERS = PURCHASE_ORDERS.map((p: any) => p._id === id
+      ? { ...p, customerInvoiceSent: true, customerInvoiceSentAt: now() }
+      : p);
+    return orgPOs().find((p: any) => p._id === id);
   },
 };
 
@@ -983,5 +1009,233 @@ export const mockContacts = {
       (c: any) => !(c._id === id && c.organizationId === _currentOrgId)
     );
     return { success: true };
+  },
+};
+
+// ─── PO EXECUTION WORKFLOW MOCK ──────────────────────────────────────────────
+const defaultStep1 = () => ({ oemNotified: false, distributorNotified: false, status: 'Pending' });
+const defaultDocField = () => ({ status: 'Pending' });
+const defaultStep2 = () => ({
+  licenseForm:        { status: 'Pending' },
+  startupForm:        { status: 'NA' },
+  machineDetailsLink: { status: 'Pending' },
+  priceClearanceInfo: { status: 'Pending' },
+  paymentTerms:       { status: 'Pending' },
+});
+const defaultStep3 = () => ({ licenseFormSent: false, startupFormSent: false, machineDetailsLinkSent: false, status: 'Pending' });
+const defaultStep4 = () => ({ status: 'Pending' });
+const defaultStep5 = () => ({ formsShared: false, invoiceShared: false, status: 'Pending' });
+const defaultStep6 = () => ({ licenseStatus: 'Pending' });
+const defaultStep7 = () => ({ tdsExemptionAttached: false, emailSent: false, paymentStatus: 'Unpaid', status: 'Pending' });
+
+const computeCurrentStep = (w: any): number => {
+  if (w.step7.status === 'Paid' || w.step7.paymentStatus === 'Paid') return 7;
+  if (w.step7.status !== 'Pending') return 7;
+  if (w.step6.licenseStatus === 'Delivered') return 7;
+  if (w.step6.licenseStatus !== 'Pending') return 6;
+  if (w.step5.status === 'Sent') return 6;
+  if (w.step4.status !== 'Pending') return 5;
+  const s2 = w.step2;
+  const docsReceived = ['licenseForm','machineDetailsLink','priceClearanceInfo','paymentTerms'].every((k: string) => s2[k].status === 'Received') &&
+    (s2.startupForm.status === 'Received' || s2.startupForm.status === 'NA');
+  if (docsReceived) return 4;
+  if (w.step3.status !== 'Pending') return 3;
+  if (w.step1.status === 'Sent') return 2;
+  return 1;
+};
+
+export const mockPOExecution = {
+  getAll: async (params: Record<string, unknown> = {}) => {
+    await delay();
+    let items = [...orgPOWorkflows()];
+    if (params.poId)    items = items.filter((w: any) => w.poId === params.poId);
+    if (params.status)  items = items.filter((w: any) => w.overallStatus === params.status);
+    if (params.search) {
+      const s = (params.search as string).toLowerCase();
+      items = items.filter((w: any) => (w.companyName || '').toLowerCase().includes(s) || (w.poNumber || '').toLowerCase().includes(s));
+    }
+    items.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return { data: items, total: items.length };
+  },
+  getById: async (id: string) => {
+    await delay();
+    return orgPOWorkflows().find((w: any) => w._id === id) || null;
+  },
+  getByPO: async (poId: string) => {
+    await delay();
+    return orgPOWorkflows().find((w: any) => w.poId === poId) || null;
+  },
+  create: async (poId: string) => {
+    await delay(400);
+    const existing = orgPOWorkflows().find((w: any) => w.poId === poId);
+    if (existing) return existing;
+    const po = orgPOs().find((p: any) => p._id === poId);
+    const lead = po ? orgLeads().find((l: any) => l._id === po.leadId._id) : null;
+    const w = {
+      _id: 'pex' + uid(),
+      organizationId: _currentOrgId,
+      poId,
+      poNumber: po?.poNumber || '',
+      accountId: null,
+      leadId: lead?._id || null,
+      companyName: po?.leadId?.companyName || lead?.companyName || '',
+      currentStep: 1,
+      overallStatus: 'In Progress',
+      step1: defaultStep1(),
+      step2: defaultStep2(),
+      step3: defaultStep3(),
+      step4: defaultStep4(),
+      step5: defaultStep5(),
+      step6: defaultStep6(),
+      step7: defaultStep7(),
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    PO_EXECUTION_WORKFLOWS = [w, ...PO_EXECUTION_WORKFLOWS];
+    return w;
+  },
+  updateStep: async (id: string, stepKey: string, data: Record<string, unknown>) => {
+    await delay(300);
+    PO_EXECUTION_WORKFLOWS = PO_EXECUTION_WORKFLOWS.map((w: any) => {
+      if (w._id !== id || w.organizationId !== _currentOrgId) return w;
+      const updated = { ...w, [stepKey]: { ...w[stepKey], ...data }, updatedAt: now() };
+      updated.currentStep = computeCurrentStep(updated);
+      const allDone = updated.step7.status === 'Paid' || updated.step7.paymentStatus === 'Paid';
+      updated.overallStatus = allDone ? 'Completed' : 'In Progress';
+      return updated;
+    });
+    return orgPOWorkflows().find((w: any) => w._id === id)!;
+  },
+  notifyOEM: async (id: string) => {
+    await delay(600);
+    PO_EXECUTION_WORKFLOWS = PO_EXECUTION_WORKFLOWS.map((w: any) =>
+      w._id === id && w.organizationId === _currentOrgId
+        ? { ...w, step1: { ...w.step1, oemNotified: true, oemNotifiedAt: now(), status: w.step1.distributorNotified ? 'Sent' : w.step1.status }, updatedAt: now() }
+        : w
+    );
+    const updated = orgPOWorkflows().find((w: any) => w._id === id)!;
+    PO_EXECUTION_WORKFLOWS = PO_EXECUTION_WORKFLOWS.map((w: any) => w._id === id ? { ...w, currentStep: computeCurrentStep(updated) } : w);
+    return orgPOWorkflows().find((w: any) => w._id === id)!;
+  },
+  notifyDistributor: async (id: string) => {
+    await delay(600);
+    PO_EXECUTION_WORKFLOWS = PO_EXECUTION_WORKFLOWS.map((w: any) =>
+      w._id === id && w.organizationId === _currentOrgId
+        ? { ...w, step1: { ...w.step1, distributorNotified: true, distributorNotifiedAt: now(), status: w.step1.oemNotified ? 'Sent' : w.step1.status }, updatedAt: now() }
+        : w
+    );
+    const updated = orgPOWorkflows().find((w: any) => w._id === id)!;
+    PO_EXECUTION_WORKFLOWS = PO_EXECUTION_WORKFLOWS.map((w: any) => w._id === id ? { ...w, currentStep: computeCurrentStep(updated) } : w);
+    return orgPOWorkflows().find((w: any) => w._id === id)!;
+  },
+  updateDocField: async (id: string, field: string, data: Record<string, unknown>) => {
+    await delay(300);
+    PO_EXECUTION_WORKFLOWS = PO_EXECUTION_WORKFLOWS.map((w: any) => {
+      if (w._id !== id || w.organizationId !== _currentOrgId) return w;
+      const step2 = { ...w.step2, [field]: { ...w.step2[field], ...data } };
+      const updated = { ...w, step2, updatedAt: now() };
+      updated.currentStep = computeCurrentStep(updated);
+      return updated;
+    });
+    return orgPOWorkflows().find((w: any) => w._id === id)!;
+  },
+  sendCustomerForms: async (id: string) => {
+    await delay(600);
+    PO_EXECUTION_WORKFLOWS = PO_EXECUTION_WORKFLOWS.map((w: any) => {
+      if (w._id !== id || w.organizationId !== _currentOrgId) return w;
+      const step3 = { ...w.step3, licenseFormSent: true, startupFormSent: true, machineDetailsLinkSent: true, sentAt: now(), status: 'Sent' };
+      const updated = { ...w, step3, updatedAt: now() };
+      updated.currentStep = computeCurrentStep(updated);
+      return updated;
+    });
+    return orgPOWorkflows().find((w: any) => w._id === id)!;
+  },
+  markCustomerFormsCompleted: async (id: string) => {
+    await delay(300);
+    PO_EXECUTION_WORKFLOWS = PO_EXECUTION_WORKFLOWS.map((w: any) => {
+      if (w._id !== id || w.organizationId !== _currentOrgId) return w;
+      const step3 = { ...w.step3, status: 'Completed', completedAt: now() };
+      const updated = { ...w, step3, updatedAt: now() };
+      updated.currentStep = computeCurrentStep(updated);
+      return updated;
+    });
+    return orgPOWorkflows().find((w: any) => w._id === id)!;
+  },
+  generateDistributorInvoice: async (id: string, data: Record<string, unknown>) => {
+    await delay(600);
+    const wf = orgPOWorkflows().find((w: any) => w._id === id);
+    if (!wf) throw new Error('Workflow not found');
+    const invNum = `DINV-${new Date().getFullYear()}-${String(orgPOWorkflows().length).padStart(3, '0')}`;
+    PO_EXECUTION_WORKFLOWS = PO_EXECUTION_WORKFLOWS.map((w: any) => {
+      if (w._id !== id || w.organizationId !== _currentOrgId) return w;
+      const step4 = { ...w.step4, invoiceNumber: invNum, amount: Number(data.amount), paymentTerms: String(data.paymentTerms || ''), customerDetails: String(data.customerDetails || ''), pdfPath: `dist_invoice_${invNum}.pdf`, generatedAt: now(), status: 'Generated' };
+      const updated = { ...w, step4, updatedAt: now() };
+      updated.currentStep = computeCurrentStep(updated);
+      return updated;
+    });
+    return orgPOWorkflows().find((w: any) => w._id === id)!;
+  },
+  shareBackToDistributor: async (id: string) => {
+    await delay(600);
+    PO_EXECUTION_WORKFLOWS = PO_EXECUTION_WORKFLOWS.map((w: any) => {
+      if (w._id !== id || w.organizationId !== _currentOrgId) return w;
+      const step5 = { formsShared: true, invoiceShared: true, sharedAt: now(), status: 'Sent' };
+      const updated = { ...w, step5, updatedAt: now() };
+      updated.currentStep = computeCurrentStep(updated);
+      return updated;
+    });
+    return orgPOWorkflows().find((w: any) => w._id === id)!;
+  },
+  updateLicenseStatus: async (id: string, data: Record<string, unknown>) => {
+    await delay(400);
+    PO_EXECUTION_WORKFLOWS = PO_EXECUTION_WORKFLOWS.map((w: any) => {
+      if (w._id !== id || w.organizationId !== _currentOrgId) return w;
+      const step6 = { ...w.step6, ...data };
+      const updated = { ...w, step6, updatedAt: now() };
+      updated.currentStep = computeCurrentStep(updated);
+      // When license is delivered, convert lead to customer (set stage = Converted)
+      if (data.licenseStatus === 'Delivered') {
+        const po = orgPOs().find((p: any) => p._id === updated.poId);
+        if (po) LEADS = LEADS.map((l: any) => l._id === po.leadId._id ? { ...l, stage: 'Converted', updatedAt: now() } : l);
+      }
+      return updated;
+    });
+    return orgPOWorkflows().find((w: any) => w._id === id)!;
+  },
+  generateCustomerInvoice: async (id: string, data: Record<string, unknown>) => {
+    await delay(600);
+    const wf = orgPOWorkflows().find((w: any) => w._id === id);
+    if (!wf) throw new Error('Workflow not found');
+    const invNum = `CINV-${new Date().getFullYear()}-${String(orgPOWorkflows().length).padStart(3, '0')}`;
+    PO_EXECUTION_WORKFLOWS = PO_EXECUTION_WORKFLOWS.map((w: any) => {
+      if (w._id !== id || w.organizationId !== _currentOrgId) return w;
+      const step7 = { ...w.step7, invoiceNumber: invNum, amount: Number(data.amount), tdsExemptionAttached: Boolean(data.tdsExemptionAttached), status: 'Generated', generatedAt: now() };
+      const updated = { ...w, step7, updatedAt: now() };
+      updated.currentStep = computeCurrentStep(updated);
+      return updated;
+    });
+    return orgPOWorkflows().find((w: any) => w._id === id)!;
+  },
+  sendCustomerInvoice: async (id: string) => {
+    await delay(600);
+    PO_EXECUTION_WORKFLOWS = PO_EXECUTION_WORKFLOWS.map((w: any) => {
+      if (w._id !== id || w.organizationId !== _currentOrgId) return w;
+      const step7 = { ...w.step7, emailSent: true, sentAt: now(), status: 'Sent' };
+      const updated = { ...w, step7, updatedAt: now() };
+      updated.currentStep = computeCurrentStep(updated);
+      return updated;
+    });
+    return orgPOWorkflows().find((w: any) => w._id === id)!;
+  },
+  markCustomerPaid: async (id: string) => {
+    await delay(300);
+    PO_EXECUTION_WORKFLOWS = PO_EXECUTION_WORKFLOWS.map((w: any) => {
+      if (w._id !== id || w.organizationId !== _currentOrgId) return w;
+      const step7 = { ...w.step7, paymentStatus: 'Paid', status: 'Paid' };
+      const updated = { ...w, step7, overallStatus: 'Completed', updatedAt: now() };
+      updated.currentStep = 7;
+      return updated;
+    });
+    return orgPOWorkflows().find((w: any) => w._id === id)!;
   },
 };

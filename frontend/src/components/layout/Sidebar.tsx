@@ -6,7 +6,7 @@ import {
   ShoppingCart, Wrench, Headphones, Receipt, CreditCard,
   CalendarCheck, DollarSign, UserCog, LogOut, ChevronDown, ChevronRight,
   FileBadge, GraduationCap, TrendingUp, CalendarDays, Calendar, Settings,
-  BookUser,
+  BookUser, ClipboardList,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useLogoStore } from '@/store/logoStore';
@@ -26,8 +26,9 @@ const salesNav = [
   { to: '/leads',      label: 'Leads',          icon: Users },
   { to: '/drfs',       label: 'DRF Management', icon: FileBadge },
   { to: '/quotations', label: 'Quotations',      icon: FileText },
-  { to: '/purchases',  label: 'Purchase Orders', icon: ShoppingCart },
-  { to: '/accounts',   label: 'Accounts',        icon: Building2 },
+  { to: '/purchases',     label: 'Purchase Orders',    icon: ShoppingCart },
+  { to: '/po-execution',  label: 'PO Execution',       icon: ClipboardList },
+  { to: '/accounts',      label: 'Accounts',           icon: Building2 },
   { to: '/contacts',   label: 'Contacts',        icon: BookUser },
 ];
 
@@ -44,7 +45,8 @@ const engineerNav = [
 ];
 
 const hrNav = [
-  { to: '/invoices',        label: 'Invoices',          icon: Receipt },
+  { to: '/po-execution',    label: 'PO Execution',       icon: ClipboardList },
+  { to: '/invoices',        label: 'Invoices',           icon: Receipt },
   { to: '/payments',        label: 'Payments',          icon: CreditCard },
   { to: '/visits-and-claims', label: 'Visits & Claims', icon: CalendarCheck }, // Updated path
   { to: '/salary',          label: 'Salary',            icon: DollarSign },
@@ -61,7 +63,8 @@ const adminSections = [
       { to: '/leads',      label: 'Leads',          icon: Users },
       { to: '/drfs',       label: 'DRF Management', icon: FileBadge },
       { to: '/quotations', label: 'Quotations',     icon: FileText },
-      { to: '/purchases',  label: 'Purchase Orders',icon: ShoppingCart },
+      { to: '/purchases',    label: 'Purchase Orders', icon: ShoppingCart },
+      { to: '/po-execution', label: 'PO Execution',    icon: ClipboardList },
     ],
   },
   {

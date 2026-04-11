@@ -161,6 +161,17 @@ export interface PurchaseOrder {
   paymentReference?: string;
   paymentNotes?: string;
   paidBy?: User | string;
+  // PO Flow steps
+  invoiceGenerated?: boolean;
+  invoiceGeneratedAt?: string;
+  poInvoiceNumber?: string;
+  invoiceAmount?: number;
+  licenseGenerated?: boolean;
+  licenseGeneratedAt?: string;
+  licenseKey?: string;
+  licenseFile?: string;
+  customerInvoiceSent?: boolean;
+  customerInvoiceSentAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -312,6 +323,95 @@ export interface DashboardStats {
   rejectionReasons: Array<{ reason: string; count: number }>;
   recentLeads: Lead[];
   revenueByMonth: Array<{ month: string; revenue: number }>;
+}
+
+// ─── PO EXECUTION WORKFLOW ───────────────────────────────────────────────────
+
+export interface POExecStep1 {
+  oemNotified: boolean;
+  oemNotifiedAt?: string;
+  distributorNotified: boolean;
+  distributorNotifiedAt?: string;
+  status: 'Pending' | 'Sent' | 'Failed';
+}
+
+export interface POExecDocField {
+  status: 'Pending' | 'Received' | 'NA';
+  fileName?: string;
+  url?: string;
+  info?: string;
+}
+
+export interface POExecStep2 {
+  licenseForm: POExecDocField;
+  startupForm: POExecDocField;
+  machineDetailsLink: POExecDocField;
+  priceClearanceInfo: POExecDocField;
+  paymentTerms: POExecDocField;
+}
+
+export interface POExecStep3 {
+  licenseFormSent: boolean;
+  startupFormSent: boolean;
+  machineDetailsLinkSent: boolean;
+  sentAt?: string;
+  completedAt?: string;
+  status: 'Pending' | 'Sent' | 'Completed';
+}
+
+export interface POExecStep4 {
+  invoiceNumber?: string;
+  amount?: number;
+  paymentTerms?: string;
+  customerDetails?: string;
+  pdfPath?: string;
+  generatedAt?: string;
+  status: 'Pending' | 'Generated' | 'Sent';
+}
+
+export interface POExecStep5 {
+  formsShared: boolean;
+  invoiceShared: boolean;
+  sharedAt?: string;
+  status: 'Pending' | 'Sent';
+}
+
+export interface POExecStep6 {
+  licenseStatus: 'Pending' | 'Generated' | 'Delivered';
+  licenseKey?: string;
+  licenseFile?: string;
+  deliveryDate?: string;
+}
+
+export interface POExecStep7 {
+  invoiceNumber?: string;
+  amount?: number;
+  tdsExemptionAttached: boolean;
+  emailSent: boolean;
+  sentAt?: string;
+  paymentStatus: 'Unpaid' | 'Partial' | 'Paid';
+  status: 'Pending' | 'Generated' | 'Sent' | 'Paid';
+}
+
+export interface POExecutionWorkflow {
+  _id: string;
+  organizationId: string;
+  poId: string;
+  poNumber?: string;
+  accountId?: string;
+  leadId?: string;
+  companyName?: string;
+  currentStep: number;
+  overallStatus: 'In Progress' | 'Completed';
+  step1: POExecStep1;
+  step2: POExecStep2;
+  step3: POExecStep3;
+  step4: POExecStep4;
+  step5: POExecStep5;
+  step6: POExecStep6;
+  step7: POExecStep7;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface PaginatedResponse<T> {

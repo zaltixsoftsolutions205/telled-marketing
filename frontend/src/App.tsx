@@ -27,6 +27,7 @@ import LeavePage from '@/pages/LeavePage';
 import SettingsPage from '@/pages/SettingsPage';
 import VisitsAndClaimsPage from '@/pages/VisitsAndClaimsPage';
 import ContactsPage from '@/pages/ContactsPage';
+import POExecutionPage from '@/pages/POExecutionPage';
 import type { Role } from '@/types';
 
 // Route guards
@@ -69,6 +70,7 @@ export default function App() {
             <Route path="drfs" element={<RoleRoute roles={['admin', 'sales']}><DRFPage /></RoleRoute>} />
             <Route path="quotations" element={<RoleRoute roles={['admin', 'sales']}><QuotationsPage /></RoleRoute>} />
             <Route path="purchases" element={<RoleRoute roles={['admin', 'sales']}><PurchasesPage /></RoleRoute>} />
+            <Route path="po-execution" element={<RoleRoute roles={['admin', 'sales', 'hr_finance', 'engineer']}><POExecutionPage /></RoleRoute>} />
 
             {/* Admin + Sales + Engineer + HR */}
             <Route path="accounts" element={<RoleRoute roles={['admin', 'sales', 'engineer', 'hr_finance']}><AccountsPage /></RoleRoute>} />
