@@ -151,7 +151,7 @@ export default function Sidebar() {
   const resolvedLogo = resolveLogoUrl(logoUrl);
 
   const handleLogout = async () => {
-    await authApi.logout();
+    try { await authApi.logout(); } catch { /* ignore */ }
     logout();
     navigate('/login');
   };

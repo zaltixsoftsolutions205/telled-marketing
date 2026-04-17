@@ -16,7 +16,6 @@ import { errorHandler, notFound } from './middleware/error.middleware';
 import { startCronJobs } from './cron/jobs';
 
 import authRoutes from './routes/auth.routes';
-import googleRoutes from './routes/google.routes';
 import userRoutes from './routes/user.routes';
 import leadRoutes from './routes/lead.routes';
 import oemRoutes from './routes/oem.routes';
@@ -66,7 +65,6 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 app.get('/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString(), env: process.env.NODE_ENV }));
 
 app.use('/api/auth', authRoutes);
-app.use('/api/auth/google', googleRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/oem', oemRoutes);

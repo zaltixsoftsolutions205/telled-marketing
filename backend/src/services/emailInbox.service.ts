@@ -3,17 +3,10 @@ import OEMApprovalAttempt from '../models/OEMApprovalAttempt';
 import Lead from '../models/Lead';
 import logger from '../utils/logger';
 
-export interface ImapCredentials {
-  host: string;
-  port: number;
-  user: string;
-  pass: string;
-}
-
-function smtpHostToImap(smtpHost: string): string {
-  if (smtpHost.includes('office365') || smtpHost.includes('outlook')) return 'imap-mail.outlook.com';
-  return smtpHost.replace(/^smtp\./, 'imap.');
-}
+const IMAP_USER = process.env.SUPPORT_EMAIL_USER || process.env.SMTP_USER || '';
+const IMAP_PASS = process.env.SUPPORT_EMAIL_PASS || process.env.SMTP_PASS || '';
+const IMAP_HOST = process.env.SUPPORT_EMAIL_HOST || 'imap.hostinger.com';
+const IMAP_PORT = Number(process.env.SUPPORT_EMAIL_PORT || 993);
 
 export interface EmailSyncResult {
   scanned: number;
@@ -27,8 +20,8 @@ export interface EmailSyncResult {
 /** Detect Approved / Rejected from fresh reply text only */
 function detectDecision(text: string): 'Approved' | 'Rejected' | null {
   const lower = text.toLowerCase();
-  const hasApproved = /\b(approved|approve|approving|granted|confirmed|accepted|go ahead|proceed)\b/.test(lower);
-  const hasRejected = /\b(rejected|reject|rejecting|declined|decline|not approved|cannot approve|denied)\b/.test(lower);
+  const hasApproved = /\bapproved\b/.test(lower);
+  const hasRejected = /\brejected\b/.test(lower);
   if (hasApproved && hasRejected) return null; // ambiguous
   if (hasApproved) return 'Approved';
   if (hasRejected) return 'Rejected';
@@ -55,11 +48,11 @@ function extractExpiryDate(text: string): Date | null {
 
 /**
  * Extract company name from DRF email subject.
- * Handles arbitrary prefixes like [EXTERNAL], RE:, FW:, FWD:
- * Subject format: "... Requesting for the approval of DRF - {companyName}"
+ * Subject format: "RE: Requesting for the approval of DRF - {companyName}"
+ * or "FW: Requesting for the approval of DRF - {companyName}"
  */
 function extractCompanyFromSubject(subject: string): string | null {
-  const m = subject.match(/Requesting for the approval of DRF\s*[-–]\s*(.+)/i);
+  const m = subject.match(/(?:RE|FW|FWD)?:?\s*Requesting for the approval of DRF\s*[-–]\s*(.+)/i);
   return m ? m[1].trim() : null;
 }
 
@@ -90,47 +83,39 @@ function stripQuotedContent(text: string): string {
 
 /**
  * Find a pending OEM attempt by company name (case-insensitive, partial match).
- * Returns { attempt, lead } if pending found, or { alreadyProcessed: true } if already approved/rejected.
+ * Used when OEM reply subject contains company name but no DRF number.
  */
 async function findAttemptByCompanyName(companyName: string): Promise<any | null> {
+  // Find lead with matching companyName that has a pending OEM attempt
   const leads = await Lead.find({
     companyName: { $regex: companyName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' },
     isArchived: false,
   }).select('_id companyName');
 
   for (const lead of leads) {
-    const pending = await OEMApprovalAttempt.findOne({ leadId: lead._id, status: 'Pending' })
+    const attempt = await OEMApprovalAttempt.findOne({ leadId: lead._id, status: 'Pending' })
       .sort({ sentDate: -1 });
-    if (pending) return { attempt: pending, lead };
-    // Check if already processed
-    const processed = await OEMApprovalAttempt.findOne({ leadId: lead._id, status: { $in: ['Approved', 'Rejected'] } })
-      .sort({ sentDate: -1 });
-    if (processed) return { alreadyProcessed: true, status: processed.status, lead };
+    if (attempt) return { attempt, lead };
   }
   return null;
 }
 
-export async function syncEmailsForDRF(creds?: ImapCredentials): Promise<EmailSyncResult> {
+export async function syncEmailsForDRF(): Promise<EmailSyncResult> {
   const result: EmailSyncResult = {
     scanned: 0, processed: 0,
     approved: [], rejected: [], skipped: [], errors: [],
   };
 
-  const imapUser = creds?.user || process.env.SUPPORT_EMAIL_USER || process.env.SMTP_USER || '';
-  const imapPass = creds?.pass || process.env.SUPPORT_EMAIL_PASS || process.env.SMTP_PASS || '';
-  const imapHost = creds?.host || process.env.SUPPORT_EMAIL_HOST || 'imap.hostinger.com';
-  const imapPort = creds?.port || Number(process.env.SUPPORT_EMAIL_PORT || 993);
-
-  if (!imapUser || !imapPass) {
-    result.errors.push('IMAP credentials not configured. Please set up your email in Email Configuration.');
+  if (!IMAP_USER || !IMAP_PASS) {
+    result.errors.push('IMAP credentials not configured (SUPPORT_EMAIL_USER / SUPPORT_EMAIL_PASS)');
     return result;
   }
 
   const client = new ImapFlow({
-    host: imapHost,
-    port: imapPort,
+    host: IMAP_HOST,
+    port: IMAP_PORT,
     secure: true,
-    auth: { user: imapUser, pass: imapPass },
+    auth: { user: IMAP_USER, pass: IMAP_PASS },
     logger: false,
     tls: { rejectUnauthorized: false },
     connectionTimeout: 20000,
@@ -197,11 +182,7 @@ export async function syncEmailsForDRF(creds?: ImapCredentials): Promise<EmailSy
 
         const found = await findAttemptByCompanyName(companyName);
         if (!found) {
-          result.skipped.push(`"${companyName}" — no DRF found in DB`);
-          continue;
-        }
-        if (found.alreadyProcessed) {
-          result.skipped.push(`"${companyName}" — DRF already ${found.status}`);
+          result.skipped.push(`"${companyName}" — no pending DRF found in DB`);
           continue;
         }
 

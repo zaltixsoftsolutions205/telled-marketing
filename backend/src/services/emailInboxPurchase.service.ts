@@ -6,12 +6,10 @@ import logger from '../utils/logger';
 import { generatePONumber } from '../utils/helpers';
 import mongoose from 'mongoose';
 
-export interface ImapCredentials {
-  host: string;
-  port: number;
-  user: string;
-  pass: string;
-}
+const IMAP_HOST = process.env.SUPPORT_EMAIL_HOST || 'imap.hostinger.com';
+const IMAP_PORT = parseInt(process.env.SUPPORT_EMAIL_PORT || '993');
+const IMAP_USER = process.env.SUPPORT_EMAIL_USER || process.env.SMTP_USER || '';
+const IMAP_PASS = process.env.SUPPORT_EMAIL_PASS || process.env.SMTP_PASS || '';
 
 // Improved keywords to identify purchase order emails
 const PO_KEYWORDS = [
@@ -194,13 +192,13 @@ function extractVendorEmail(text: string, fromEmail: string): string | null {
   // If found an email in body, use that
   if (emailMatch && emailMatch[0]) {
     // But don't use our own email address
-    if (emailMatch[0] !== fromEmail) {
+    if (emailMatch[0] !== IMAP_USER) {
       return emailMatch[0];
     }
   }
   
   // Otherwise, use the sender's email (from address)
-  if (fromEmail) {
+  if (fromEmail && fromEmail !== IMAP_USER) {
     return fromEmail;
   }
   
@@ -353,7 +351,7 @@ async function getDefaultAdminUser(): Promise<any> {
   return admin;
 }
 
-export async function syncPurchaseOrderEmails(creds?: ImapCredentials): Promise<PurchaseOrderEmailResult> {
+export async function syncPurchaseOrderEmails(): Promise<PurchaseOrderEmailResult> {
   const result: PurchaseOrderEmailResult = {
     scanned: 0,
     processed: 0,
@@ -363,21 +361,16 @@ export async function syncPurchaseOrderEmails(creds?: ImapCredentials): Promise<
     errors: [],
   };
 
-  const imapUser = creds?.user || process.env.SUPPORT_EMAIL_USER || process.env.SMTP_USER || '';
-  const imapPass = creds?.pass || process.env.SUPPORT_EMAIL_PASS || process.env.SMTP_PASS || '';
-  const imapHost = creds?.host || process.env.SUPPORT_EMAIL_HOST || 'imap.hostinger.com';
-  const imapPort = creds?.port || parseInt(process.env.SUPPORT_EMAIL_PORT || '993');
-
-  if (!imapUser || !imapPass) {
-    result.errors.push('IMAP credentials not configured. Please set up your email in Email Configuration.');
+  if (!IMAP_USER || !IMAP_PASS) {
+    result.errors.push('IMAP credentials not configured (SUPPORT_EMAIL_USER / SUPPORT_EMAIL_PASS)');
     return result;
   }
 
   const client = new ImapFlow({
-    host: imapHost,
-    port: imapPort,
+    host: IMAP_HOST,
+    port: IMAP_PORT,
     secure: true,
-    auth: { user: imapUser, pass: imapPass },
+    auth: { user: IMAP_USER, pass: IMAP_PASS },
     logger: false,
     tls: { rejectUnauthorized: false },
     connectionTimeout: 20000,

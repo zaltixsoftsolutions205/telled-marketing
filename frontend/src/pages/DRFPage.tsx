@@ -144,7 +144,7 @@ export default function DRFPage() {
 
   // Email sync state
   const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ approved: string[]; rejected: string[]; scanned: number; skipped: string[]; errors: string[] } | null>(null);
+  const [syncResult, setSyncResult] = useState<{ approved: string[]; rejected: string[]; scanned: number; errors: string[] } | null>(null);
 
   // Quotation modal state
   const [quotationDRF, setQuotationDRF] = useState<any>(null);
@@ -289,7 +289,7 @@ export default function DRFPage() {
       setSyncResult(result);
       if (result.approved.length || result.rejected.length) load();
     } catch (err: any) {
-      setSyncResult({ approved: [], rejected: [], scanned: 0, skipped: [], errors: [err?.response?.data?.message || 'Sync failed'] });
+      setSyncResult({ approved: [], rejected: [], scanned: 0, errors: [err?.response?.data?.message || 'Sync failed'] });
     } finally {
       setSyncing(false);
     }
@@ -449,17 +449,7 @@ export default function DRFPage() {
               </p>
             )}
             {syncResult.approved.length === 0 && syncResult.rejected.length === 0 && !syncResult.errors.length && (
-              <div className="text-xs mt-0.5 text-gray-500 space-y-0.5">
-                <p>No DRF approval/rejection emails found.</p>
-                {syncResult.skipped?.length > 0 && (
-                  <details className="cursor-pointer">
-                    <summary className="text-gray-400 hover:text-gray-600">{syncResult.skipped.length} email{syncResult.skipped.length !== 1 ? 's' : ''} skipped — click to see why</summary>
-                    <ul className="mt-1 space-y-0.5 pl-2 border-l border-gray-200">
-                      {syncResult.skipped.map((s, i) => <li key={i} className="text-gray-400">{s}</li>)}
-                    </ul>
-                  </details>
-                )}
-              </div>
+              <p className="text-xs mt-0.5 text-gray-500">No DRF approval/rejection emails found.</p>
             )}
           </div>
           <button onClick={() => setSyncResult(null)} className="text-gray-400 hover:text-gray-600 text-xs">✕</button>

@@ -11,7 +11,6 @@ export interface IUser extends Document {
   baseSalary: number;
   isActive: boolean;
   mustSetPassword: boolean;
-  otpVerified: boolean;
   organizationId: mongoose.Types.ObjectId;
   refreshToken?: string;
   // Per-user outbound SMTP (used when sending DRFs / customer emails)
@@ -20,7 +19,6 @@ export interface IUser extends Document {
   smtpUser?: string;
   smtpPass?: string;
   smtpSecure?: boolean;
-  googleRefreshToken?: string;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -37,15 +35,13 @@ const UserSchema = new Schema<IUser>(
     baseSalary:      { type: Number, default: 0, min: 0 },
     isActive:        { type: Boolean, default: false },
     mustSetPassword: { type: Boolean, default: true },
-    otpVerified:     { type: Boolean, default: false },
     organizationId:  { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
     refreshToken:    { type: String },
-    smtpHost:            { type: String, trim: true },
-    smtpPort:            { type: Number },
-    smtpUser:            { type: String, trim: true },
-    smtpPass:            { type: String },
-    smtpSecure:          { type: Boolean },
-    googleRefreshToken:  { type: String },
+    smtpHost:        { type: String, trim: true },
+    smtpPort:        { type: Number },
+    smtpUser:        { type: String, trim: true },
+    smtpPass:        { type: String },
+    smtpSecure:      { type: Boolean },
   },
   { timestamps: true }
 );
@@ -67,7 +63,6 @@ UserSchema.set('toJSON', {
     delete ret['password'];
     delete ret['refreshToken'];
     delete ret['smtpPass'];
-    delete ret['googleRefreshToken'];
     return ret;
   },
 });

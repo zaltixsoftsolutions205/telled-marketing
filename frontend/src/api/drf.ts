@@ -1,71 +1,32 @@
+import { mockDRF } from '@/mock/store';
 import api from './axios';
 
 export const drfApi = {
-  getAll: async (params?: Record<string, unknown>) => {
-    const { data } = await api.get('/oem', { params });
-    // backend: { data: [...], meta: { total, page, totalPages } }
-    return { data: data.data || [], pagination: data.meta || { total: 0 } };
-  },
+  getAll: (params?: Record<string, unknown>) => mockDRF.getAll(params),
   sendFromLead: async (leadData: Record<string, unknown>, formData: Record<string, string>, _user: any) => {
     const leadId = (leadData as any)._id;
     const { data } = await api.post(`/leads/${leadId}/send-drf`, formData);
     return data;
   },
-  getByLead: async (leadId: string) => {
-    const { data } = await api.get(`/oem/lead/${leadId}`);
-    return data.data || [];
-  },
+  getByLead: (leadId: string) => mockDRF.getByLead(leadId),
   getById: async (id: string) => {
-    const { data } = await api.get('/oem', { params: { limit: 200 } });
-    return (data.data || []).find((d: any) => d._id === id) ?? null;
+    const result = await mockDRF.getAll();
+    return result.data?.find((d: any) => d._id === id) ?? null;
   },
-  create: async (body: Record<string, unknown>) => {
-    const { data } = await api.post(`/oem/lead/${body.leadId}`, body);
-    return data.data;
-  },
-  approve: async (id: string, body: { expiryDate: string; notes?: string }) => {
-    const { data } = await api.patch(`/oem/${id}/approve`, body);
-    return data;
-  },
-  reject: async (id: string, body: { rejectionReason: string }) => {
-    const { data } = await api.patch(`/oem/${id}/reject`, body);
-    return data;
-  },
-  resetToPending: async (id: string) => {
-    const { data } = await api.patch(`/oem/${id}/reset`);
-    return data;
-  },
-  resend: async (id: string) => {
-    const { data } = await api.post(`/oem/${id}/resend`);
-    return data;
-  },
-  extend: async (id: string, body: { newExpiry: string; reason: string }) => {
-    const { data } = await api.patch(`/oem/${id}/extend`, body);
-    return data;
-  },
-  reassign: async (id: string, newOwnerId: string) => {
-    const { data } = await api.patch(`/oem/${id}/reassign`, { newOwnerId });
-    return data;
-  },
-  getAnalytics: async () => {
-    const { data } = await api.get('/oem/analytics');
-    return data.data || {};
-  },
-  delete: async (id: string) => {
-    const { data } = await api.delete(`/oem/${id}`);
-    return data;
-  },
-  syncEmails: async () => {
-    const { data } = await api.post('/oem/sync-emails');
-    return data.data;
-  },
-  requestExtension: async (id: string) => {
-    const { data } = await api.patch(`/oem/${id}/request-extension`);
-    return data.data;
-  },
-  sendExtensionEmail: async (emailData: { drfNumber: string; companyName: string; oemName: string; expiryDate: string; ownerName: string }) => {
+  create: (body: Record<string, unknown>) => mockDRF.create(body),
+  approve: (id: string, body: { expiryDate: string; notes?: string }) => mockDRF.approve(id, body),
+  reject: (id: string, body: { rejectionReason: string }) => mockDRF.reject(id, body),
+  resetToPending: (id: string) => mockDRF.resetToPending(id),
+  resend: (id: string) => mockDRF.resend(id),
+  extend: (id: string, body: { newExpiry: string; reason: string }) => mockDRF.extend(id, body),
+  reassign: (id: string, newOwnerId: string) => mockDRF.reassign(id, newOwnerId),
+  getAnalytics: () => mockDRF.getAnalytics(),
+  delete: (id: string) => mockDRF.delete(id),
+  syncEmails: () => mockDRF.syncEmails(),
+  requestExtension: (id: string) => mockDRF.requestExtension(id),
+  sendExtensionEmail: async (data: { drfNumber: string; companyName: string; oemName: string; expiryDate: string; ownerName: string }) => {
     try {
-      await api.post('/leads/drf-extension-email', emailData);
-    } catch { /* non-critical */ }
+      await api.post('/leads/drf-extension-email', data);
+    } catch { /* non-critical — backend may be unavailable in demo mode */ }
   },
 };

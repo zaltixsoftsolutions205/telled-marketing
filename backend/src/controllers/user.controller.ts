@@ -12,6 +12,7 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, sanitizeQuery } from '../utils/helpers';
 import { sendWelcomeEmail } from '../services/email.service';
+import { encryptText, detectSmtp } from '../utils/crypto';
 
 export const getUsers = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -153,22 +154,24 @@ export const deleteUser = async (req: AuthRequest, res: Response): Promise<void>
   } catch { sendError(res, 'Failed to delete user', 500); }
 };
 
-// PUT /api/users/me/email-config  — any logged-in user updates their own SMTP
+// PUT /api/users/me/email-config  — save app password for sending DRF emails
 export const updateEmailConfig = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { smtpHost, smtpPort, smtpUser, smtpPass, smtpSecure } = req.body;
+    const { appPassword } = req.body;
+    if (!appPassword) { sendError(res, 'App password is required', 400); return; }
 
-    const update: Record<string, unknown> = {
-      smtpHost: smtpHost?.trim() || undefined,
-      smtpPort: smtpPort ? Number(smtpPort) : undefined,
-      smtpUser: smtpUser?.trim() || undefined,
-      smtpSecure: smtpSecure === true || smtpSecure === 'true',
-    };
-    if (smtpPass) update.smtpPass = smtpPass; // only update if provided
+    const user = await User.findById(req.user!.id);
+    if (!user) { sendError(res, 'User not found', 404); return; }
 
-    const user = await User.findByIdAndUpdate(req.user!.id, update, { new: true })
-      .select('-password -refreshToken -smtpPass');
+    const smtp = detectSmtp(user.email);
+    await User.findByIdAndUpdate(req.user!.id, {
+      smtpHost:   smtp.host,
+      smtpPort:   smtp.port,
+      smtpSecure: smtp.secure,
+      smtpUser:   user.email,
+      smtpPass:   encryptText(appPassword),
+    });
 
-    sendSuccess(res, user, 'Email configuration saved');
+    sendSuccess(res, null, 'Email configuration saved');
   } catch { sendError(res, 'Failed to save email config', 500); }
 };

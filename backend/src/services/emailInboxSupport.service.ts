@@ -7,12 +7,11 @@ import logger from '../utils/logger';
 import { generateTicketId } from '../utils/helpers';
 import mongoose from 'mongoose';
 
-export interface ImapCredentials {
-  host: string;
-  port: number;
-  user: string;
-  pass: string;
-}
+// Hostinger IMAP Configuration
+const IMAP_HOST = process.env.SUPPORT_EMAIL_HOST || 'imap.hostinger.com';
+const IMAP_PORT = parseInt(process.env.SUPPORT_EMAIL_PORT || '993');
+const IMAP_USER = process.env.SUPPORT_EMAIL_USER || 'gu@zaltixsoft.com';
+const IMAP_PASS = process.env.SUPPORT_EMAIL_PASS || 'Ashok22@12345';
 
 // Keywords to identify support emails
 const SUPPORT_KEYWORDS = [
@@ -137,7 +136,7 @@ async function getFirstEngineer(): Promise<any | null> {
   return engineer;
 }
 
-export async function syncSupportEmails(creds?: ImapCredentials): Promise<SupportEmailSyncResult> {
+export async function syncSupportEmails(): Promise<SupportEmailSyncResult> {
   const result: SupportEmailSyncResult = {
     scanned: 0,
     processed: 0,
@@ -146,21 +145,20 @@ export async function syncSupportEmails(creds?: ImapCredentials): Promise<Suppor
     errors: [],
   };
 
-  const imapUser = creds?.user || process.env.SUPPORT_EMAIL_USER || process.env.SMTP_USER || '';
-  const imapPass = creds?.pass || process.env.SUPPORT_EMAIL_PASS || process.env.SMTP_PASS || '';
-  const imapHost = creds?.host || process.env.SUPPORT_EMAIL_HOST || 'imap.hostinger.com';
-  const imapPort = creds?.port || parseInt(process.env.SUPPORT_EMAIL_PORT || '993');
+  console.log('📧 Starting support email sync...');
+  console.log(`IMAP Host: ${IMAP_HOST}:${IMAP_PORT}`);
+  console.log(`Email: ${IMAP_USER}`);
 
-  if (!imapUser || !imapPass) {
-    result.errors.push('IMAP credentials not configured. Please set up your email in Email Configuration.');
+  if (!IMAP_USER || !IMAP_PASS) {
+    result.errors.push('Email credentials not configured');
     return result;
   }
 
   const client = new ImapFlow({
-    host: imapHost,
-    port: imapPort,
-    secure: imapPort === 993,
-    auth: { user: imapUser, pass: imapPass },
+    host: IMAP_HOST,
+    port: IMAP_PORT,
+    secure: IMAP_PORT === 993,
+    auth: { user: IMAP_USER, pass: IMAP_PASS },
     logger: false,
     tls: { rejectUnauthorized: false },
     connectionTimeout: 30000,

@@ -26,6 +26,6 @@ export const detectSmtp = (email: string): { host: string; port: number; secure:
     return { host: 'smtp.mail.yahoo.com', port: 465, secure: true };
   if (domain.includes('zoho'))
     return { host: 'smtp.zoho.com', port: 465, secure: true };
-  // Custom domain — default to Hostinger SMTP
-  return { host: 'smtp.hostinger.com', port: 465, secure: true };
+  // Custom domain (Hostinger, etc.)
+  return { host: `smtp.${domain}`, port: 465, secure: true };
 };

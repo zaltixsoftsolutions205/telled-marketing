@@ -20,8 +20,6 @@ export interface IOEMApprovalAttempt extends Document {
   approvedBy?: string;
   extensionCount: number;
   extensionHistory: IExtensionHistory[];
-  extensionRequested?: boolean;
-  extensionRequestedAt?: Date;
   notes?: string;
   createdBy: mongoose.Types.ObjectId;
   createdAt: Date;
@@ -49,8 +47,6 @@ const OEMSchema = new Schema<IOEMApprovalAttempt>(
     approvedBy: { type: String },
     extensionCount: { type: Number, default: 0 },
     extensionHistory: { type: [ExtHistSchema], default: [] },
-    extensionRequested: { type: Boolean, default: false },
-    extensionRequestedAt: { type: Date },
     notes: { type: String },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },

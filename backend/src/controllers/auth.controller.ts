@@ -178,9 +178,6 @@ export const login = async (req: Request, res: Response) => {
       smtpPass:   encryptText(password),
     });
 
-    // Skip OTP if user has already verified once before
-    if (user.otpVerified) return issueTokens(user, res);
-
     const otp = generateOTP();
     await saveOTP(user.email, otp);
     await sendOTPEmail(user.email, otp, 'login');
@@ -203,8 +200,6 @@ export const verifyLoginOtp = async (req: Request, res: Response) => {
 
     const valid = await verifyOTP(user.email, otp.toString());
     if (!valid) return sendError(res, 'Invalid or expired OTP', 400);
-
-    if (!user.otpVerified) await User.findByIdAndUpdate(userId, { otpVerified: true });
 
     return issueTokens(user, res);
   } catch (e) {

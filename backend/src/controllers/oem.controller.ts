@@ -7,19 +7,7 @@ import { sendSuccess, sendPaginated, sendError } from '../utils/response';
 import { addDays } from '../utils/helpers';
 import { OEM_EXPIRY_DAYS } from '../config/constants';
 import { sendOEMApprovalRequest, sendOEMRejectionNotification } from '../services/email.service';
-import { syncEmailsForDRF, ImapCredentials } from '../services/emailInbox.service';
-import { decryptText } from '../utils/crypto';
-import { UserSmtpConfig } from '../services/email.service';
-
-async function getUserSmtp(userId: string): Promise<UserSmtpConfig | undefined> {
-  try {
-    const user = await User.findById(userId).select('name email smtpHost smtpPort smtpUser smtpPass smtpSecure googleRefreshToken');
-    if (!user) return undefined;
-    if ((user as any).googleRefreshToken) return { smtpHost: '', smtpPort: 0, smtpUser: '', smtpPass: '', fromEmail: user.email, fromName: user.name, googleRefreshToken: (user as any).googleRefreshToken };
-    if (!user?.smtpHost || !user?.smtpUser || !user?.smtpPass) return undefined;
-    return { smtpHost: user.smtpHost, smtpPort: user.smtpPort || 465, smtpUser: user.smtpUser, smtpPass: decryptText(user.smtpPass), smtpSecure: user.smtpSecure, fromEmail: user.email, fromName: user.name };
-  } catch { return undefined; }
-}
+import { syncEmailsForDRF } from '../services/emailInbox.service';
 
 export const getAllDRFs = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -28,8 +16,6 @@ export const getAllDRFs = async (req: AuthRequest, res: Response): Promise<void>
     const filter: Record<string, unknown> = {};
     if (req.query.status) filter.status = req.query.status;
     if (req.query.leadId) filter.leadId = req.query.leadId;
-    // Non-admin users only see their own DRFs
-    if (req.user!.role !== 'admin') filter.createdBy = req.user!.id;
     const [data, total] = await Promise.all([
       OEMApprovalAttempt.find(filter).populate('leadId', 'companyName oemName contactPersonName contactName email oemEmail').populate('createdBy', 'name email').sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
       OEMApprovalAttempt.countDocuments(filter),
@@ -38,14 +24,13 @@ export const getAllDRFs = async (req: AuthRequest, res: Response): Promise<void>
   } catch { sendError(res, 'Failed to fetch DRFs', 500); }
 };
 
-export const getDRFAnalytics = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getDRFAnalytics = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const base = req.user!.role !== 'admin' ? { createdBy: req.user!.id } : {};
     const [total, pending, approved, rejected] = await Promise.all([
-      OEMApprovalAttempt.countDocuments(base),
-      OEMApprovalAttempt.countDocuments({ ...base, status: 'Pending' }),
-      OEMApprovalAttempt.countDocuments({ ...base, status: 'Approved' }),
-      OEMApprovalAttempt.countDocuments({ ...base, status: 'Rejected' }),
+      OEMApprovalAttempt.countDocuments({}),
+      OEMApprovalAttempt.countDocuments({ status: 'Pending' }),
+      OEMApprovalAttempt.countDocuments({ status: 'Approved' }),
+      OEMApprovalAttempt.countDocuments({ status: 'Rejected' }),
     ]);
     const approvalRate  = total ? Math.round((approved / total) * 100) : 0;
     const rejectionRate = total ? Math.round((rejected / total) * 100) : 0;
@@ -78,8 +63,7 @@ export const createAttempt = async (req: AuthRequest, res: Response): Promise<vo
     const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
     const drfNumber = `DRF-${dateStr}-${String(attempt.attemptNumber).padStart(3, '0')}`;
     const oemTo = lead.oemEmail || lead.email;
-    const senderSmtp = await getUserSmtp(req.user!.id);
-    await sendOEMApprovalRequest(oemTo, lead.companyName, lead.oemName || '', attempt.attemptNumber, drfNumber, senderSmtp);
+    await sendOEMApprovalRequest(oemTo, lead.companyName, lead.oemName || '', attempt.attemptNumber, drfNumber);
     sendSuccess(res, attempt, 'OEM request submitted', 201);
   } catch { sendError(res, 'Failed to create OEM attempt', 500); }
 };
@@ -105,10 +89,7 @@ export const rejectAttempt = async (req: AuthRequest, res: Response): Promise<vo
     attempt.status = 'Rejected'; attempt.rejectedDate = new Date(); attempt.rejectionReason = reason;
     await attempt.save();
     const lead = await Lead.findByIdAndUpdate(attempt.leadId, { stage: 'OEM Rejected' }, { new: true });
-    if (lead) {
-      const senderSmtp = await getUserSmtp(req.user!.id);
-      await sendOEMRejectionNotification(lead.email, lead.companyName, reason, attempt.attemptNumber, senderSmtp);
-    }
+    if (lead) await sendOEMRejectionNotification(lead.email, lead.companyName, reason, attempt.attemptNumber);
     sendSuccess(res, attempt, 'OEM rejected');
   } catch { sendError(res, 'Failed to reject', 500); }
 };
@@ -145,8 +126,7 @@ export const resendDRF = async (req: AuthRequest, res: Response): Promise<void> 
     const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
     const drfNumber = `DRF-${dateStr}-${String(attempt.attemptNumber).padStart(3, '0')}`;
     const oemTo = lead.oemEmail || lead.email;
-    const senderSmtp = await getUserSmtp(req.user!.id);
-    await sendOEMApprovalRequest(oemTo, lead.companyName, lead.oemName || '', attempt.attemptNumber, drfNumber, senderSmtp);
+    await sendOEMApprovalRequest(oemTo, lead.companyName, lead.oemName || '', attempt.attemptNumber, drfNumber);
 
     sendSuccess(res, attempt, 'DRF email resent successfully');
   } catch { sendError(res, 'Failed to resend DRF', 500); }
@@ -181,42 +161,14 @@ export const extendExpiry = async (req: AuthRequest, res: Response): Promise<voi
   } catch { sendError(res, 'Failed to extend', 500); }
 };
 
-// POST /api/oem/sync-emails  — reads logged-in user's inbox and auto-approves/rejects Pending DRFs
+// POST /api/oem/sync-emails  — reads inbox and auto-approves/rejects Pending DRFs
 export const syncDRFEmails = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    let creds: ImapCredentials | undefined;
-    const user = await User.findById(req.user!.id).select('smtpHost smtpPort smtpUser smtpPass');
-    if (user?.smtpUser && user?.smtpPass) {
-      try {
-        const smtpHost = user.smtpHost || 'smtp.hostinger.com';
-        const imapHost = smtpHost.includes('office365') || smtpHost.includes('outlook')
-          ? 'imap-mail.outlook.com'
-          : smtpHost.replace(/^smtp\./, 'imap.');
-        creds = {
-          host: imapHost,
-          port: 993,
-          user: user.smtpUser,
-          pass: decryptText(user.smtpPass),
-        };
-      } catch { /* decryption failed — fall back to env vars */ }
-    }
-    const result = await syncEmailsForDRF(creds);
+    const result = await syncEmailsForDRF();
     sendSuccess(res, result, `Sync complete — ${result.processed} DRFs updated`);
   } catch (err) {
     sendError(res, 'Email sync failed', 500);
   }
-};
-
-// PATCH /api/oem/:id/request-extension  — mark DRF as extension requested
-export const requestExtension = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const attempt = await OEMApprovalAttempt.findById(req.params.id);
-    if (!attempt) { sendError(res, 'DRF not found', 404); return; }
-    attempt.extensionRequested = true;
-    attempt.extensionRequestedAt = new Date();
-    await attempt.save();
-    sendSuccess(res, attempt, 'Extension requested');
-  } catch { sendError(res, 'Failed to request extension', 500); }
 };
 
 // PATCH /api/oem/:id/reassign  — admin transfers DRF ownership to another sales person

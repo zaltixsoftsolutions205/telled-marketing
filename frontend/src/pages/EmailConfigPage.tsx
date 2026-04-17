@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Mail, Server, Lock, Eye, EyeOff, CheckCircle, Info, Chrome } from 'lucide-react';
+import { Mail, Server, Lock, Eye, EyeOff, CheckCircle, Info } from 'lucide-react';
 import api from '@/api/axios';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store/authStore';
@@ -27,25 +27,6 @@ export default function EmailConfigPage() {
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [gmailConnected, setGmailConnected] = useState(false);
-  const [gmailLoading, setGmailLoading] = useState(false);
-
-  // Check Gmail connection status + handle redirect from OAuth
-  useEffect(() => {
-    api.get('/auth/google/gmail/status').then(r => setGmailConnected(r.data.connected)).catch(() => {});
-    const params = new URLSearchParams(window.location.search);
-    const gmail = params.get('gmail');
-    if (gmail === 'connected') { setGmailConnected(true); toast.success('Gmail connected! Emails will now send from your Gmail.'); window.history.replaceState({}, '', window.location.pathname); }
-    else if (gmail === 'error') { toast.error('Gmail connection failed. Try again.'); window.history.replaceState({}, '', window.location.pathname); }
-  }, []);
-
-  const connectGmail = () => { window.location.href = 'http://localhost:5000/api/auth/google/gmail'; };
-  const disconnectGmail = async () => {
-    setGmailLoading(true);
-    try { await api.delete('/auth/google/gmail'); setGmailConnected(false); toast.success('Gmail disconnected'); }
-    catch { toast.error('Failed to disconnect'); }
-    finally { setGmailLoading(false); }
-  };
 
   // Pre-fill smtp user with logged-in email
   useEffect(() => {
@@ -107,45 +88,6 @@ export default function EmailConfigPage() {
         <p className="text-gray-500 text-sm mt-1">
           Configure your outgoing email so DRFs and customer emails are sent from <strong>{user?.email}</strong>
         </p>
-      </div>
-
-      {/* Gmail OAuth connect card */}
-      <div className={`border rounded-xl p-5 mb-6 ${gmailConnected ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200'}`}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center shadow-sm">
-              <Chrome size={20} className="text-red-500" />
-            </div>
-            <div>
-              <div className="font-semibold text-gray-900 text-sm">Gmail / Google Workspace</div>
-              <div className="text-xs text-gray-500 mt-0.5">
-                {gmailConnected
-                  ? `Connected — emails send from ${user?.email}`
-                  : 'Connect to send emails directly from your Gmail account'}
-              </div>
-            </div>
-          </div>
-          {gmailConnected ? (
-            <div className="flex items-center gap-3">
-              <span className="flex items-center gap-1 text-green-700 text-xs font-medium"><CheckCircle size={13} /> Connected</span>
-              <button onClick={disconnectGmail} disabled={gmailLoading} className="text-xs text-red-600 hover:text-red-700 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors">
-                {gmailLoading ? 'Disconnecting…' : 'Disconnect'}
-              </button>
-            </div>
-          ) : (
-            <button onClick={connectGmail} className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
-              <Chrome size={15} className="text-red-500" /> Connect Gmail
-            </button>
-          )}
-        </div>
-        {!gmailConnected && (
-          <p className="text-xs text-gray-400 mt-3">Works with personal @gmail.com and company Gmail (Google Workspace). No password needed — uses OAuth2.</p>
-        )}
-      </div>
-
-      <div className="relative mb-5">
-        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200" /></div>
-        <div className="relative flex justify-center"><span className="bg-[#f4f2ff] px-3 text-xs text-gray-400">or configure SMTP manually</span></div>
       </div>
 
       {saved && (

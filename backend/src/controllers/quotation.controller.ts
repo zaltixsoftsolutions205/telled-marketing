@@ -5,31 +5,11 @@ import Lead from '../models/Lead';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, sanitizeQuery } from '../utils/helpers';
-import sendEmail, { sendEmailWithUserSmtp, UserSmtpConfig } from '../services/email.service';
-import User from '../models/User';
-import { decryptText } from '../utils/crypto';
+import sendEmail from '../services/email.service';
 import { generateQuotationPDF as generateQuotationPDFService } from '../services/pdf.service';
 import logger from '../utils/logger';
 import path from 'path';
 import fs from 'fs';
-
-async function getUserSmtp(userId: string): Promise<UserSmtpConfig | undefined> {
-  try {
-    const user = await User.findById(userId).select('name email smtpHost smtpPort smtpUser smtpPass smtpSecure googleRefreshToken');
-    if (!user) return undefined;
-    if ((user as any).googleRefreshToken) return { smtpHost: '', smtpPort: 0, smtpUser: '', smtpPass: '', fromEmail: user.email, fromName: user.name, googleRefreshToken: (user as any).googleRefreshToken };
-    if (!user?.smtpHost || !user?.smtpUser || !user?.smtpPass) return undefined;
-    return {
-      smtpHost: user.smtpHost,
-      smtpPort: user.smtpPort || 465,
-      smtpUser: user.smtpUser,
-      smtpPass: decryptText(user.smtpPass),
-      smtpSecure: user.smtpSecure,
-      fromEmail: user.email,
-      fromName: user.name,
-    };
-  } catch { return undefined; }
-}
 
 const SETTINGS_FILE = path.join(process.cwd(), 'uploads', 'settings.json');
 function getLogoPath(): string | undefined {
@@ -340,8 +320,6 @@ export const sendQuotationEmail = async (req: AuthRequest, res: Response): Promi
     }
 
     const lead = quotation.leadId as any;
-    const senderSmtp = await getUserSmtp(req.user!.id);
-    const senderContactEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || 'sales@telled.com';
 
     // Allow caller to override recipient(s); fall back to lead email
     const toEmail: string = req.body?.toEmail || lead?.email;
@@ -420,16 +398,15 @@ export const sendQuotationEmail = async (req: AuthRequest, res: Response): Promi
         ${quotation.notes ? `<tr><td class="lbl">Notes</td><td>${quotation.notes}</td></tr>` : ''}
       </table>
       <p style="margin-top:16px;color:#666;font-size:13px">The detailed quotation PDF is attached to this email. Please review and revert at your earliest convenience.</p>
-      <p style="color:#666;font-size:13px">For any queries, feel free to reach us at <b>${senderContactEmail}</b>.</p>
+      <p style="color:#666;font-size:13px">For any queries, feel free to reach us at <b>${process.env.EMAIL_FROM}</b>.</p>
     </div>
     <div class="f">© ${new Date().getFullYear()} Telled Marketing &nbsp;|&nbsp; Thanks for your business!</div>
     </div></body></html>`;
 
-    await sendEmailWithUserSmtp(
+    await sendEmail(
       toEmail,
-      `Quotation ${quotation.quotationNumber} from ${senderSmtp?.fromName || 'Telled Marketing'}`,
+      `Quotation ${quotation.quotationNumber} from Telled Marketing`,
       html,
-      senderSmtp,
       [{ filename: `Quotation-${quotation.quotationNumber}.pdf`, path: pdfPath }],
       ccEmail
     );
@@ -531,12 +508,10 @@ export const sendToVendor = async (req: AuthRequest, res: Response): Promise<voi
     </div>
     </body></html>`;
 
-    const senderSmtp = await getUserSmtp(req.user!.id);
-    await sendEmailWithUserSmtp(
+    await sendEmail(
       vendorEmail,
       `Quotation Request - ${quotation.quotationNumber} for ${lead.companyName}`,
-      vendorHtml,
-      senderSmtp,
+      vendorHtml
     );
     
     await Quotation.findByIdAndUpdate(req.params.id, { 

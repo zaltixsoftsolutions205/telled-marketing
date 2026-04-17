@@ -25,9 +25,7 @@ backend/uploads/*.jpg
 .env
 .env.local
 .env.*.local
-.env.example
-backend/.env
-backend/.env.example
+
 # OS
 .DS_Store
 Thumbs.db
