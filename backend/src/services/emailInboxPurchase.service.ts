@@ -6,10 +6,12 @@ import logger from '../utils/logger';
 import { generatePONumber } from '../utils/helpers';
 import mongoose from 'mongoose';
 
-const IMAP_HOST = process.env.SUPPORT_EMAIL_HOST || 'imap.hostinger.com';
-const IMAP_PORT = parseInt(process.env.SUPPORT_EMAIL_PORT || '993');
-const IMAP_USER = process.env.SUPPORT_EMAIL_USER || process.env.SMTP_USER || '';
-const IMAP_PASS = process.env.SUPPORT_EMAIL_PASS || process.env.SMTP_PASS || '';
+export interface ImapCredentials {
+  host: string;
+  port: number;
+  user: string;
+  pass: string;
+}
 
 // Improved keywords to identify purchase order emails
 const PO_KEYWORDS = [
@@ -351,7 +353,7 @@ async function getDefaultAdminUser(): Promise<any> {
   return admin;
 }
 
-export async function syncPurchaseOrderEmails(): Promise<PurchaseOrderEmailResult> {
+export async function syncPurchaseOrderEmails(creds?: ImapCredentials): Promise<PurchaseOrderEmailResult> {
   const result: PurchaseOrderEmailResult = {
     scanned: 0,
     processed: 0,
@@ -361,16 +363,21 @@ export async function syncPurchaseOrderEmails(): Promise<PurchaseOrderEmailResul
     errors: [],
   };
 
-  if (!IMAP_USER || !IMAP_PASS) {
-    result.errors.push('IMAP credentials not configured (SUPPORT_EMAIL_USER / SUPPORT_EMAIL_PASS)');
+  const imapUser = creds?.user || process.env.SUPPORT_EMAIL_USER || process.env.SMTP_USER || '';
+  const imapPass = creds?.pass || process.env.SUPPORT_EMAIL_PASS || process.env.SMTP_PASS || '';
+  const imapHost = creds?.host || process.env.SUPPORT_EMAIL_HOST || 'imap.hostinger.com';
+  const imapPort = creds?.port || parseInt(process.env.SUPPORT_EMAIL_PORT || '993');
+
+  if (!imapUser || !imapPass) {
+    result.errors.push('IMAP credentials not configured. Please set up your email in Email Configuration.');
     return result;
   }
 
   const client = new ImapFlow({
-    host: IMAP_HOST,
-    port: IMAP_PORT,
+    host: imapHost,
+    port: imapPort,
     secure: true,
-    auth: { user: IMAP_USER, pass: IMAP_PASS },
+    auth: { user: imapUser, pass: imapPass },
     logger: false,
     tls: { rejectUnauthorized: false },
     connectionTimeout: 20000,

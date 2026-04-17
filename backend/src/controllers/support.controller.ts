@@ -5,10 +5,20 @@ import SupportTicket from '../models/SupportTicket';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, generateTicketId } from '../utils/helpers';
-import { sendTicketStatusUpdate, sendTicketAssignmentNotification } from '../services/email.service';
+import { sendTicketStatusUpdate, sendTicketAssignmentNotification, UserSmtpConfig } from '../services/email.service';
 import { notifyUser } from '../utils/notify';
 import mongoose from 'mongoose';
 import logger from '../utils/logger';
+import User from '../models/User';
+import { decryptText } from '../utils/crypto';
+
+async function getUserSmtp(userId: string): Promise<UserSmtpConfig | undefined> {
+  try {
+    const user = await User.findById(userId).select('name email smtpHost smtpPort smtpUser smtpPass smtpSecure');
+    if (!user?.smtpHost || !user?.smtpUser || !user?.smtpPass) return undefined;
+    return { smtpHost: user.smtpHost, smtpPort: user.smtpPort || 465, smtpUser: user.smtpUser, smtpPass: decryptText(user.smtpPass), smtpSecure: user.smtpSecure, fromEmail: user.email, fromName: user.name };
+  } catch { return undefined; }
+}
 
 export const getTickets = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -68,15 +78,13 @@ export const createTicket = async (req: AuthRequest, res: Response): Promise<voi
         link: '/support',
       });
       if (engineer?.email) {
+        const senderSmtp = await getUserSmtp(req.user!.id);
         await sendTicketAssignmentNotification(
-          engineer.email,
-          populated.ticketId,
-          populated.subject,
-          engineer.name
+          engineer.email, populated.ticketId, populated.subject, engineer.name, senderSmtp
         ).catch(e => logger.error('Failed to send assignment email:', e));
       }
     }
-    
+
     sendSuccess(res, ticket, 'Ticket created', 201);
   } catch (error) {
     logger.error('Create ticket error:', error);
@@ -114,14 +122,10 @@ export const updateTicket = async (req: AuthRequest, res: Response): Promise<voi
     if (oldStatus !== ticket.status && ticket.status !== 'Closed') {
       const account = ticket.accountId as any;
       if (account?.contactEmail) {
+        const senderSmtp = await getUserSmtp(req.user!.id);
         await sendTicketStatusUpdate(
-          account.contactEmail,
-          ticket.ticketId,
-          ticket.subject,
-          oldStatus,
-          ticket.status,
-          req.user?.name || 'System',
-          req.body.updateNote
+          account.contactEmail, ticket.ticketId, ticket.subject,
+          oldStatus, ticket.status, req.user?.name || 'System', req.body.updateNote, senderSmtp
         ).catch(e => logger.error('Failed to send status update email:', e));
       }
     }
@@ -146,11 +150,9 @@ export const updateTicket = async (req: AuthRequest, res: Response): Promise<voi
         link: '/support',
       });
       if (engineer?.email) {
+        const senderSmtp = await getUserSmtp(req.user!.id);
         await sendTicketAssignmentNotification(
-          engineer.email,
-          ticket.ticketId,
-          ticket.subject,
-          engineer.name
+          engineer.email, ticket.ticketId, ticket.subject, engineer.name, senderSmtp
         ).catch(e => logger.error('Failed to send assignment email:', e));
       }
     }

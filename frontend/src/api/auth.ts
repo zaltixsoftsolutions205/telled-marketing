@@ -1,4 +1,5 @@
 import api from './axios';
+import { mockAuth } from '../mock/store';
 
 // Normalize backend user (id → _id)
 const normalizeUser = (user: any) => ({ ...user, _id: user._id || user.id });
@@ -31,7 +32,7 @@ export const authApi = {
     return { user: normalizeUser(d.user), accessToken: d.accessToken };
   },
   logout: async () => {
-    await api.post('/auth/logout');
+    await mockAuth.logout();
   },
   getMe: async (_userId: string) => {
     const { data } = await api.get('/auth/me');

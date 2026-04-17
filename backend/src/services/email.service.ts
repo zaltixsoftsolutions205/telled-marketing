@@ -2,6 +2,135 @@
 import { createTransporter } from '../config/email';
 import logger from '../utils/logger';
 import nodemailer from 'nodemailer';
+import axios from 'axios';
+
+// ── Microsoft Graph API sender (for Outlook/M365 users) ──────────────────────
+const GRAPH_CLIENT_ID     = process.env.GRAPH_CLIENT_ID     || '';
+const GRAPH_CLIENT_SECRET = process.env.GRAPH_CLIENT_SECRET || '';
+const GRAPH_TENANT_ID     = process.env.GRAPH_TENANT_ID     || '';
+
+function isOutlookEmail(email: string): boolean {
+  const d = email.split('@')[1]?.toLowerCase() || '';
+  return d.includes('outlook') || d.includes('hotmail') || d.includes('live') || d.includes('office365') || d.includes('microsoft');
+}
+
+// ── Google Workspace Domain-Wide Delegation sender ────────────────────────────
+const GOOGLE_SA_EMAIL  = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
+const GOOGLE_SA_KEY    = (process.env.GOOGLE_SERVICE_ACCOUNT_KEY  || '').replace(/\\n/g, '\n');
+const GOOGLE_WS_DOMAINS = (process.env.GOOGLE_WORKSPACE_DOMAINS || '')
+  .split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
+
+function isGoogleWorkspaceEmail(email: string): boolean {
+  if (!GOOGLE_SA_EMAIL || !GOOGLE_SA_KEY || !GOOGLE_WS_DOMAINS.length) return false;
+  const domain = email.split('@')[1]?.toLowerCase() || '';
+  return GOOGLE_WS_DOMAINS.includes(domain);
+}
+
+async function sendViaGoogleWorkspace(
+  from: string,
+  fromName: string,
+  to: string,
+  subject: string,
+  html: string,
+  cc?: string,
+  attachments?: Array<{ filename: string; path: string }>,
+): Promise<void> {
+  const { google } = await import('googleapis');
+  const auth = new google.auth.JWT({
+    email: GOOGLE_SA_EMAIL,
+    key: GOOGLE_SA_KEY,
+    scopes: ['https://www.googleapis.com/auth/gmail.send'],
+    subject: from,
+  });
+
+  const gmail = google.gmail({ version: 'v1', auth });
+  const boundary = `boundary_${Date.now()}`;
+
+  const parts: string[] = [
+    `From: "${fromName}" <${from}>`,
+    `To: ${to}`,
+    ...(cc ? [`Cc: ${cc}`] : []),
+    `Subject: ${subject}`,
+    `MIME-Version: 1.0`,
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    `Content-Type: text/html; charset=UTF-8`,
+    `Content-Transfer-Encoding: base64`,
+    '',
+    Buffer.from(html).toString('base64'),
+  ];
+
+  if (attachments?.length) {
+    const fs = await import('fs');
+    for (const att of attachments) {
+      parts.push(
+        `--${boundary}`,
+        `Content-Type: application/octet-stream; name="${att.filename}"`,
+        `Content-Transfer-Encoding: base64`,
+        `Content-Disposition: attachment; filename="${att.filename}"`,
+        '',
+        fs.readFileSync(att.path).toString('base64'),
+      );
+    }
+  }
+  parts.push(`--${boundary}--`);
+
+  const raw = Buffer.from(parts.join('\r\n')).toString('base64url');
+  await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
+  logger.info(`Email sent via Google Workspace FROM ${from} to ${to}: ${subject}`);
+}
+
+async function getGraphToken(): Promise<string> {
+  const url = `https://login.microsoftonline.com/${GRAPH_TENANT_ID}/oauth2/v2.0/token`;
+  const params = new URLSearchParams({
+    grant_type:    'client_credentials',
+    client_id:     GRAPH_CLIENT_ID,
+    client_secret: GRAPH_CLIENT_SECRET,
+    scope:         'https://graph.microsoft.com/.default',
+  });
+  const res = await axios.post(url, params.toString(), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+  return res.data.access_token;
+}
+
+async function sendViaGraph(
+  from: string,
+  fromName: string,
+  to: string,
+  subject: string,
+  html: string,
+  cc?: string,
+  attachments?: Array<{ filename: string; path: string }>,
+): Promise<void> {
+  const token = await getGraphToken();
+
+  const toRecipients = to.split(',').map(e => ({ emailAddress: { address: e.trim() } }));
+  const ccRecipients = cc ? cc.split(',').map(e => ({ emailAddress: { address: e.trim() } })) : [];
+
+  const fs = await import('fs');
+  const graphAttachments = (attachments || []).map(a => ({
+    '@odata.type': '#microsoft.graph.fileAttachment',
+    name: a.filename,
+    contentBytes: fs.readFileSync(a.path).toString('base64'),
+  }));
+
+  await axios.post(
+    `https://graph.microsoft.com/v1.0/users/${from}/sendMail`,
+    {
+      message: {
+        subject,
+        body: { contentType: 'HTML', content: html },
+        from: { emailAddress: { address: from, name: fromName } },
+        toRecipients,
+        ...(ccRecipients.length ? { ccRecipients } : {}),
+        ...(graphAttachments.length ? { attachments: graphAttachments } : {}),
+      },
+      saveToSentItems: true,
+    },
+    { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } },
+  );
+  logger.info(`Email sent via Graph FROM ${from} to ${to}: ${subject}`);
+}
 
 const base = (content: string, title: string) => `<!DOCTYPE html><html><head><style>
 body{font-family:Arial,sans-serif;background:#f4f4f4;margin:0}
@@ -55,6 +184,48 @@ export interface UserSmtpConfig {
   fromEmail: string;
   fromName: string;
 }
+
+/** Send any email using user's own SMTP/Graph if available, fallback to system SMTP */
+export const sendEmailWithUserSmtp = async (
+  to: string,
+  subject: string,
+  html: string,
+  senderSmtp?: UserSmtpConfig,
+  attachments?: Array<{ filename: string; path: string }>,
+  cc?: string,
+): Promise<void> => {
+  if (senderSmtp) {
+    // Google Workspace (company domain on Gmail) → use Gmail API domain-wide delegation
+    if (isGoogleWorkspaceEmail(senderSmtp.fromEmail)) {
+      await sendViaGoogleWorkspace(senderSmtp.fromEmail, senderSmtp.fromName, to, subject, html, cc, attachments);
+      return;
+    }
+    // Outlook/M365 users → use Graph API (bypasses SMTP AUTH requirement)
+    if (isOutlookEmail(senderSmtp.fromEmail) && GRAPH_CLIENT_ID && GRAPH_CLIENT_SECRET && GRAPH_TENANT_ID) {
+      await sendViaGraph(senderSmtp.fromEmail, senderSmtp.fromName, to, subject, html, cc, attachments);
+      return;
+    }
+    // All other providers → SMTP
+    const transporter = nodemailer.createTransport({
+      host: senderSmtp.smtpHost,
+      port: senderSmtp.smtpPort,
+      secure: senderSmtp.smtpSecure ?? (senderSmtp.smtpPort === 465),
+      auth: { user: senderSmtp.smtpUser, pass: senderSmtp.smtpPass },
+    });
+    await transporter.sendMail({
+      from: `"${senderSmtp.fromName}" <${senderSmtp.fromEmail}>`,
+      to,
+      subject,
+      html,
+      replyTo: senderSmtp.fromEmail,
+      ...(cc ? { cc } : {}),
+      ...(attachments?.length ? { attachments } : {}),
+    });
+    logger.info(`Email sent FROM ${senderSmtp.fromEmail} to ${to}: ${subject}`);
+  } else {
+    await send(to, subject, html, attachments, cc);
+  }
+};
 
 export const sendDRFEmail = async (
   to: string,
@@ -113,19 +284,8 @@ export const sendDRFEmail = async (
   const subject = `Requesting for the approval of DRF - ${data.companyName}`;
 
   if (senderSmtp) {
-    const transporter = nodemailer.createTransport({
-      host: senderSmtp.smtpHost,
-      port: senderSmtp.smtpPort,
-      secure: senderSmtp.smtpSecure ?? (senderSmtp.smtpPort === 465),
-      auth: { user: senderSmtp.smtpUser, pass: senderSmtp.smtpPass },
-    });
-    await transporter.sendMail({
-      from: `"${senderSmtp.fromName}" <${senderSmtp.fromEmail}>`,
-      to,
-      replyTo: senderSmtp.fromEmail,
-      subject,
-      html,
-    });
+    // Route through the unified sender (handles Google Workspace + Outlook + SMTP)
+    await sendEmailWithUserSmtp(to, subject, html, senderSmtp);
     logger.info(`DRF sent FROM ${senderSmtp.fromEmail} to ${to}`);
   } else {
     const transporter = getHostingerTransporter();
@@ -194,9 +354,9 @@ export const sendWelcomeEmail = async (data: {
   );
 };
 
-export const sendOEMApprovalRequest = (to: string, company: string, oem: string, attempt: number, drfNumber: string) =>
-  send(to, `OEM Approval Request — ${drfNumber} — ${company} (Attempt #${attempt})`,
-    base(`
+export const sendOEMApprovalRequest = async (to: string, company: string, oem: string, attempt: number, drfNumber: string, senderSmtp?: UserSmtpConfig) => {
+  const subject = `OEM Approval Request — ${drfNumber} — ${company} (Attempt #${attempt})`;
+  const html = base(`
       <h2>OEM Approval Request</h2>
       <table>
         <tr><td style="background:#f0eaf9;font-weight:bold">DRF Number</td><td><b>${drfNumber}</b></td></tr>
@@ -206,11 +366,15 @@ export const sendOEMApprovalRequest = (to: string, company: string, oem: string,
       </table>
       <p>Please reply to this email with <b>Approved</b> or <b>Rejected</b>.<br/>
       Make sure to keep the DRF number <b>${drfNumber}</b> in your reply so it can be automatically processed.</p>
-    `, 'OEM Approval Required'));
+    `, 'OEM Approval Required');
+  await sendEmailWithUserSmtp(to, subject, html, senderSmtp);
+};
 
-export const sendOEMRejectionNotification = (to: string, company: string, reason: string, attempt: number) =>
-  send(to, `OEM Approval Rejected - ${company}`,
-    base(`<h2>OEM Rejected</h2><p>Attempt #${attempt} for <b>${company}</b> was rejected.</p><p><b>Reason:</b> ${reason}</p><p>You may resubmit a new request.</p>`, 'OEM Rejected'));
+export const sendOEMRejectionNotification = async (to: string, company: string, reason: string, attempt: number, senderSmtp?: UserSmtpConfig) => {
+  const subject = `OEM Approval Rejected - ${company}`;
+  const html = base(`<h2>OEM Rejected</h2><p>Attempt #${attempt} for <b>${company}</b> was rejected.</p><p><b>Reason:</b> ${reason}</p><p>You may resubmit a new request.</p>`, 'OEM Rejected');
+  await sendEmailWithUserSmtp(to, subject, html, senderSmtp);
+};
 
 export const sendOEMExpiryReminder = (to: string, company: string, expiry: Date) =>
   send(to, `OEM Approval Expiring - ${company}`,
@@ -236,7 +400,8 @@ export const sendTicketStatusUpdate = async (
   oldStatus: string,
   newStatus: string,
   engineerName: string,
-  note?: string
+  note?: string,
+  senderSmtp?: UserSmtpConfig,
 ) => {
   const statusColors: Record<string, string> = {
     'Open': '#f59e0b',
@@ -302,7 +467,7 @@ export const sendTicketStatusUpdate = async (
     </html>
   `;
 
-  await send(to, `Support Ticket ${ticketId} - Status Updated to ${newStatus}`, html);
+  await sendEmailWithUserSmtp(to, `Support Ticket ${ticketId} - Status Updated to ${newStatus}`, html, senderSmtp);
 };
 
 // ── Hostinger transporter (used for OTPs, registration emails, credentials) ──
@@ -506,7 +671,8 @@ export const sendTicketAssignmentNotification = async (
   to: string,
   ticketId: string,
   subject: string,
-  engineerName: string
+  engineerName: string,
+  senderSmtp?: UserSmtpConfig,
 ) => {
   const html = `
     <!DOCTYPE html>
@@ -550,7 +716,7 @@ export const sendTicketAssignmentNotification = async (
     </html>
   `;
 
-  await send(to, `New Support Ticket Assigned: ${ticketId}`, html);
+  await sendEmailWithUserSmtp(to, `New Support Ticket Assigned: ${ticketId}`, html, senderSmtp);
 };
 
 export const sendUserCredentialsEmail = async (

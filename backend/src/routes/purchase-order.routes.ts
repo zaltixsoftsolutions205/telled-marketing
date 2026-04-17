@@ -6,8 +6,26 @@ import Lead from '../models/Lead';
 import Account from '../models/Account';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, generatePONumber } from '../utils/helpers';
-import sendEmail from '../services/email.service';
-import { syncPurchaseOrderEmails } from '../services/emailInboxPurchase.service';
+import sendEmail, { sendEmailWithUserSmtp, UserSmtpConfig } from '../services/email.service';
+import { syncPurchaseOrderEmails, ImapCredentials } from '../services/emailInboxPurchase.service';
+import User from '../models/User';
+import { decryptText } from '../utils/crypto';
+
+async function getUserSmtp(userId: string): Promise<UserSmtpConfig | undefined> {
+  try {
+    const user = await User.findById(userId).select('name email smtpHost smtpPort smtpUser smtpPass smtpSecure');
+    if (!user?.smtpHost || !user?.smtpUser || !user?.smtpPass) return undefined;
+    return {
+      smtpHost: user.smtpHost,
+      smtpPort: user.smtpPort || 465,
+      smtpUser: user.smtpUser,
+      smtpPass: decryptText(user.smtpPass),
+      smtpSecure: user.smtpSecure,
+      fromEmail: user.email,
+      fromName: user.name,
+    };
+  } catch { return undefined; }
+}
 import { generatePurchaseOrderPDF } from '../services/pdf.service';
 import path from 'path';
 import logger from '../utils/logger';
@@ -152,6 +170,9 @@ router.post('/:id/send-to-vendor', authorize('admin', 'sales', 'engineer', 'hr_f
     }
 
     const lead = po.leadId as any;
+    const senderSmtp = await getUserSmtp(req.user!.id);
+    const senderName = senderSmtp?.fromName || 'Telled Marketing';
+    const senderEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || 'support@telled.com';
 
     // Generate PDF
     const pdfFileName = await generatePurchaseOrderPDF({
@@ -223,12 +244,11 @@ router.post('/:id/send-to-vendor', authorize('admin', 'sales', 'engineer', 'hr_f
             </div>
             
             <p>Kindly confirm receipt and expected delivery date at your earliest convenience.</p>
-            
-            <p style="margin-top: 20px;">For any queries, please contact us at <strong>${process.env.EMAIL_FROM || 'support@telled.com'}</strong></p>
-            
+
+            <p style="margin-top: 20px;">For any queries, please contact us at <strong>${senderEmail}</strong></p>
+
             <p>Regards,<br/>
-            <strong>Telled Marketing</strong><br/>
-            GST: 36AAKFT2721M1ZV</p>
+            <strong>${senderName}</strong></p>
           </div>
           <div class="footer">
             <p>This is an automated notification from Telled Marketing. Please do not reply to this email.</p>
@@ -240,9 +260,14 @@ router.post('/:id/send-to-vendor', authorize('admin', 'sales', 'engineer', 'hr_f
     `;
 
     const ccEmail: string | undefined = req.body.cc || undefined;
-    await sendEmail(vendorEmailToUse, `Purchase Order ${po.poNumber} from Telled Marketing`, html, [
-      { filename: `PO-${po.poNumber}.pdf`, path: pdfPath },
-    ], ccEmail);
+    await sendEmailWithUserSmtp(
+      vendorEmailToUse,
+      `Purchase Order ${po.poNumber} from ${senderName}`,
+      html,
+      senderSmtp,
+      [{ filename: `PO-${po.poNumber}.pdf`, path: pdfPath }],
+      ccEmail,
+    );
 
     await PurchaseOrder.findByIdAndUpdate(req.params.id, { 
       vendorEmailSent: true, 
@@ -374,11 +399,22 @@ router.delete('/:id', authorize('admin', 'sales'), async (req: AuthRequest, res:
   }
 });
 
-// Sync emails - Allow multiple roles
+// Sync emails — reads logged-in user's inbox for incoming POs
 router.post('/sync-emails', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
   try {
     logger.info('Manual PO email sync triggered by user:', req.user?.email);
-    const result = await syncPurchaseOrderEmails();
+    let creds: ImapCredentials | undefined;
+    const user = await User.findById(req.user!.id).select('smtpHost smtpPort smtpUser smtpPass');
+    if (user?.smtpUser && user?.smtpPass) {
+      try {
+        const smtpHost = user.smtpHost || 'smtp.hostinger.com';
+        const imapHost = smtpHost.includes('office365') || smtpHost.includes('outlook')
+          ? 'imap-mail.outlook.com'
+          : smtpHost.replace(/^smtp\./, 'imap.');
+        creds = { host: imapHost, port: 993, user: user.smtpUser, pass: decryptText(user.smtpPass) };
+      } catch { /* fall back to env vars */ }
+    }
+    const result = await syncPurchaseOrderEmails(creds);
 
     // Log detailed results
     logger.info(`PO sync results:`, {

@@ -2,18 +2,30 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError } from '../utils/response';
-import { syncSupportEmails, patchUnassignedTickets } from '../services/emailInboxSupport.service';
+import { syncSupportEmails, patchUnassignedTickets, ImapCredentials } from '../services/emailInboxSupport.service';
+import User from '../models/User';
+import { decryptText } from '../utils/crypto';
 
 export const syncSupportEmailsManually = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    // Allow both admin AND engineer to trigger manual sync
     if (req.user?.role !== 'admin' && req.user?.role !== 'engineer') {
       sendError(res, 'Only admin or engineer can trigger email sync', 403);
       return;
     }
-    
-    console.log(`🔄 Manual support email sync triggered by: ${req.user?.email} (${req.user?.role})`);
-    const result = await syncSupportEmails();
+
+    let creds: ImapCredentials | undefined;
+    const user = await User.findById(req.user!.id).select('smtpHost smtpPort smtpUser smtpPass');
+    if (user?.smtpUser && user?.smtpPass) {
+      try {
+        const smtpHost = user.smtpHost || 'smtp.hostinger.com';
+        const imapHost = smtpHost.includes('office365') || smtpHost.includes('outlook')
+          ? 'imap-mail.outlook.com'
+          : smtpHost.replace(/^smtp\./, 'imap.');
+        creds = { host: imapHost, port: 993, user: user.smtpUser, pass: decryptText(user.smtpPass) };
+      } catch { /* fall back to env vars */ }
+    }
+
+    const result = await syncSupportEmails(creds);
     
     sendSuccess(res, {
       summary: {

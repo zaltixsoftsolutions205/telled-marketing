@@ -10,7 +10,7 @@ export interface IUser extends Document {
   phone?: string;
   baseSalary: number;
   isActive: boolean;
-  mustSetPassword: boolean;
+  mustSetPassword: boolean;   // true until user sets their own password
   organizationId: mongoose.Types.ObjectId;
   refreshToken?: string;
   // Per-user outbound SMTP (used when sending DRFs / customer emails)
