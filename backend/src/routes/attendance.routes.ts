@@ -1,0 +1,13 @@
+import { Router } from 'express';
+import { authenticate } from '../middleware/auth.middleware';
+import { getAttendance, markAttendance, updateAttendance, getAttendanceSummary, checkIn, checkOut, getTodayStatus } from '../controllers/attendance.controller';
+const router = Router();
+router.use(authenticate);
+router.get('/summary', getAttendanceSummary);
+router.get('/today', getTodayStatus);
+router.get('/', getAttendance);
+router.post('/checkin', checkIn);
+router.post('/checkout', checkOut);
+router.post('/', markAttendance);
+router.put('/:id', updateAttendance);
+export default router;
