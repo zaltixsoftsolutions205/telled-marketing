@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+
+# Build output
+dist/
+build/
+frontend/dist/
+
+# Vite cache
+frontend/.vite/
+frontend/node_modules/.vite/
+
+# Logs
+*.log
+backend/logs/
+
+# Uploads (generated files)
+backend/uploads/*.pdf
+backend/uploads/*.png
+backend/uploads/*.jpg
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Claude worktrees
+.claude/worktrees/

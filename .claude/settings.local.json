@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sc query:*)",
+      "Bash(npm run seed:*)",
+      "Bash(npx ts-node:*)",
+      "Bash(node_modules/.bin/ts-node src/utils/seed.ts)",
+      "Bash(node seed.js:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run dev:*)",
+      "Bash(python3 -c \" import sys, json lines = sys.stdin.read\\(\\).strip\\(\\).split\\(''\\\\n''\\) for line in lines[-20:]: try: obj = json.loads\\(line\\) role = obj.get\\(''role'', ''''\\) content = obj.get\\(''content'', ''''\\) if isinstance\\(content, list\\): for c in content: if isinstance\\(c, dict\\) and c.get\\(''type''\\) == ''text'': print\\(f''[{role}]: {c[\"\"text\"\"][:500]}''\\) elif isinstance\\(content, str\\): print\\(f''[{role}]: {content[:500]}''\\) except: pass \")",
+      "Bash(python3:*)",
+      "Bash(node:*)",
+      "Bash(npx vite build:*)",
+      "Bash(find /c/Users/anjali/OneDrive/Desktop/telled-marketing -not -path */node_modules/* -not -path */.git/* -type d)",
+      "Bash(Test-NetConnection -ComputerName ac-sjhya6t-shard-00-00.hehwo7z.mongodb.net -Port 27017)",
+      "Bash(grep -E \"\\\\.ts$\")",
+      "Bash(npm install:*)",
+      "Read(//c/Users/anjali/AppData/Local/Temp/claude/c--Users-anjali-OneDrive-Desktop-telled-marketing/c0b3e1f6-881b-4f4e-ac16-2ae4ab8dc022/tasks/**)",
+      "Bash(curl -s http://localhost:5000/health)",
+      "Bash(python -c \"import sys; [print\\(l.strip\\(\\)\\) for l in sys.stdin]\")",
+      "Bash(npm list *)"
+    ]
+  }
+}
