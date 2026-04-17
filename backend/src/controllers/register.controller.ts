@@ -69,10 +69,7 @@ export const registerSubmit = async (req: Request, res: Response) => {
       if (existing.status === 'approved') {
         return sendError(res, 'This email is already registered. Please login.', 409);
       }
-      if (existing.status === 'pending_approval') {
-        return sendError(res, 'Your application is already under review.', 409);
-      }
-      // Clean up old rejected application + its tokens
+      // Clean up any previous application (pending or rejected) so they can reapply
       const oldId = (existing._id as any).toString();
       await Promise.all([
         AdminApplication.deleteOne({ email: normalizedEmail }),
