@@ -32,7 +32,7 @@ export default function LoginPage() {
         setUserId(result.userId);
         setStep('otp');
       } else {
-        setAuth(result.user, result.accessToken);
+        setAuth(result.user, result.accessToken, result.refreshToken);
         navigate('/dashboard');
       }
     } catch (err: any) {
@@ -48,7 +48,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const data = await authApi.verifyLoginOtp(userId, otp);
-      setAuth(data.user, data.accessToken);
+      setAuth(data.user, data.accessToken, data.refreshToken);
       navigate('/dashboard');
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Invalid or expired OTP.');

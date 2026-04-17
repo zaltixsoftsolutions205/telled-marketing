@@ -12,12 +12,12 @@ export const authApi = {
     const { data } = await api.post('/auth/login', { email, password });
     const d = data.data;
     if (d.userId) return { requiresOtp: true, userId: d.userId };
-    return { requiresOtp: false, user: normalizeUser(d.user), accessToken: d.accessToken };
+    return { requiresOtp: false, user: normalizeUser(d.user), accessToken: d.accessToken, refreshToken: d.refreshToken };
   },
   verifyLoginOtp: async (userId: string, otp: string) => {
     const { data } = await api.post('/auth/verify-login-otp', { userId, otp });
     const d = data.data;
-    return { user: normalizeUser(d.user), accessToken: d.accessToken };
+    return { user: normalizeUser(d.user), accessToken: d.accessToken, refreshToken: d.refreshToken };
   },
   signup: async (orgName: string, name: string, email: string, password: string, otp: string) => {
     const { data } = await api.post('/auth/signup', {

@@ -6,8 +6,9 @@ import { setCurrentOrgId } from '@/mock/store';
 interface AuthState {
   user: User | null;
   token: string | null;
+  refreshToken: string | null;
   organizationId: string | null;
-  setAuth: (user: User, token: string) => void;
+  setAuth: (user: User, token: string, refreshToken?: string) => void;
   setUser: (user: User) => void;
   setToken: (token: string) => void;
   logout: () => void;
@@ -18,10 +19,11 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       token: null,
+      refreshToken: null,
       organizationId: null,
-      setAuth: (user, token) => {
+      setAuth: (user, token, refreshToken) => {
         setCurrentOrgId(user.organizationId);
-        set({ user, token, organizationId: user.organizationId });
+        set({ user, token, refreshToken: refreshToken ?? null, organizationId: user.organizationId });
       },
       setUser: (user) => {
         setCurrentOrgId(user.organizationId);
@@ -30,13 +32,12 @@ export const useAuthStore = create<AuthState>()(
       setToken: (token) => set({ token }),
       logout: () => {
         setCurrentOrgId(null);
-        set({ user: null, token: null, organizationId: null });
+        set({ user: null, token: null, refreshToken: null, organizationId: null });
       },
     }),
     {
-      name: 'auth-storage-v2',   // bumped version clears stale cached demo data
-      partialize: (s) => ({ token: s.token, user: s.user, organizationId: s.organizationId }),
-      // Re-initialize the in-memory org context from persisted state on page reload
+      name: 'auth-storage-v3',
+      partialize: (s) => ({ token: s.token, refreshToken: s.refreshToken, user: s.user, organizationId: s.organizationId }),
       onRehydrateStorage: () => (state) => {
         if (state?.user?.organizationId) {
           setCurrentOrgId(state.user.organizationId);

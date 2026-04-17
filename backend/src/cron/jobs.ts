@@ -8,7 +8,7 @@ import EngineerVisit from '../models/EngineerVisit';
 import logger from '../utils/logger';
 import sendEmail, { sendOEMExpiryReminder, sendInvoiceReminder, sendTicketClosureNotification } from '../services/email.service';
 import { OEM_EXPIRY_REMINDER_DAYS, TICKET_AUTO_CLOSE_DAYS, INVOICE_DUE_REMINDER_DAYS } from '../config/constants';
-import { syncEmailsForDRF } from '../services/emailInbox.service';
+import { syncEmailsForDRF, ImapCredentials } from '../services/emailInbox.service';
 import { syncPurchaseOrderEmails } from '../services/emailInboxPurchase.service';
 import { syncSupportEmails, patchUnassignedTickets } from '../services/emailInboxSupport.service';
 
@@ -193,12 +193,46 @@ export const startCronJobs = (): void => {
     } catch (e) { logger.error('Engineer visit 2-hour reminder cron:', e); }
   });
 
-  // DRF email inbox sync — every 2 minutes
+  // DRF email inbox sync — every 2 minutes, per-user inbox
   cron.schedule('*/2 * * * *', async () => {
     try {
-      const result = await syncEmailsForDRF();
-      if (result.approved.length || result.rejected.length) {
-        logger.info(`DRF email sync: ${result.approved.length} approved, ${result.rejected.length} rejected`);
+      const User = (await import('../models/User')).default;
+      const { decryptText } = await import('../utils/crypto');
+      const users = await User.find({
+        isActive: true,
+        role: { $in: ['admin', 'sales'] },
+        smtpUser: { $exists: true, $ne: '' },
+        smtpPass: { $exists: true, $ne: '' },
+      }).select('smtpHost smtpUser smtpPass email name');
+
+      if (users.length === 0) {
+        // No users with SMTP configured — fall back to system inbox
+        const result = await syncEmailsForDRF();
+        if (result.approved.length || result.rejected.length) {
+          logger.info(`DRF email sync (system): ${result.approved.length} approved, ${result.rejected.length} rejected`);
+        }
+        return;
+      }
+
+      for (const u of users) {
+        try {
+          const smtpHost = u.smtpHost || 'smtp.hostinger.com';
+          const imapHost = smtpHost.includes('office365') || smtpHost.includes('outlook')
+            ? 'imap-mail.outlook.com'
+            : smtpHost.replace(/^smtp\./, 'imap.');
+          const creds: ImapCredentials = {
+            host: imapHost,
+            port: 993,
+            user: u.smtpUser!,
+            pass: decryptText(u.smtpPass!),
+          };
+          const result = await syncEmailsForDRF(creds);
+          if (result.approved.length || result.rejected.length) {
+            logger.info(`DRF email sync (${u.email}): ${result.approved.length} approved, ${result.rejected.length} rejected`);
+          }
+        } catch (userErr) {
+          logger.error(`DRF email sync failed for ${u.email}:`, userErr);
+        }
       }
     } catch (e) { logger.error('DRF email sync cron:', e); }
   });

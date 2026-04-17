@@ -132,7 +132,7 @@ const issueTokens = async (user: any, res: Response) => {
     { expiresIn: process.env.JWT_REFRESH_EXPIRES as any }
   );
   await redis.set(`refresh:${user._id}`, refreshToken, { ex: 7 * 24 * 60 * 60 });
-  await redis.set(`session:${user._id}`, 'active', { ex: 15 * 60 });
+  await redis.set(`session:${user._id}`, 'active', { ex: 7 * 24 * 60 * 60 });
   const fullUser = await User.findById(user._id).select('-password -refreshToken -smtpPass');
   sendSuccess(res, {
     accessToken,
@@ -234,8 +234,7 @@ export const refreshToken = async (req: Request, res: Response) => {
       { expiresIn: process.env.JWT_ACCESS_EXPIRES as any }
     );
 
-    // 🔥 EXTEND SESSION
-    await redis.set(`session:${decoded.id}`, 'active', { ex: 15 * 60 });
+    await redis.set(`session:${decoded.id}`, 'active', { ex: 7 * 24 * 60 * 60 });
 
     sendSuccess(res, { accessToken: newAccessToken }, 'Token refreshed');
 
