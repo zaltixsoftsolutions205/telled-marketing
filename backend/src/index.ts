@@ -38,6 +38,7 @@ import settingsRoutes from './routes/settings.routes';
 import visitClaimRoutes from './routes/visitClaim.routes';
 import registerRoutes from './routes/register.routes';
 import adminApplicationRoutes from './routes/adminApplication.routes';
+import poSyncRoutes from './routes/poSync.routes';
 
 
 const app = express();
@@ -87,6 +88,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/visit-claims', visitClaimRoutes);
 app.use('/api/register', registerRoutes);
 app.use('/api/admin-applications', adminApplicationRoutes);
+app.use('/api/po-sync', poSyncRoutes);
 app.use(notFound);
 app.use(errorHandler);
 

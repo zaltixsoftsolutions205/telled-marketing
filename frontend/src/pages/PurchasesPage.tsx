@@ -2,7 +2,10 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   Plus, Search, Send, RefreshCw,
   Receipt, Edit, Mail, Trash2, Download,
+  AlertCircle, CheckCircle, ChevronDown, ChevronUp,
+  Building2 as BuildingIcon, CreditCard, FileText, Eye, Check, X,
 } from 'lucide-react';
+import { poSyncApi, DetectedPO } from '@/api/poSync';
 import { jsPDF } from 'jspdf';
 import ExcelImportButton from '@/components/common/ExcelImportButton';
 import { purchasesApi } from '@/api/purchases';
@@ -102,8 +105,23 @@ export default function PurchasesPage() {
   const [search, setSearch]   = useState('');
   const [loading, setLoading] = useState(true);
   const [leads, setLeads]     = useState<Lead[]>([]);
-  const [syncing, setSyncing] = useState(false);
-  const [toast, setToast]     = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [syncing, setSyncing]   = useState(false);
+  const [toast, setToast]       = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  // ── PO Intelligence / Email Sync modal ──────────────────────────────────
+  const [showSyncModal, setShowSyncModal]   = useState(false);
+  const [syncDays, setSyncDays]             = useState(60);
+  const [syncResults, setSyncResults]       = useState<DetectedPO[]>([]);
+  const [syncScanned, setSyncScanned]       = useState<number | null>(null);
+  const [syncError, setSyncError]           = useState('');
+  const [syncExpanded, setSyncExpanded]     = useState<Record<string, boolean>>({});
+  const [syncImporting, setSyncImporting]   = useState<Record<string, boolean>>({});
+  const [syncImported, setSyncImported]     = useState<Record<string, boolean>>({});
+  const [syncImportErr, setSyncImportErr]   = useState<Record<string, string>>({});
+  const [syncForms, setSyncForms]           = useState<Record<string, {
+    leadId: string; poNumber: string; amount: string; vendorName: string;
+    vendorEmail: string; product: string; receivedDate: string; paymentTerms: string; notes: string;
+  }>>({});
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type }); setTimeout(() => setToast(null), 3500);
@@ -336,11 +354,61 @@ export default function PurchasesPage() {
     finally { setDeleting(false); }
   };
 
+  const openSyncModal = () => {
+    setSyncResults([]); setSyncScanned(null); setSyncError('');
+    setSyncExpanded({}); setSyncImported({}); setSyncImportErr({});
+    setShowSyncModal(true);
+  };
+
   const handleSyncEmails = async () => {
-    setSyncing(true);
-    try { await purchasesApi.syncEmails(); showToast('Sync completed'); await load(); }
-    catch (err: any) { showToast(err?.response?.data?.message || 'Sync failed', 'error'); }
-    finally { setSyncing(false); }
+    setSyncing(true); setSyncError(''); setSyncResults([]); setSyncScanned(null);
+    try {
+      const data = await poSyncApi.scan(syncDays);
+      setSyncResults(data.detected);
+      setSyncScanned(data.emailsScanned);
+      // Pre-fill forms
+      const forms: typeof syncForms = {};
+      data.detected.forEach((d, i) => {
+        const key = `${d.emailUid}-${i}`;
+        forms[key] = {
+          leadId:       d.suggestedLeadId || '',
+          poNumber:     d.extracted.poNumber || '',
+          amount:       d.extracted.amount?.toString() || '',
+          vendorName:   d.extracted.vendorName || d.emailFrom || '',
+          vendorEmail:  d.extracted.vendorEmail || d.emailFromEmail || '',
+          product:      d.extracted.product || '',
+          receivedDate: d.emailDate?.split('T')[0] || new Date().toISOString().split('T')[0],
+          paymentTerms: d.extracted.paymentTerms || '',
+          notes:        '',
+        };
+      });
+      setSyncForms(forms);
+      if (leads.length === 0) {
+        try { const r = await leadsApi.getAll({ limit: 500 }); setLeads(r.data || []); } catch { /* ignore */ }
+      }
+    } catch (e: any) {
+      setSyncError(e?.response?.data?.message || e?.message || 'Scan failed — check your email is configured in Profile');
+    } finally { setSyncing(false); }
+  };
+
+  const handleSyncImport = async (key: string) => {
+    const f = syncForms[key];
+    if (!f?.leadId) { setSyncImportErr(p => ({ ...p, [key]: 'Select a lead' })); return; }
+    if (!f?.amount || Number(f.amount) <= 0) { setSyncImportErr(p => ({ ...p, [key]: 'Valid amount required' })); return; }
+    setSyncImporting(p => ({ ...p, [key]: true })); setSyncImportErr(p => ({ ...p, [key]: '' }));
+    try {
+      await poSyncApi.importPO({
+        leadId: f.leadId, poNumber: f.poNumber || undefined, amount: Number(f.amount),
+        vendorName: f.vendorName || undefined, vendorEmail: f.vendorEmail || undefined,
+        product: f.product || undefined, receivedDate: f.receivedDate || undefined,
+        paymentTerms: f.paymentTerms || undefined, notes: f.notes || undefined,
+      });
+      setSyncImported(p => ({ ...p, [key]: true }));
+      showToast('PO imported successfully');
+      load();
+    } catch (e: any) {
+      setSyncImportErr(p => ({ ...p, [key]: e?.response?.data?.message || 'Import failed' }));
+    } finally { setSyncImporting(p => ({ ...p, [key]: false })); }
   };
 
   // ── Step 2: Send Invoice to Customer ─────────────────────────────────────
@@ -433,8 +501,8 @@ export default function PurchasesPage() {
               return { imported };
             }}
           />
-          <button onClick={handleSyncEmails} disabled={syncing} className="btn-secondary flex items-center gap-2">
-            <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />{syncing ? 'Syncing...' : 'Sync Emails'}
+          <button onClick={openSyncModal} className="btn-secondary flex items-center gap-2">
+            <RefreshCw size={16} /> Sync Emails
           </button>
           {canEdit && (
             <button onClick={openCreate} className="btn-primary flex items-center gap-2"><Plus size={16} /> Add PO</button>
@@ -792,6 +860,188 @@ export default function PurchasesPage() {
       </Modal>
 
 
+
+      {/* ══ PO Intelligence — Sync Emails Modal ═══════════════════════════════ */}
+      <Modal isOpen={showSyncModal} onClose={() => setShowSyncModal(false)} title="PO Intelligence — Sync Emails" size="lg">
+        <div className="space-y-4">
+          {/* Scan controls */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <label className="label">Scan emails from last</label>
+              <select className="input-field" value={syncDays} onChange={e => setSyncDays(Number(e.target.value))}>
+                <option value={7}>7 days</option>
+                <option value={30}>30 days</option>
+                <option value={60}>60 days</option>
+                <option value={90}>90 days</option>
+              </select>
+            </div>
+            <div className="flex items-end">
+              <button
+                onClick={handleSyncEmails}
+                disabled={syncing}
+                className="btn-primary flex items-center gap-2 whitespace-nowrap"
+              >
+                <RefreshCw size={15} className={syncing ? 'animate-spin' : ''} />
+                {syncing ? 'Scanning…' : 'Scan My Inbox'}
+              </button>
+            </div>
+          </div>
+
+          {/* Error */}
+          {syncError && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl p-3 text-sm text-red-700">
+              <AlertCircle size={15} className="mt-0.5 flex-shrink-0" />
+              <span>{syncError}</span>
+            </div>
+          )}
+
+          {/* Scanned summary */}
+          {syncScanned !== null && (
+            <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl p-3 text-sm text-blue-700">
+              <CheckCircle size={15} className="flex-shrink-0" />
+              <span>Scanned <strong>{syncScanned}</strong> emails — found <strong>{syncResults.length}</strong> potential purchase order{syncResults.length !== 1 ? 's' : ''}</span>
+            </div>
+          )}
+
+          {/* Detected PO cards */}
+          {syncResults.length === 0 && syncScanned !== null && !syncError && (
+            <p className="text-center text-gray-400 py-6 text-sm">No purchase orders detected in your inbox for this period.</p>
+          )}
+
+          <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+            {syncResults.map((d, i) => {
+              const key = `${d.emailUid}-${i}`;
+              const form = syncForms[key] || {};
+              const expanded = syncExpanded[key];
+              const imported = syncImported[key];
+              const importing = syncImporting[key];
+              const importErr = syncImportErr[key];
+              const conf = d.extracted?.confidence ?? 0;
+              const confColor = conf >= 70 ? 'bg-emerald-100 text-emerald-700' : conf >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500';
+
+              return (
+                <div key={key} className={cn('border rounded-xl overflow-hidden transition-all', imported ? 'border-emerald-200 bg-emerald-50/30' : 'border-gray-200 bg-white')}>
+                  {/* Card header */}
+                  <div
+                    className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50"
+                    onClick={() => setSyncExpanded(p => ({ ...p, [key]: !p[key] }))}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {d.extracted.poNumber && (
+                          <span className="font-mono text-sm font-semibold text-violet-700">{d.extracted.poNumber}</span>
+                        )}
+                        {d.extracted.amount && (
+                          <span className="text-sm font-semibold text-green-700">₹{d.extracted.amount.toLocaleString('en-IN')}</span>
+                        )}
+                        <span className={cn('badge text-[10px] px-2 py-0.5', confColor)}>{conf}% match</span>
+                        {imported && <span className="badge bg-emerald-100 text-emerald-700 text-[10px] px-2 py-0.5">✓ Imported</span>}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5 truncate">
+                        {d.emailFrom || d.emailFromEmail} · {d.emailSubject}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-xs text-gray-400">{d.emailDate ? new Date(d.emailDate).toLocaleDateString('en-IN') : ''}</span>
+                      {expanded ? <ChevronUp size={15} className="text-gray-400" /> : <ChevronDown size={15} className="text-gray-400" />}
+                    </div>
+                  </div>
+
+                  {/* Expanded import form */}
+                  {expanded && !imported && (
+                    <div className="border-t border-gray-100 px-4 py-4 space-y-4 bg-gray-50/50">
+                      {/* Detected fields summary */}
+                      <div className="grid grid-cols-3 gap-3 text-xs">
+                        {d.extracted.vendorName && (
+                          <div className="flex items-center gap-1.5 text-gray-600"><BuildingIcon size={12} /><span className="truncate">{d.extracted.vendorName}</span></div>
+                        )}
+                        {d.extracted.paymentTerms && (
+                          <div className="flex items-center gap-1.5 text-gray-600"><CreditCard size={12} /><span className="truncate">{d.extracted.paymentTerms}</span></div>
+                        )}
+                        {d.extracted.deliveryTerms && (
+                          <div className="flex items-center gap-1.5 text-gray-600"><FileText size={12} /><span className="truncate">{d.extracted.deliveryTerms}</span></div>
+                        )}
+                      </div>
+
+                      {/* Import form */}
+                      <div className="space-y-3">
+                        <div>
+                          <label className="label">Link to Lead *</label>
+                          <select
+                            className="input-field"
+                            value={form.leadId || ''}
+                            onChange={e => setSyncForms(p => ({ ...p, [key]: { ...p[key], leadId: e.target.value } }))}
+                          >
+                            <option value="">Select lead / customer</option>
+                            {leads.map(l => <option key={l._id} value={l._id}>{l.companyName}</option>)}
+                          </select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="label">PO Number</label>
+                            <input className="input-field" value={form.poNumber || ''} onChange={e => setSyncForms(p => ({ ...p, [key]: { ...p[key], poNumber: e.target.value } }))} />
+                          </div>
+                          <div>
+                            <label className="label">Amount (₹) *</label>
+                            <input type="number" step="0.01" className="input-field" value={form.amount || ''} onChange={e => setSyncForms(p => ({ ...p, [key]: { ...p[key], amount: e.target.value } }))} />
+                          </div>
+                          <div>
+                            <label className="label">Vendor Name</label>
+                            <input className="input-field" value={form.vendorName || ''} onChange={e => setSyncForms(p => ({ ...p, [key]: { ...p[key], vendorName: e.target.value } }))} />
+                          </div>
+                          <div>
+                            <label className="label">Vendor Email</label>
+                            <input className="input-field" value={form.vendorEmail || ''} onChange={e => setSyncForms(p => ({ ...p, [key]: { ...p[key], vendorEmail: e.target.value } }))} />
+                          </div>
+                          <div>
+                            <label className="label">Product / Service</label>
+                            <input className="input-field" value={form.product || ''} onChange={e => setSyncForms(p => ({ ...p, [key]: { ...p[key], product: e.target.value } }))} />
+                          </div>
+                          <div>
+                            <label className="label">Received Date</label>
+                            <input type="date" className="input-field" value={form.receivedDate || ''} onChange={e => setSyncForms(p => ({ ...p, [key]: { ...p[key], receivedDate: e.target.value } }))} />
+                          </div>
+                          <div className="col-span-2">
+                            <label className="label">Payment Terms</label>
+                            <input className="input-field" value={form.paymentTerms || ''} onChange={e => setSyncForms(p => ({ ...p, [key]: { ...p[key], paymentTerms: e.target.value } }))} />
+                          </div>
+                          <div className="col-span-2">
+                            <label className="label">Notes</label>
+                            <textarea rows={2} className="input-field" value={form.notes || ''} onChange={e => setSyncForms(p => ({ ...p, [key]: { ...p[key], notes: e.target.value } }))} />
+                          </div>
+                        </div>
+                        {importErr && (
+                          <p className="text-xs text-red-600 flex items-center gap-1"><AlertCircle size={12} />{importErr}</p>
+                        )}
+                        <div className="flex justify-end">
+                          <button
+                            disabled={importing}
+                            onClick={() => handleSyncImport(key)}
+                            className="btn-primary flex items-center gap-2 text-sm"
+                          >
+                            <Check size={14} />{importing ? 'Importing…' : 'Import as PO'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Already imported */}
+                  {expanded && imported && (
+                    <div className="border-t border-emerald-100 px-4 py-3 bg-emerald-50/50 text-sm text-emerald-700 flex items-center gap-2">
+                      <CheckCircle size={15} /><span>Purchase order imported successfully.</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex justify-end pt-1">
+            <button onClick={() => setShowSyncModal(false)} className="btn-secondary">Close</button>
+          </div>
+        </div>
+      </Modal>
 
       <ConfirmDialog isOpen={!!deleteTarget} title="Delete Purchase Order" message={`Delete PO ${deleteTarget?.poNumber}? This cannot be undone.`} confirmLabel="Delete" loading={deleting} onConfirm={handleDelete} onClose={() => setDeleteTarget(null)} danger />
     </div>

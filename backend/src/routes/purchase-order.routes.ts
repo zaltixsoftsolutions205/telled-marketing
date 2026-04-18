@@ -7,7 +7,6 @@ import Account from '../models/Account';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, generatePONumber } from '../utils/helpers';
 import sendEmail, { sendEmailWithUserSmtp, UserSmtpConfig } from '../services/email.service';
-import { syncPurchaseOrderEmails, ImapCredentials } from '../services/emailInboxPurchase.service';
 import User from '../models/User';
 import { decryptText } from '../utils/crypto';
 
@@ -601,56 +600,6 @@ router.post('/:id/mark-ark-invoice', authorize('admin', 'sales', 'hr_finance'), 
     sendSuccess(res, null, 'ARK invoice marked as received');
   } catch (err) {
     sendError(res, 'Failed', 500);
-  }
-});
-
-// Sync emails — reads logged-in user's inbox for incoming POs
-router.post('/sync-emails', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
-  try {
-    logger.info('Manual PO email sync triggered by user:', req.user?.email);
-    const user = await User.findById(req.user!.id).select('smtpHost smtpUser smtpPass email');
-
-    if (!user?.smtpUser || !user?.smtpPass) {
-      sendError(res, 'Email not configured. Set up your SMTP credentials in profile settings.', 400);
-      return;
-    }
-
-    let creds: ImapCredentials;
-    try {
-      const smtpHost = user.smtpHost || 'smtp.hostinger.com';
-      const imapHost = smtpHost.includes('office365') || smtpHost.includes('outlook')
-        ? 'imap-mail.outlook.com'
-        : smtpHost.replace(/^smtp\./, 'imap.');
-      creds = { host: imapHost, port: 993, user: user.smtpUser, pass: decryptText(user.smtpPass) };
-    } catch {
-      sendError(res, 'Failed to read email credentials. Please re-save your SMTP settings.', 400);
-      return;
-    }
-
-    const result = await syncPurchaseOrderEmails(creds, req.user!.id);
-
-    // Log detailed results
-    logger.info(`PO sync results:`, {
-      created: result.created,
-      updated: result.updated,
-      skipped: result.skipped,
-      errors: result.errors,
-      scanned: result.scanned,
-      processed: result.processed
-    });
-
-    sendSuccess(res, {
-      created: result.created,
-      updated: result.updated,
-      skipped: result.skipped,
-      errors: result.errors,
-      scanned: result.scanned,
-      processed: result.processed,
-      summary: `${result.created.length} created, ${result.updated.length} updated, ${result.skipped.length} skipped`
-    }, 'PO email sync completed');
-  } catch (error) {
-    logger.error('Manual PO email sync failed:', error);
-    sendError(res, 'Failed to sync PO emails', 500);
   }
 });
 

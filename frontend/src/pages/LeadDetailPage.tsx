@@ -135,7 +135,6 @@ export default function LeadDetailPage() {
     setDRFError('');
     try {
       await leadsApi.sendDrf(id!, drfForm);
-      await drfApi.sendFromLead(lead as any, drfForm, user);
       setShowDRFModal(false);
       load();
     } catch (err: unknown) {

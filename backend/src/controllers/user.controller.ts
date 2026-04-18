@@ -175,3 +175,23 @@ export const updateEmailConfig = async (req: AuthRequest, res: Response): Promis
     sendSuccess(res, null, 'Email configuration saved');
   } catch { sendError(res, 'Failed to save email config', 500); }
 };
+
+// PUT /api/users/:id — allow users to update their own IMAP settings (non-admin self-update)
+export const updateMyProfile = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const targetId = req.params.id;
+    // Non-admins can only update themselves
+    if (req.user!.role !== 'admin' && targetId !== req.user!.id) {
+      sendError(res, 'Forbidden', 403); return;
+    }
+    const allowed = ['name', 'phone', 'department'];
+    const update: Record<string, unknown> = {};
+    for (const key of allowed) {
+      if (key in req.body) update[key] = req.body[key];
+    }
+    const user = await User.findByIdAndUpdate(targetId, update, { new: true, runValidators: true })
+      .select('-password -refreshToken -smtpPass');
+    if (!user) { sendError(res, 'User not found', 404); return; }
+    sendSuccess(res, user, 'Profile updated');
+  } catch { sendError(res, 'Failed to update profile', 500); }
+};

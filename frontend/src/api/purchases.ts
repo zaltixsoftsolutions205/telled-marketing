@@ -49,10 +49,6 @@ export const purchasesApi = {
     const { data } = await api.post(`/purchase-orders/${poId}/convert`, body);
     return data.data;
   },
-  syncEmails: async () => {
-    const { data } = await api.post('/purchase-orders/sync-emails');
-    return data.data;
-  },
   recordPayment: async (id: string, body: unknown) => {
     const { data } = await api.post(`/purchase-orders/${id}/payment`, body);
     return data.data;
