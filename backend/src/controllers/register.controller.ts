@@ -149,7 +149,7 @@ export const registerSubmit = async (req: Request, res: Response) => {
   } catch (e: any) {
     console.error('Register submit error:', e);
     if (e.code === 11000) return sendError(res, 'Email already submitted', 409);
-    sendError(res, 'Failed to submit application', 500);
+    sendError(res, `Failed to submit application: ${e?.message || e}`, 500);
   }
 };
 
