@@ -46,6 +46,8 @@ const docFields = upload.fields([
   { name: 'gst_certificate', maxCount: 1 },
   { name: 'id_proof', maxCount: 1 },
   { name: 'address_proof', maxCount: 1 },
+  { name: 'pan_certificate', maxCount: 1 },
+  { name: 'incorporation_certificate', maxCount: 1 },
 ]);
 
 const router = Router();
