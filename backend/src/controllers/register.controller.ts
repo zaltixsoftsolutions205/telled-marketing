@@ -6,6 +6,7 @@ import { sendError, sendSuccess } from '../utils/response';
 import { generateOTP, saveOTP, verifyOTP } from '../services/otp.service';
 import { sendOTPEmail, sendApplicationNotificationEmail } from '../services/email.service';
 import { redis } from '../config/redis';
+import logger from '../utils/logger';
 
 const ACTION_TTL = 7 * 24 * 60 * 60; // 7 days in seconds
 
@@ -120,15 +121,21 @@ export const registerSubmit = async (req: Request, res: Response) => {
       path: path.resolve(d.path),
     }));
 
-    sendApplicationNotificationEmail({
-      orgName, contactName, email: normalizedEmail,
-      phone, address, city, state, businessType,
-      gstNumber,
-      applicationId: appId,
-      approveUrl,
-      rejectUrl,
-      documentPaths,
-    }).catch(e => console.error('Admin notification email failed:', e));
+    try {
+      await sendApplicationNotificationEmail({
+        orgName, contactName, email: normalizedEmail,
+        phone, address, city, state, businessType,
+        gstNumber,
+        applicationId: appId,
+        approveUrl,
+        rejectUrl,
+        documentPaths,
+      });
+      logger.info(`[Register] Notification email sent to admin for application ${appId}`);
+    } catch (emailErr) {
+      logger.error('[Register] Failed to send admin notification email:', emailErr);
+      // Don't block the response — application is saved, admin can review manually
+    }
 
     sendSuccess(
       res,
