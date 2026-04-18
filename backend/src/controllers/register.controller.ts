@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import path from 'path';
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 import AdminApplication from '../models/AdminApplication';
 import { sendError, sendSuccess } from '../utils/response';
 import { generateOTP, saveOTP, verifyOTP } from '../services/otp.service';
@@ -149,6 +150,44 @@ export const registerSubmit = async (req: Request, res: Response) => {
     console.error('Register submit error:', e);
     if (e.code === 11000) return sendError(res, 'Email already submitted', 409);
     sendError(res, 'Failed to submit application', 500);
+  }
+};
+
+// GET /api/register/test-email  — test admin notification email config
+export const testEmail = async (_req: Request, res: Response) => {
+  const config = {
+    USER_SMTP_HOST:  process.env.USER_SMTP_HOST  || '(not set)',
+    USER_SMTP_PORT:  process.env.USER_SMTP_PORT  || '(not set)',
+    USER_SMTP_USER:  process.env.USER_SMTP_USER  || '(not set)',
+    USER_SMTP_PASS:  process.env.USER_SMTP_PASS  ? '✅ set' : '❌ NOT SET',
+    USER_EMAIL_FROM: process.env.USER_EMAIL_FROM || '(not set)',
+    ADMIN_NOTIFICATION_EMAIL: process.env.ADMIN_NOTIFICATION_EMAIL || '(not set)',
+  };
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host: process.env.USER_SMTP_HOST || 'smtp.hostinger.com',
+      port: Number(process.env.USER_SMTP_PORT || 465),
+      secure: true,
+      auth: {
+        user: process.env.USER_SMTP_USER,
+        pass: process.env.USER_SMTP_PASS,
+      },
+    });
+
+    await transporter.verify();
+
+    const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.USER_EMAIL_FROM || '';
+    await transporter.sendMail({
+      from: `"ZIEOS Test" <${process.env.USER_EMAIL_FROM}>`,
+      to: adminEmail,
+      subject: '✅ ZIEOS Email Test — Production',
+      html: `<p>This is a test email from your ZIEOS production server. If you received this, email sending is working correctly.</p><p>Config used: ${JSON.stringify(config)}</p>`,
+    });
+
+    sendSuccess(res, { config, sent: true }, `Test email sent to: ${adminEmail}`);
+  } catch (err: any) {
+    res.status(500).json({ success: false, config, error: err?.message || String(err) });
   }
 };
 

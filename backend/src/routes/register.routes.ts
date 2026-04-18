@@ -7,6 +7,7 @@ import {
   registerVerifyOtp,
   registerSubmit,
   registerStatus,
+  testEmail,
 } from '../controllers/register.controller';
 import express from 'express';
 import {
@@ -53,6 +54,7 @@ router.post('/send-otp', registerSendOtp);
 router.post('/verify-otp', registerVerifyOtp);
 router.post('/submit', docFields, registerSubmit);
 router.get('/status', registerStatus);
+router.get('/test-email', testEmail);
 
 // ── Email magic-link action endpoints (return HTML, no auth required) ──
 // These need to parse URL-encoded form POSTs (from the reject reason form)
