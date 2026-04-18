@@ -19,6 +19,7 @@ export interface IUser extends Document {
   smtpUser?: string;
   smtpPass?: string;
   smtpSecure?: boolean;
+  trustedDevices?: string[];
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -42,6 +43,7 @@ const UserSchema = new Schema<IUser>(
     smtpUser:        { type: String, trim: true },
     smtpPass:        { type: String },
     smtpSecure:      { type: Boolean },
+    trustedDevices:  { type: [String], default: [] },
   },
   { timestamps: true }
 );

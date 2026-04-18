@@ -9,12 +9,24 @@ export interface IPurchaseOrder extends Document {
   vendorEmail?: string;
   receivedDate: Date;
   notes?: string;
-  vendorEmailSent: boolean;
-  vendorEmailSentAt?: Date;
   converted: boolean;
   uploadedBy: mongoose.Types.ObjectId;
   isArchived: boolean;
-  // Vendor payment tracking
+  // ── 6-step PO flow ──
+  customerInvoiceSent: boolean;
+  customerInvoiceSentAt?: Date;
+  poForwardedToArk: boolean;
+  poForwardedToArkAt?: Date;
+  priceClearanceReceived: boolean;
+  priceClearanceReceivedAt?: Date;
+  poSentToArk: boolean;
+  poSentToArkAt?: Date;
+  arkInvoiceReceived: boolean;
+  arkInvoiceReceivedAt?: Date;
+  arkInvoiceAmount?: number;
+  // legacy / payment
+  vendorEmailSent: boolean;
+  vendorEmailSentAt?: Date;
   paymentStatus: 'Unpaid' | 'Paid';
   paidAmount?: number;
   paidDate?: Date;
@@ -36,12 +48,24 @@ const POSchema = new Schema<IPurchaseOrder>(
     vendorEmail:       { type: String },
     receivedDate:      { type: Date, required: true },
     notes:             { type: String },
-    vendorEmailSent:   { type: Boolean, default: false },
-    vendorEmailSentAt: { type: Date },
-    converted:         { type: Boolean, default: false },
-    uploadedBy:        { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    isArchived:        { type: Boolean, default: false },
-    paymentStatus:     { type: String, enum: ['Unpaid', 'Paid'], default: 'Unpaid' },
+    converted:                { type: Boolean, default: false },
+    uploadedBy:               { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    isArchived:               { type: Boolean, default: false },
+    customerInvoiceSent:      { type: Boolean, default: false },
+    customerInvoiceSentAt:    { type: Date },
+    poForwardedToArk:         { type: Boolean, default: false },
+    poForwardedToArkAt:       { type: Date },
+    priceClearanceReceived:   { type: Boolean, default: false },
+    priceClearanceReceivedAt: { type: Date },
+    poSentToArk:              { type: Boolean, default: false },
+    poSentToArkAt:            { type: Date },
+    arkInvoiceReceived:       { type: Boolean, default: false },
+    arkInvoiceReceivedAt:     { type: Date },
+    arkInvoiceAmount:         { type: Number },
+    // legacy
+    vendorEmailSent:          { type: Boolean, default: false },
+    vendorEmailSentAt:        { type: Date },
+    paymentStatus:            { type: String, enum: ['Unpaid', 'Paid'], default: 'Unpaid' },
     paidAmount:        { type: Number },
     paidDate:          { type: Date },
     paymentMode:       { type: String, enum: ['Bank Transfer', 'Cheque', 'Cash', 'UPI', 'Online'] },

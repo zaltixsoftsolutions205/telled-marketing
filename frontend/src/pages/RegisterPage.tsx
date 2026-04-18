@@ -5,17 +5,9 @@ import {
   Upload, CheckCircle, ChevronRight, ChevronLeft
 } from 'lucide-react';
 import api from '@/api/axios';
-import { useLogoStore } from '@/store/logoStore';
-import { resolveLogoUrl } from '@/api/settings';
 
 type Step = 1 | 2 | 3 | 4;
 
-interface DocFile {
-  file: File | null;
-  label: string;
-  field: string;
-  required: boolean;
-}
 
 const BUSINESS_TYPES = [
   'Private Limited Company',
@@ -40,9 +32,6 @@ const INDIAN_STATES = [
 
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const logoUrl = useLogoStore((s) => s.logoUrl);
-  const resolvedLogo = resolveLogoUrl(logoUrl);
-
   const [step, setStep] = useState<Step>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -68,12 +57,13 @@ export default function RegisterPage() {
   const [otpVerified, setOtpVerified] = useState(false);
 
   // Step 3 — Documents
-  const [docs, setDocs] = useState<DocFile[]>([
-    { field: 'business_registration', label: 'Business Registration Certificate', file: null, required: true },
-    { field: 'gst_certificate', label: 'GST Certificate', file: null, required: false },
-    { field: 'id_proof', label: 'ID Proof (Aadhar / PAN)', file: null, required: true },
-    { field: 'address_proof', label: 'Address Proof', file: null, required: true },
-  ]);
+  const CERT_OPTIONS = [
+    { field: 'incorporation_certificate', label: 'Incorporation Certificate' },
+    { field: 'gst_certificate', label: 'GST Certificate' },
+    { field: 'pan_certificate', label: 'PAN Certificate' },
+  ];
+  const [selectedCertType, setSelectedCertType] = useState('');
+  const [certFile, setCertFile] = useState<File | null>(null);
 
   const fileRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -132,24 +122,22 @@ export default function RegisterPage() {
   // ── Doc file select ──
   const handleFileChange = (idx: number) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
-    setDocs(prev => prev.map((d, i) => i === idx ? { ...d, file } : d));
+    setCertFile(file);
   };
 
   // ── Step 3 submit ──
   const handleDocSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const missing = docs.filter(d => d.required && !d.file).map(d => d.label);
-    if (missing.length) {
-      setError(`Please upload: ${missing.join(', ')}`);
-      return;
-    }
+    if (!selectedCertType) { setError('Please select a certificate type'); return; }
+    if (!certFile) { setError('Please upload the selected certificate'); return; }
 
     setLoading(true);
     setError('');
 
     const fd = new FormData();
     Object.entries(form).forEach(([k, v]) => fd.append(k, v));
-    docs.forEach(d => { if (d.file) fd.append(d.field, d.file); });
+    fd.append('cert_type', selectedCertType);
+    fd.append(selectedCertType, certFile);
 
     try {
       await api.post('/register/submit', fd, {
@@ -171,7 +159,6 @@ export default function RegisterPage() {
       <div className="w-full max-w-lg">
         {/* Header */}
         <div className="text-center mb-6">
-          <img src={resolvedLogo} alt="Zieos" className="h-16 object-contain mx-auto mb-3" />
           <h1 className="text-2xl font-bold text-gray-900">Register Your Organization</h1>
           <p className="text-gray-500 text-sm mt-1">Submit your details for admin approval</p>
         </div>
@@ -333,45 +320,59 @@ export default function RegisterPage() {
           {step === 3 && (
             <form onSubmit={handleDocSubmit} className="space-y-5">
               <div>
-                <h2 className="text-lg font-semibold text-gray-800">Upload Documents</h2>
-                <p className="text-sm text-gray-500 mt-1">Upload supporting documents for verification. PDF, JPG, PNG accepted (max 10 MB each).</p>
+                <h2 className="text-lg font-semibold text-gray-800">Upload Document</h2>
+                <p className="text-sm text-gray-500 mt-1">Select your certificate type and upload the file for verification. PDF, JPG, PNG accepted (max 10 MB).</p>
               </div>
 
-              <div className="space-y-3">
-                {docs.map((doc, idx) => (
-                  <div key={doc.field} className="border border-gray-200 rounded-lg p-4">
+              <div className="space-y-4">
+                <div>
+                  <label className={labelCls}>Certificate Type <span className="text-red-500">*</span></label>
+                  <select
+                    className={inputCls}
+                    value={selectedCertType}
+                    onChange={e => { setSelectedCertType(e.target.value); setCertFile(null); if (fileRefs.current[0]) fileRefs.current[0]!.value = ''; }}
+                  >
+                    <option value="">-- Select Certificate --</option>
+                    {CERT_OPTIONS.map(opt => (
+                      <option key={opt.field} value={opt.field}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {selectedCertType && (
+                  <div className="border border-gray-200 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <FileText size={15} className="text-violet-500" />
                         <span className="text-sm font-medium text-gray-700">
-                          {doc.label} {doc.required && <span className="text-red-500">*</span>}
+                          {CERT_OPTIONS.find(o => o.field === selectedCertType)?.label}
                         </span>
                       </div>
-                      {doc.file && <CheckCircle size={16} className="text-green-500" />}
+                      {certFile && <CheckCircle size={16} className="text-green-500" />}
                     </div>
-                    {doc.file ? (
+                    {certFile ? (
                       <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded px-3 py-2">
-                        <span className="text-xs text-green-700 truncate max-w-[200px]">{doc.file.name}</span>
-                        <button type="button" onClick={() => { setDocs(prev => prev.map((d, i) => i === idx ? { ...d, file: null } : d)); if (fileRefs.current[idx]) fileRefs.current[idx]!.value = ''; }} className="text-xs text-red-500 hover:text-red-700 ml-2">Remove</button>
+                        <span className="text-xs text-green-700 truncate max-w-[200px]">{certFile.name}</span>
+                        <button type="button" onClick={() => { setCertFile(null); if (fileRefs.current[0]) fileRefs.current[0]!.value = ''; }} className="text-xs text-red-500 hover:text-red-700 ml-2">Remove</button>
                       </div>
                     ) : (
                       <button
                         type="button"
-                        onClick={() => fileRefs.current[idx]?.click()}
+                        onClick={() => fileRefs.current[0]?.click()}
                         className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-200 rounded-lg py-3 text-sm text-gray-500 hover:border-violet-300 hover:text-violet-600 transition-colors"
                       >
                         <Upload size={14} /> Click to upload
                       </button>
                     )}
                     <input
-                      ref={el => { fileRefs.current[idx] = el; }}
+                      ref={el => { fileRefs.current[0] = el; }}
                       type="file"
                       className="hidden"
                       accept=".pdf,.jpg,.jpeg,.png"
-                      onChange={handleFileChange(idx)}
+                      onChange={handleFileChange(0)}
                     />
                   </div>
-                ))}
+                )}
               </div>
 
               {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>}

@@ -25,6 +25,26 @@ export const purchasesApi = {
     const { data } = await api.post(`/purchase-orders/${id}/send-to-vendor`, { vendorEmail, ...(cc ? { cc } : {}) });
     return data.data;
   },
+  sendCustomerInvoice: async (id: string, customerEmail: string, cc?: string) => {
+    const { data } = await api.post(`/purchase-orders/${id}/send-customer-invoice`, { customerEmail, ...(cc ? { cc } : {}) });
+    return data.data;
+  },
+  forwardToArk: async (id: string, arkEmail: string, arkName?: string, cc?: string) => {
+    const { data } = await api.post(`/purchase-orders/${id}/forward-to-ark`, { arkEmail, arkName, ...(cc ? { cc } : {}) });
+    return data.data;
+  },
+  markPriceClearance: async (id: string) => {
+    const { data } = await api.post(`/purchase-orders/${id}/mark-price-clearance`);
+    return data.data;
+  },
+  sendPoToArk: async (id: string, arkEmail: string, cc?: string) => {
+    const { data } = await api.post(`/purchase-orders/${id}/send-po-to-ark`, { arkEmail, ...(cc ? { cc } : {}) });
+    return data.data;
+  },
+  markArkInvoice: async (id: string, amount?: number) => {
+    const { data } = await api.post(`/purchase-orders/${id}/mark-ark-invoice`, { amount });
+    return data.data;
+  },
   convertToAccount: async (poId: string, body: { accountName?: string; notes?: string }) => {
     const { data } = await api.post(`/purchase-orders/${poId}/convert`, body);
     return data.data;

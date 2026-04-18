@@ -138,6 +138,8 @@ export interface Quotation {
   discountAmount?: number;
   finalAmount?: number;
   pdfPath?: string;
+  uploadedFile?: string;
+  uploadedFileName?: string;
   emailSent?: boolean;
   emailSentAt?: string;
   createdBy: User;
@@ -154,8 +156,6 @@ export interface PurchaseOrder {
   vendorEmail?: string;
   receivedDate: string;
   notes?: string;
-  vendorEmailSent: boolean;
-  vendorEmailSentAt?: string;
   converted: boolean;
   uploadedBy: User | string;
   isArchived: boolean;
@@ -166,7 +166,21 @@ export interface PurchaseOrder {
   paymentReference?: string;
   paymentNotes?: string;
   paidBy?: User | string;
-  // PO Flow steps
+  // 6-step PO flow
+  customerInvoiceSent?: boolean;
+  customerInvoiceSentAt?: string;
+  poForwardedToArk?: boolean;
+  poForwardedToArkAt?: string;
+  priceClearanceReceived?: boolean;
+  priceClearanceReceivedAt?: string;
+  poSentToArk?: boolean;
+  poSentToArkAt?: string;
+  arkInvoiceReceived?: boolean;
+  arkInvoiceReceivedAt?: string;
+  arkInvoiceAmount?: number;
+  // legacy flow (kept for backward compat)
+  vendorEmailSent?: boolean;
+  vendorEmailSentAt?: string;
   invoiceGenerated?: boolean;
   invoiceGeneratedAt?: string;
   poInvoiceNumber?: string;
@@ -175,8 +189,6 @@ export interface PurchaseOrder {
   licenseGeneratedAt?: string;
   licenseKey?: string;
   licenseFile?: string;
-  customerInvoiceSent?: boolean;
-  customerInvoiceSentAt?: string;
   createdAt: string;
   updatedAt: string;
 }

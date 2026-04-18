@@ -63,7 +63,7 @@ export default function LeadDetailPage() {
   const [drfForm, setDRFForm] = useState({
     accountName: '', address: '', website: '', annualTurnover: '',
     contactPerson: '', designation: '', contactNo: '', email: '',
-    partnerSalesRep: '', channelPartner: 'Telled Marketing',
+    partnerSalesRep: '', channelPartner: 'ZIEOS',
     interestedModules: '', expectedClosure: '', oemEmail: '', notes: '',
   });
   const [approveForm, setApproveForm] = useState({ expiryDate: '', notes: '' });

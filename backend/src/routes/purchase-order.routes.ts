@@ -171,7 +171,7 @@ router.post('/:id/send-to-vendor', authorize('admin', 'sales', 'engineer', 'hr_f
 
     const lead = po.leadId as any;
     const senderSmtp = await getUserSmtp(req.user!.id);
-    const senderName = senderSmtp?.fromName || 'Telled Marketing';
+    const senderName = senderSmtp?.fromName || 'ZIEOS';
     const senderEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || 'support@telled.com';
 
     // Generate PDF
@@ -251,8 +251,8 @@ router.post('/:id/send-to-vendor', authorize('admin', 'sales', 'engineer', 'hr_f
             <strong>${senderName}</strong></p>
           </div>
           <div class="footer">
-            <p>This is an automated notification from Telled Marketing. Please do not reply to this email.</p>
-            <p>&copy; ${new Date().getFullYear()} Telled Marketing. All rights reserved.</p>
+            <p>This is an automated notification from ZIEOS. Please do not reply to this email.</p>
+            <p>&copy; ${new Date().getFullYear()} ZIEOS. All rights reserved.</p>
           </div>
         </div>
       </body>
@@ -396,6 +396,211 @@ router.delete('/:id', authorize('admin', 'sales'), async (req: AuthRequest, res:
   } catch (error) {
     logger.error('Delete PO error:', error);
     sendError(res, 'Failed to delete purchase order', 500);
+  }
+});
+
+// ── Step 2: Send Invoice to Customer ─────────────────────────────────────────
+router.post('/:id/send-customer-invoice', authorize('admin', 'sales', 'hr_finance'), async (req: AuthRequest, res: Response) => {
+  try {
+    const po = await PurchaseOrder.findById(req.params.id)
+      .populate('leadId', 'companyName contactPersonName email phone');
+    if (!po) { sendError(res, 'PO not found', 404); return; }
+
+    const lead = po.leadId as any;
+    const customerEmail: string = req.body.customerEmail || lead?.email || '';
+    if (!customerEmail) { sendError(res, 'Customer email not found', 400); return; }
+
+    const senderSmtp = await getUserSmtp(req.user!.id);
+    const senderName = senderSmtp?.fromName || 'ZIEOS';
+    const senderEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || '';
+
+    const invNumber = `INV-${new Date().getFullYear()}-${String(Math.floor(1000 + Math.random() * 9000))}`;
+
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:20px">
+        <div style="background:linear-gradient(135deg,#6d28d9,#4c1d95);color:#fff;padding:20px;border-radius:8px 8px 0 0;text-align:center">
+          <h2 style="margin:0">Invoice — ${invNumber}</h2>
+          <p style="margin:6px 0 0;opacity:.85">Ref: PO ${po.poNumber}</p>
+        </div>
+        <div style="padding:24px;background:#f9fafb;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px">
+          <p>Dear ${lead?.contactPersonName || lead?.companyName},</p>
+          <p>Please find below the invoice against your Purchase Order <strong>${po.poNumber}</strong>.</p>
+          <table style="border-collapse:collapse;width:100%;margin:16px 0;font-size:14px">
+            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">Invoice No</td><td style="padding:8px;border:1px solid #ddd">${invNumber}</td></tr>
+            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">PO Number</td><td style="padding:8px;border:1px solid #ddd">${po.poNumber}</td></tr>
+            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">Product</td><td style="padding:8px;border:1px solid #ddd">${po.product || '—'}</td></tr>
+            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">Amount</td><td style="padding:8px;border:1px solid #ddd;font-weight:bold;color:#6d28d9">₹ ${po.amount.toLocaleString('en-IN')}</td></tr>
+          </table>
+          <p>Please process the payment at your earliest convenience.</p>
+          <p>Regards,<br/><strong>${senderName}</strong><br/>${senderEmail}</p>
+        </div>
+      </div>`;
+
+    await sendEmailWithUserSmtp(customerEmail, `Invoice ${invNumber} — PO ${po.poNumber}`, html, senderSmtp, undefined, req.body.cc);
+    await PurchaseOrder.findByIdAndUpdate(req.params.id, {
+      customerInvoiceSent: true,
+      customerInvoiceSentAt: new Date(),
+    });
+    sendSuccess(res, { invNumber, sentTo: customerEmail }, 'Invoice sent to customer');
+  } catch (err) {
+    logger.error('Send customer invoice error:', err);
+    sendError(res, 'Failed to send customer invoice', 500);
+  }
+});
+
+// ── Step 3: Forward PO to ARK ─────────────────────────────────────────────────
+router.post('/:id/forward-to-ark', authorize('admin', 'sales', 'hr_finance'), async (req: AuthRequest, res: Response) => {
+  try {
+    const po = await PurchaseOrder.findById(req.params.id)
+      .populate('leadId', 'companyName contactPersonName email phone address city state');
+    if (!po) { sendError(res, 'PO not found', 404); return; }
+
+    const arkEmail: string = req.body.arkEmail || po.vendorEmail || '';
+    if (!arkEmail) { sendError(res, 'ARK email is required', 400); return; }
+
+    const lead = po.leadId as any;
+    const senderSmtp = await getUserSmtp(req.user!.id);
+    const senderName = senderSmtp?.fromName || 'ZIEOS';
+    const senderEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || '';
+
+    const pdfFileName = await generatePurchaseOrderPDF({
+      poNumber: po.poNumber,
+      poDate: new Date(po.receivedDate).toLocaleDateString('en-IN'),
+      vendorName: po.vendorName || arkEmail,
+      vendorEmail: arkEmail,
+      product: po.product || 'N/A',
+      amount: po.amount,
+      customerCompany: lead?.companyName || '—',
+      customerContact: lead?.contactPersonName || '',
+      customerEmail: lead?.email || '',
+      customerPhone: lead?.phone || '',
+      customerAddress: [lead?.address, lead?.city, lead?.state].filter(Boolean).join(', ') || '',
+    });
+    const uploadDir = process.env.UPLOAD_PATH || './uploads';
+    const pdfPath = path.join(uploadDir, pdfFileName);
+
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:20px">
+        <div style="background:linear-gradient(135deg,#6d28d9,#4c1d95);color:#fff;padding:20px;border-radius:8px 8px 0 0;text-align:center">
+          <h2 style="margin:0">Purchase Order — ${po.poNumber}</h2>
+        </div>
+        <div style="padding:24px;background:#f9fafb;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px">
+          <p>Dear Team,</p>
+          <p>Please find attached the Purchase Order <strong>${po.poNumber}</strong> received from our customer <strong>${lead?.companyName}</strong>. Kindly share the <strong>price clearance</strong> at the earliest.</p>
+          <table style="border-collapse:collapse;width:100%;margin:16px 0;font-size:14px">
+            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">PO Number</td><td style="padding:8px;border:1px solid #ddd">${po.poNumber}</td></tr>
+            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">Product</td><td style="padding:8px;border:1px solid #ddd">${po.product || '—'}</td></tr>
+            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">Customer</td><td style="padding:8px;border:1px solid #ddd">${lead?.companyName || '—'}</td></tr>
+            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">Amount</td><td style="padding:8px;border:1px solid #ddd">₹ ${po.amount.toLocaleString('en-IN')}</td></tr>
+          </table>
+          <p>Please reply with price clearance so we can proceed with the official PO.</p>
+          <p>Regards,<br/><strong>${senderName}</strong><br/>${senderEmail}</p>
+        </div>
+      </div>`;
+
+    await sendEmailWithUserSmtp(arkEmail, `PO ${po.poNumber} — Price Clearance Request`, html, senderSmtp,
+      [{ filename: `PO-${po.poNumber}.pdf`, path: pdfPath }], req.body.cc);
+
+    await PurchaseOrder.findByIdAndUpdate(req.params.id, {
+      poForwardedToArk: true,
+      poForwardedToArkAt: new Date(),
+      vendorEmail: arkEmail,
+      vendorName: req.body.arkName || po.vendorName || '',
+      vendorEmailSent: true,
+    });
+    sendSuccess(res, { sentTo: arkEmail }, 'PO forwarded to ARK');
+  } catch (err) {
+    logger.error('Forward to ARK error:', err);
+    sendError(res, 'Failed to forward PO to ARK', 500);
+  }
+});
+
+// ── Step 4: Mark Price Clearance Received (manual) ───────────────────────────
+router.post('/:id/mark-price-clearance', authorize('admin', 'sales', 'hr_finance'), async (req: AuthRequest, res: Response) => {
+  try {
+    await PurchaseOrder.findByIdAndUpdate(req.params.id, {
+      priceClearanceReceived: true,
+      priceClearanceReceivedAt: new Date(),
+    });
+    sendSuccess(res, null, 'Price clearance marked');
+  } catch (err) {
+    sendError(res, 'Failed', 500);
+  }
+});
+
+// ── Step 5: Send PO to ARK (official, after price clearance) ─────────────────
+router.post('/:id/send-po-to-ark', authorize('admin', 'sales', 'hr_finance'), async (req: AuthRequest, res: Response) => {
+  try {
+    const po = await PurchaseOrder.findById(req.params.id)
+      .populate('leadId', 'companyName contactPersonName email phone address city state');
+    if (!po) { sendError(res, 'PO not found', 404); return; }
+
+    const arkEmail: string = req.body.arkEmail || po.vendorEmail || '';
+    if (!arkEmail) { sendError(res, 'ARK email is required', 400); return; }
+
+    const lead = po.leadId as any;
+    const senderSmtp = await getUserSmtp(req.user!.id);
+    const senderName = senderSmtp?.fromName || 'ZIEOS';
+    const senderEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || '';
+
+    const pdfFileName = await generatePurchaseOrderPDF({
+      poNumber: po.poNumber,
+      poDate: new Date(po.receivedDate).toLocaleDateString('en-IN'),
+      vendorName: po.vendorName || arkEmail,
+      vendorEmail: arkEmail,
+      product: po.product || 'N/A',
+      amount: po.amount,
+      customerCompany: lead?.companyName || '—',
+      customerContact: lead?.contactPersonName || '',
+      customerEmail: lead?.email || '',
+      customerPhone: lead?.phone || '',
+      customerAddress: [lead?.address, lead?.city, lead?.state].filter(Boolean).join(', ') || '',
+    });
+    const uploadDir = process.env.UPLOAD_PATH || './uploads';
+    const pdfPath = path.join(uploadDir, pdfFileName);
+
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:20px">
+        <div style="background:linear-gradient(135deg,#6d28d9,#4c1d95);color:#fff;padding:20px;border-radius:8px 8px 0 0;text-align:center">
+          <h2 style="margin:0">Official Purchase Order — ${po.poNumber}</h2>
+        </div>
+        <div style="padding:24px;background:#f9fafb;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px">
+          <p>Dear Team,</p>
+          <p>Please find attached our official Purchase Order <strong>${po.poNumber}</strong>. Kindly process and send us the invoice at the earliest.</p>
+          <table style="border-collapse:collapse;width:100%;margin:16px 0;font-size:14px">
+            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">PO Number</td><td style="padding:8px;border:1px solid #ddd">${po.poNumber}</td></tr>
+            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">Product</td><td style="padding:8px;border:1px solid #ddd">${po.product || '—'}</td></tr>
+            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">Amount</td><td style="padding:8px;border:1px solid #ddd;font-weight:bold;color:#6d28d9">₹ ${po.amount.toLocaleString('en-IN')}</td></tr>
+          </table>
+          <p>Regards,<br/><strong>${senderName}</strong><br/>${senderEmail}</p>
+        </div>
+      </div>`;
+
+    await sendEmailWithUserSmtp(arkEmail, `Official PO ${po.poNumber} — Please process`, html, senderSmtp,
+      [{ filename: `PO-${po.poNumber}.pdf`, path: pdfPath }], req.body.cc);
+
+    await PurchaseOrder.findByIdAndUpdate(req.params.id, {
+      poSentToArk: true,
+      poSentToArkAt: new Date(),
+    });
+    sendSuccess(res, { sentTo: arkEmail }, 'PO sent to ARK');
+  } catch (err) {
+    logger.error('Send PO to ARK error:', err);
+    sendError(res, 'Failed to send PO to ARK', 500);
+  }
+});
+
+// ── Step 6: Mark ARK Invoice Received (manual) ───────────────────────────────
+router.post('/:id/mark-ark-invoice', authorize('admin', 'sales', 'hr_finance'), async (req: AuthRequest, res: Response) => {
+  try {
+    await PurchaseOrder.findByIdAndUpdate(req.params.id, {
+      arkInvoiceReceived: true,
+      arkInvoiceReceivedAt: new Date(),
+      ...(req.body.amount ? { arkInvoiceAmount: Number(req.body.amount) } : {}),
+    });
+    sendSuccess(res, null, 'ARK invoice marked as received');
+  } catch (err) {
+    sendError(res, 'Failed', 500);
   }
 });
 

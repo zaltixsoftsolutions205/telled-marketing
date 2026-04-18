@@ -7,11 +7,66 @@ import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, sanitizeQuery } from '../utils/helpers';
 import sendEmail, { sendEmailWithUserSmtp, UserSmtpConfig } from '../services/email.service';
 import User from '../models/User';
+import Organization from '../models/Organization';
 import { decryptText } from '../utils/crypto';
 import { generateQuotationPDF as generateQuotationPDFService } from '../services/pdf.service';
 import logger from '../utils/logger';
 import path from 'path';
 import fs from 'fs';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>;
+
+function extractAmountFromText(text: string): number | null {
+  const clean = (s: string) => parseFloat(s.replace(/,/g, ''));
+
+  // Helper: find all matches for a pattern (global), return last capture group 1 value
+  const lastMatch = (re: RegExp): number | null => {
+    const all = [...text.matchAll(re)];
+    if (!all.length) return null;
+    const val = clean(all[all.length - 1][1] || '');
+    return isNaN(val) || val <= 0 ? null : val;
+  };
+
+  const NUM = `([\\d,]+(?:\\.\\d{1,2})?)`;
+  const CUR = `(?:Rs\\.?|INR|₹|USD|\\$)?\\s*`;
+
+  // ── Pass 1: label + amount ON SAME LINE ──────────────────────────────────
+  const sameLinePatterns: RegExp[] = [
+    new RegExp(`(?:grand\\s+total|total\\s+amount|net\\s+total|invoice\\s+total|amount\\s+payable|payable\\s+amount)\\s*[:\\-=]?\\s*${CUR}${NUM}`, 'gi'),
+    new RegExp(`final\\s+(?:price|amount|total)\\s*[:\\-=]?\\s*${CUR}${NUM}`, 'gi'),
+    new RegExp(`(?:^|\\n)[\\t ]*(?:Total|TOTAL)\\s*[:\\-=]?\\s*${CUR}${NUM}`, 'gim'),
+  ];
+  for (const re of sameLinePatterns) {
+    const v = lastMatch(re);
+    if (v !== null) return v;
+  }
+
+  // ── Pass 2: label on one line, amount on NEXT line (tabular PDFs) ────────
+  const labelThenNewline = [
+    /(?:grand\s+total|total\s+amount|net\s+total|invoice\s+total|amount\s+payable|payable\s+amount|final\s+(?:price|amount|total))\s*[:\-=]?\s*\n\s*/gi,
+    /(?:^|\n)[\t ]*(?:Total|TOTAL)\s*[:\-=]?\s*\n\s*/gim,
+  ];
+  for (const labelRe of labelThenNewline) {
+    for (const m of text.matchAll(labelRe)) {
+      const after = text.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + 40);
+      const nm = after.match(new RegExp(`^${CUR}${NUM}`));
+      if (nm?.[1]) {
+        const v = clean(nm[1]);
+        if (!isNaN(v) && v > 0) return v;
+      }
+    }
+  }
+
+  // ── Pass 3: last currency amount in document (universal fallback) ─────────
+  // Most quotation PDFs end with the final total — so the LAST INR/₹ amount wins
+  const allCurrencyAmounts = [...text.matchAll(new RegExp(`(?:INR|Rs\\.?|₹)\\s*${NUM}`, 'gi'))];
+  if (allCurrencyAmounts.length) {
+    const v = clean(allCurrencyAmounts[allCurrencyAmounts.length - 1][1]);
+    if (!isNaN(v) && v > 0) return v;
+  }
+
+  return null;
+}
 
 async function getUserSmtp(userId: string): Promise<UserSmtpConfig | undefined> {
   try {
@@ -49,10 +104,23 @@ function getLogoPath(): string | undefined {
 }
 
 // Generate quotation number: QT-YYYY-XXXX
-const generateQuotationNumber = () => {
-  const year = new Date().getFullYear();
-  const random = Math.floor(1000 + Math.random() * 9000);
-  return `QT-${year}-${random}`;
+const generateQuotationNumber = async (): Promise<string> => {
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yyyy = String(now.getFullYear());
+  const prefix = `QT${mm}${yyyy}`;
+  // Find the highest existing sequence number for this month prefix
+  const last = await Quotation.findOne(
+    { quotationNumber: { $regex: `^${prefix}` } },
+    { quotationNumber: 1 },
+    { sort: { quotationNumber: -1 } }
+  ).lean();
+  let next = 1;
+  if (last?.quotationNumber) {
+    const existing = parseInt(last.quotationNumber.slice(prefix.length), 10);
+    if (!isNaN(existing)) next = existing + 1;
+  }
+  return `${prefix}${String(next).padStart(3, '0')}`;
 };
 
 export const getQuotations = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -117,69 +185,134 @@ export const getQuotationById = async (req: AuthRequest, res: Response): Promise
 
 export const createQuotation = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { 
-      leadId, 
-      items, 
-      taxRate = 18, 
+    const {
+      leadId,
+      items,
+      taxRate = 18,
       gstApplicable = true,
-      validUntil, 
-      terms, 
-      notes
+      validUntil,
+      terms,
+      notes,
+      // upload-based fields
+      uploadedFile,
+      uploadedFileName,
+      totalAmount,
     } = req.body;
-    
-    if (!leadId || !items?.length) {
-      sendError(res, 'leadId and items are required', 400);
-      return;
-    }
-    
+
+    if (!leadId) { sendError(res, 'leadId is required', 400); return; }
+
     const lead = await Lead.findById(leadId);
-    if (!lead || lead.isArchived) {
-      sendError(res, 'Lead not found', 404);
-      return;
+    if (!lead || lead.isArchived) { sendError(res, 'Lead not found', 404); return; }
+
+    // Determine file from multer upload OR passed path
+    const fileFromUpload = (req as any).file;
+    const resolvedFile = fileFromUpload ? fileFromUpload.path : (uploadedFile || undefined);
+    const resolvedFileName = fileFromUpload ? fileFromUpload.originalname : (uploadedFileName || undefined);
+
+    let resolvedItems: any[];
+    let subtotal: number;
+    let taxAmt: number;
+    let total: number;
+
+    if (resolvedFile && totalAmount) {
+      // Upload-based flow: single synthetic item
+      const amt = Number(totalAmount);
+      resolvedItems = [{ description: resolvedFileName || 'Uploaded Quotation', quantity: 1, listPrice: amt, unitPrice: amt, discount: 0, total: amt }];
+      subtotal = amt;
+      taxAmt = 0;
+      total = amt;
+    } else {
+      // Manual flow: require items
+      if (!items?.length) { sendError(res, 'Either upload a quotation file or provide items', 400); return; }
+      resolvedItems = items.map((item: any) => ({
+        description: item.description,
+        quantity: Number(item.quantity),
+        listPrice: Number(item.listPrice ?? 0),
+        unitPrice: Number(item.unitPrice),
+        discount: Number(item.discount ?? 0),
+        total: Number(item.total ?? (item.quantity * item.unitPrice)),
+      }));
+      subtotal = resolvedItems.reduce((s: number, i: any) => s + i.total, 0);
+      const discountApplicable = req.body.discountApplicable ?? false;
+      const discountType = req.body.discountType ?? 'percent';
+      const discountValue = Number(req.body.discountValue ?? 0);
+      const discountAmount = discountApplicable ? (discountType === 'percent' ? subtotal * discountValue / 100 : discountValue) : 0;
+      const discountedSubtotal = subtotal - discountAmount;
+      taxAmt = gstApplicable ? discountedSubtotal * Number(taxRate) / 100 : 0;
+      total = discountedSubtotal + taxAmt;
     }
-    
-    const subtotal = items.reduce((s: number, i: any) => 
-      s + (Number(i.quantity) * Number(i.unitPrice)), 0);
-    const taxAmount = gstApplicable ? (subtotal * taxRate) / 100 : 0;
-    const total = subtotal + taxAmount;
-    
+
     const existingCount = await Quotation.countDocuments({ leadId, isArchived: false });
-    
-    const formattedItems = items.map((item: any) => ({
-      description: item.description,
-      quantity: Number(item.quantity),
-      unitPrice: Number(item.unitPrice),
-      total: Number(item.quantity) * Number(item.unitPrice)
-    }));
-    
+
     const quotation = new Quotation({
       leadId,
-      quotationNumber: generateQuotationNumber(),
+      quotationNumber: await generateQuotationNumber(),
       version: existingCount + 1,
-      items: formattedItems,
+      items: resolvedItems,
       subtotal,
-      taxRate,
-      gstApplicable,
-      taxAmount,
+      taxRate: Number(taxRate),
+      gstApplicable: gstApplicable === 'true' || gstApplicable === true,
+      taxAmount: taxAmt,
+      discountApplicable: req.body.discountApplicable ?? false,
+      discountType: req.body.discountType ?? 'percent',
+      discountValue: Number(req.body.discountValue ?? 0),
+      discountAmount: Number(req.body.discountAmount ?? 0),
       total,
+      finalAmount: total,
       validUntil: validUntil ? new Date(validUntil) : undefined,
       terms,
       notes,
       status: 'Draft',
+      uploadedFile: resolvedFile,
+      uploadedFileName: resolvedFileName,
       createdBy: req.user!.id,
-      isArchived: false
+      isArchived: false,
     });
-    
+
     await quotation.save();
-    
+
     const populatedQuotation = await Quotation.findById(quotation._id)
       .populate('leadId', 'companyName contactName email oemName')
       .populate('createdBy', 'name email');
-    
+
     sendSuccess(res, populatedQuotation, 'Quotation created successfully', 201);
   } catch (error: any) {
     logger.error('createQuotation error:', error);
     sendError(res, error.message || 'Failed to create quotation', 500);
+  }
+};
+
+// POST /quotations/parse-pdf — upload a PDF and extract amount
+export const parsePdfQuotation = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const file = (req as any).file;
+    if (!file) { sendError(res, 'No file uploaded', 400); return; }
+
+    let extractedText = '';
+    let suggestedAmount: number | null = null;
+
+    if (path.extname(file.originalname).toLowerCase() === '.pdf') {
+      const buffer = fs.readFileSync(file.path);
+      try {
+        const parsed = await pdfParse(buffer);
+        extractedText = parsed.text || '';
+        suggestedAmount = extractAmountFromText(extractedText);
+        logger.info(`[parsePdf] extracted text (first 500): ${extractedText.slice(0, 500)}`);
+        logger.info(`[parsePdf] suggestedAmount: ${suggestedAmount}`);
+      } catch (e) {
+        logger.warn('pdf-parse failed:', e);
+      }
+    }
+
+    sendSuccess(res, {
+      filePath: file.path,
+      fileName: file.originalname,
+      suggestedAmount,
+      extractedText: extractedText.slice(0, 2000),
+    });
+  } catch (error: any) {
+    logger.error('parsePdfQuotation error:', error);
+    sendError(res, 'Failed to parse PDF', 500);
   }
 };
 
@@ -341,6 +474,13 @@ export const sendQuotationEmail = async (req: AuthRequest, res: Response): Promi
     const senderSmtp = await getUserSmtp(req.user!.id);
     const senderContactEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || 'sales@telled.com';
 
+    // Fetch organization name
+    const senderUser = await User.findById(req.user!.id).select('organizationId name').lean();
+    const org = senderUser?.organizationId
+      ? await Organization.findById(senderUser.organizationId).select('name').lean()
+      : null;
+    const orgName = (org as any)?.name || 'Our Company';
+
     // Allow caller to override recipient(s); fall back to lead email
     const toEmail: string = req.body?.toEmail || lead?.email;
     if (!toEmail) {
@@ -351,94 +491,145 @@ export const sendQuotationEmail = async (req: AuthRequest, res: Response): Promi
     // Optional CC recipients (comma-separated)
     const ccEmail: string | undefined = req.body?.cc || undefined;
 
-    // Generate PDF
-    const pdfFile = await generateQuotationPDFService({
-      quotationNumber: quotation.quotationNumber,
-      companyName: lead.companyName,
-      companyAddress: [lead.address, lead.city, lead.state].filter(Boolean).join(', '),
-      contactName: lead.contactPersonName || lead.companyName,
-      contactEmail: lead.email,
-      contactPhone: lead.phone,
-      oemName: lead.oemName,
-      salesPersonName: (quotation.createdBy as any)?.name,
-      salesPersonEmail: (quotation.createdBy as any)?.email,
-      salesPersonPhone: (quotation.createdBy as any)?.phone,
-      items: quotation.items.map(i => ({
-        description: i.description,
-        quantity: i.quantity,
-        listPrice: (i as any).listPrice,
-        unitPrice: i.unitPrice,
-        discount: (i as any).discount,
-        total: i.total,
-      })),
-      subtotal: quotation.subtotal ?? 0,
-      taxRate: quotation.taxRate ?? 0,
-      taxAmount: quotation.taxAmount ?? 0,
-      total: quotation.total ?? 0,
-      gstApplicable: quotation.gstApplicable ?? false,
-      discountApplicable: quotation.discountApplicable ?? false,
-      discountType: quotation.discountType ?? 'percent',
-      discountValue: quotation.discountValue ?? 0,
-      discountAmount: quotation.discountAmount ?? 0,
-      validUntil: quotation.validUntil,
-      notes: quotation.notes,
-      terms: quotation.terms,
-      logoPath: getLogoPath(),
-    });
+    // Use uploaded file if available, else generate PDF
+    let attachmentPath: string;
+    let attachmentName: string;
 
-    const uploadDir = process.env.UPLOAD_PATH || './uploads';
-    const pdfPath = path.join(process.cwd(), uploadDir, pdfFile);
+    if ((quotation as any).uploadedFile && fs.existsSync((quotation as any).uploadedFile)) {
+      attachmentPath = (quotation as any).uploadedFile;
+      attachmentName = (quotation as any).uploadedFileName || `Quotation-${quotation.quotationNumber}.pdf`;
+    } else {
+      const pdfFile = await generateQuotationPDFService({
+        quotationNumber: quotation.quotationNumber,
+        companyName: lead.companyName,
+        companyAddress: [lead.address, lead.city, lead.state].filter(Boolean).join(', '),
+        contactName: lead.contactPersonName || lead.companyName,
+        contactEmail: lead.email,
+        contactPhone: lead.phone,
+        oemName: lead.oemName,
+        salesPersonName: (quotation.createdBy as any)?.name,
+        salesPersonEmail: (quotation.createdBy as any)?.email,
+        salesPersonPhone: (quotation.createdBy as any)?.phone,
+        items: quotation.items.map(i => ({
+          description: i.description,
+          quantity: i.quantity,
+          listPrice: (i as any).listPrice,
+          unitPrice: i.unitPrice,
+          discount: (i as any).discount,
+          total: i.total,
+        })),
+        subtotal: quotation.subtotal ?? 0,
+        taxRate: quotation.taxRate ?? 0,
+        taxAmount: quotation.taxAmount ?? 0,
+        total: quotation.total ?? 0,
+        gstApplicable: quotation.gstApplicable ?? false,
+        discountApplicable: quotation.discountApplicable ?? false,
+        discountType: quotation.discountType ?? 'percent',
+        discountValue: quotation.discountValue ?? 0,
+        discountAmount: quotation.discountAmount ?? 0,
+        validUntil: quotation.validUntil,
+        notes: quotation.notes,
+        terms: quotation.terms,
+        logoPath: getLogoPath(),
+      });
+      const uploadDir = process.env.UPLOAD_PATH || './uploads';
+      attachmentPath = path.join(process.cwd(), uploadDir, pdfFile);
+      attachmentName = `Quotation-${quotation.quotationNumber}.pdf`;
+    }
 
-    // Build email HTML
-    const html = `<!DOCTYPE html><html><head><style>
-      body{font-family:Arial,sans-serif;background:#f4f4f4;margin:0}
-      .c{max-width:600px;margin:30px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.1)}
-      .h{background:linear-gradient(135deg,#6d28d9,#4c1d95);padding:28px;text-align:center}
-      .b{padding:28px;color:#333;line-height:1.6}
-      .f{background:#f8f8f8;padding:16px;text-align:center;font-size:12px;color:#888}
-      table{width:100%;border-collapse:collapse;margin:16px 0}
-      td{padding:9px 12px;border:1px solid #eee}
-      .lbl{background:#f3e8ff;font-weight:bold;width:40%}
-    </style></head><body><div class="c">
-    <div class="h">
-      <h1 style="color:#fff;margin:0;font-size:22px">QUOTATION</h1>
-      <p style="color:#fff;margin:6px 0 0;opacity:.9;font-size:13px">${quotation.quotationNumber}</p>
-    </div>
-    <div class="b">
-      <p>Dear <b>${lead.contactPersonName || lead.companyName}</b>,</p>
-      <p>Please find the quotation from <b>Telled Marketing</b>. Details are summarised below:</p>
-      <table>
-        <tr><td class="lbl">Quotation #</td><td>${quotation.quotationNumber}</td></tr>
-        <tr><td class="lbl">Date</td><td>${new Date().toLocaleDateString('en-IN')}</td></tr>
-        <tr><td class="lbl">Sub Total</td><td>₹ ${(quotation.subtotal ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></tr>
-        ${quotation.discountApplicable && (quotation.discountAmount ?? 0) > 0 ? `<tr><td class="lbl" style="color:#dc2626">${quotation.discountType === 'percent' ? `Discount (${quotation.discountValue}%)` : 'Discount (Flat)'}</td><td style="color:#dc2626">− ₹ ${(quotation.discountAmount ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></tr>` : ''}
-        ${quotation.gstApplicable && quotation.taxAmount > 0 ? `<tr><td class="lbl">GST (${quotation.taxRate}%)</td><td>₹ ${quotation.taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></tr>` : ''}
-        <tr><td class="lbl" style="background:#6d28d9;color:#fff">Total Amount</td><td style="font-weight:bold;font-size:15px">₹ ${(quotation.total ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></tr>
-        ${quotation.validUntil ? `<tr><td class="lbl">Valid Until</td><td>${new Date(quotation.validUntil).toLocaleDateString('en-IN')}</td></tr>` : ''}
-        ${quotation.notes ? `<tr><td class="lbl">Notes</td><td>${quotation.notes}</td></tr>` : ''}
-      </table>
-      <p style="margin-top:16px;color:#666;font-size:13px">The detailed quotation PDF is attached to this email. Please review and revert at your earliest convenience.</p>
-      <p style="color:#666;font-size:13px">For any queries, feel free to reach us at <b>${senderContactEmail}</b>.</p>
-    </div>
-    <div class="f">© ${new Date().getFullYear()} Telled Marketing &nbsp;|&nbsp; Thanks for your business!</div>
-    </div></body></html>`;
+    // Build email HTML — table-based layout for email client compatibility
+    const totalDisplay = (quotation.total ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    const dateStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    const validStr = quotation.validUntil ? new Date(quotation.validUntil).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+
+    const infoRows = [
+      `<tr>
+        <td style="padding:10px 16px;color:#6b7280;font-size:14px;font-weight:500;width:45%;border-bottom:1px dashed #bfdbfe">Quotation No.</td>
+        <td style="padding:10px 16px;color:#111;font-size:14px;font-weight:600;text-align:right;border-bottom:1px dashed #bfdbfe">${quotation.quotationNumber}</td>
+      </tr>`,
+      `<tr>
+        <td style="padding:10px 16px;color:#6b7280;font-size:14px;font-weight:500;border-bottom:1px dashed #bfdbfe">Date</td>
+        <td style="padding:10px 16px;color:#111;font-size:14px;font-weight:600;text-align:right;border-bottom:1px dashed #bfdbfe">${dateStr}</td>
+      </tr>`,
+      validStr ? `<tr>
+        <td style="padding:10px 16px;color:#6b7280;font-size:14px;font-weight:500;border-bottom:1px dashed #bfdbfe">Valid Until</td>
+        <td style="padding:10px 16px;color:#111;font-size:14px;font-weight:600;text-align:right;border-bottom:1px dashed #bfdbfe">${validStr}</td>
+      </tr>` : '',
+      quotation.discountApplicable && (quotation.discountAmount ?? 0) > 0 ? `<tr>
+        <td style="padding:10px 16px;color:#dc2626;font-size:14px;font-weight:500;border-bottom:1px dashed #bfdbfe">${quotation.discountType === 'percent' ? `Discount (${quotation.discountValue}%)` : 'Discount (Flat)'}</td>
+        <td style="padding:10px 16px;color:#dc2626;font-size:14px;font-weight:600;text-align:right;border-bottom:1px dashed #bfdbfe">− ₹ ${(quotation.discountAmount ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+      </tr>` : '',
+      quotation.gstApplicable && (quotation.taxAmount ?? 0) > 0 ? `<tr>
+        <td style="padding:10px 16px;color:#6b7280;font-size:14px;font-weight:500">GST (${quotation.taxRate}%)</td>
+        <td style="padding:10px 16px;color:#111;font-size:14px;font-weight:600;text-align:right">₹ ${(quotation.taxAmount ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+      </tr>` : '',
+    ].filter(Boolean).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f0f0f0;font-family:Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f0f0f0;padding:24px 0">
+  <tr><td align="center">
+    <table width="560" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.08)">
+
+      <!-- Top colour bar -->
+      <tr><td height="6" style="background:linear-gradient(90deg,#1d4ed8,#3b82f6);font-size:0;line-height:0">&nbsp;</td></tr>
+
+      <!-- Header -->
+      <tr><td style="padding:28px 36px 20px;border-bottom:1px solid #f0f0f0">
+        <p style="margin:0;font-size:22px;font-weight:700;color:#1d4ed8;letter-spacing:.5px">${orgName}</p>
+        <span style="display:inline-block;margin-top:8px;background:#dbeafe;color:#1d4ed8;font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;letter-spacing:1px">QUOTATION</span>
+      </td></tr>
+
+      <!-- Body -->
+      <tr><td style="padding:28px 36px">
+        <p style="margin:0 0 12px;font-size:15px;color:#222">Dear <strong>${lead.contactPersonName || lead.companyName}</strong>,</p>
+        <p style="margin:0 0 24px;font-size:14px;color:#555;line-height:1.7">Thank you for your interest. Please find attached the quotation for your reference. A summary is provided below:</p>
+
+        <!-- Info table -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:8px;margin-bottom:20px">
+          ${infoRows}
+        </table>
+
+        <!-- Total box -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#1d4ed8;border-radius:8px;margin-bottom:24px">
+          <tr>
+            <td style="padding:16px 24px;color:#bfdbfe;font-size:13px;font-weight:500">Total Amount</td>
+            <td style="padding:16px 24px;color:#ffffff;font-size:20px;font-weight:700;text-align:right">&#8377; ${totalDisplay}</td>
+          </tr>
+        </table>
+
+        ${quotation.notes ? `<p style="margin:0 0 10px;font-size:13px;color:#444"><strong>Notes:</strong> ${quotation.notes}</p>` : ''}
+        <p style="margin:0 0 8px;font-size:13px;color:#666;line-height:1.7">The detailed quotation is attached as a PDF. Kindly review and let us know your confirmation at the earliest.</p>
+        <p style="margin:0;font-size:13px;color:#666">For any queries, please write to us at <strong>${senderContactEmail}</strong>.</p>
+      </td></tr>
+
+      <!-- Footer -->
+      <tr><td style="background:#f9fafb;padding:18px 36px;border-top:1px solid #f0f0f0;text-align:center">
+        <p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.8">This is a system-generated email from <strong style="color:#1d4ed8">${orgName}</strong>.<br>&copy; ${new Date().getFullYear()} ${orgName}. All rights reserved.</p>
+      </td></tr>
+
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
 
     await sendEmailWithUserSmtp(
       toEmail,
-      `Quotation ${quotation.quotationNumber} from ${senderSmtp?.fromName || 'Telled Marketing'}`,
+      `Quotation ${quotation.quotationNumber} from ${senderSmtp?.fromName || orgName}`,
       html,
       senderSmtp,
-      [{ filename: `Quotation-${quotation.quotationNumber}.pdf`, path: pdfPath }],
+      [{ filename: attachmentName, path: attachmentPath }],
       ccEmail
     );
     
-    await Quotation.findByIdAndUpdate(req.params.id, { 
-      emailSent: true, 
-      emailSentAt: new Date(), 
-      pdfPath: pdfFile 
+    await Quotation.findByIdAndUpdate(req.params.id, {
+      emailSent: true,
+      emailSentAt: new Date(),
+      status: 'Sent',
     });
-    
-    sendSuccess(res, { pdfPath: pdfFile }, 'Email sent with PDF attachment');
+
+    sendSuccess(res, { attachmentName }, 'Email sent with quotation attachment');
   } catch (err) {
     logger.error('sendQuotationEmail failed:', err);
     sendError(res, 'Failed to send email', 500);

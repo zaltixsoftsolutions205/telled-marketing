@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bell, Menu, CheckCheck, Calendar, Wrench, Headphones, DollarSign, Info, ImagePlus, X, FileText, ShoppingCart, Users, Receipt, BookOpen, UserCheck } from 'lucide-react';
+import { Bell, Menu, CheckCheck, Calendar, Wrench, Headphones, DollarSign, Info, ImagePlus, X, FileText, ShoppingCart, Users, Receipt, BookOpen, UserCheck, User, LogOut } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useNavigate } from 'react-router-dom';
 import { settingsApi } from '@/api/settings';
 import { useLogoStore } from '@/store/logoStore';
 import { useNotificationStore, type NotifType } from '@/store/notificationStore';
+
+const AVATAR_KEY = (id: string) => `avatar_${id}`;
 
 interface Props {
   title: string;
@@ -56,8 +58,12 @@ function timeAgo(dateStr: string) {
 export default function Header({ title, onMenuClick }: Props) {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
+  const logout = useAuthStore((s) => s.logout);
   const [open, setOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
+  const avatar = user ? localStorage.getItem(AVATAR_KEY(user._id)) : null;
   const logoInputRef = useRef<HTMLInputElement>(null);
   const logoUrl = useLogoStore((s) => s.logoUrl);
   const setLogoUrl = useLogoStore((s) => s.setLogoUrl);
@@ -82,12 +88,11 @@ export default function Header({ title, onMenuClick }: Props) {
     setLogoUrl(null);
   };
 
-  // Close dropdown on outside click
+  // Close dropdowns on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setOpen(false);
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -212,19 +217,46 @@ export default function Header({ title, onMenuClick }: Props) {
           )}
         </div>
 
-        {/* User avatar */}
-        <div className="flex items-center gap-2 sm:gap-2.5 pl-2 sm:pl-3 border-l border-gray-100">
-          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center shadow-sm shadow-violet-200 flex-shrink-0">
-            <span className="text-white font-bold text-sm leading-none">
-              {user?.name?.trim() ? user.name.trim().charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase() ?? 'U'}
-            </span>
-          </div>
-          <div className="hidden sm:flex flex-col leading-tight">
-            <span className="text-sm font-semibold text-gray-800">
-              {user?.name?.trim() ? user.name.trim().split(' ')[0] : user?.email?.split('@')[0] ?? 'User'}
-            </span>
-            <span className="text-[10px] text-gray-400 capitalize">{user?.role?.replace('_', ' ')}</span>
-          </div>
+        {/* User avatar + dropdown */}
+        <div className="relative pl-2 sm:pl-3 border-l border-gray-100" ref={profileRef}>
+          <button
+            onClick={() => setProfileOpen(o => !o)}
+            className="flex items-center gap-2 sm:gap-2.5 hover:opacity-80 transition-opacity"
+          >
+            {avatar ? (
+              <img src={avatar} alt="avatar" className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-cover ring-2 ring-violet-200 flex-shrink-0" />
+            ) : (
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center shadow-sm shadow-violet-200 flex-shrink-0">
+                <span className="text-white font-bold text-sm leading-none">
+                  {user?.name?.trim() ? user.name.trim().charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase() ?? 'U'}
+                </span>
+              </div>
+            )}
+            <div className="hidden sm:flex flex-col leading-tight text-left">
+              <span className="text-sm font-semibold text-gray-800">
+                {user?.name?.trim() ? user.name.trim().split(' ')[0] : user?.email?.split('@')[0] ?? 'User'}
+              </span>
+              <span className="text-[10px] text-gray-400 capitalize">{user?.role?.replace('_', ' ')}</span>
+            </div>
+          </button>
+
+          {profileOpen && (
+            <div className="absolute right-0 top-full mt-2 w-44 bg-white border border-gray-200 rounded-2xl shadow-xl z-50 overflow-hidden">
+              <button
+                onClick={() => { setProfileOpen(false); navigate('profile'); }}
+                className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-700 hover:bg-violet-50 hover:text-violet-700 transition-colors"
+              >
+                <User size={14} /> View Profile
+              </button>
+              <div className="border-t border-gray-100" />
+              <button
+                onClick={() => { setProfileOpen(false); logout(); navigate('/login', { replace: true }); }}
+                className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors"
+              >
+                <LogOut size={14} /> Logout
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </header>

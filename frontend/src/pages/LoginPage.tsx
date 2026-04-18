@@ -4,7 +4,6 @@ import { Eye, EyeOff, Mail, Lock, KeyRound } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { authApi } from '@/api/auth';
 import { useLogoStore } from '@/store/logoStore';
-import { resolveLogoUrl } from '@/api/settings';
 
 export default function LoginPage() {
   const [step, setStep] = useState<'credentials' | 'otp'>('credentials');
@@ -17,11 +16,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const { setAuth } = useAuthStore();
+  const setCompanyName = useLogoStore((s) => s.setCompanyName);
   const navigate = useNavigate();
-  const companyName = useLogoStore((s) => s.companyName);
-  const logoUrl = useLogoStore((s) => s.logoUrl);
-  const resolvedLogo = resolveLogoUrl(logoUrl);
-
   const handleCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -32,6 +28,7 @@ export default function LoginPage() {
         setUserId(result.userId);
         setStep('otp');
       } else {
+        if (result.organizationName) setCompanyName(result.organizationName);
         setAuth(result.user, result.accessToken, result.refreshToken);
         navigate('/dashboard');
       }
@@ -47,7 +44,8 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const data = await authApi.verifyLoginOtp(userId, otp);
+      const data = await authApi.verifyLoginOtp(userId, otp, email);
+      if (data.organizationName) setCompanyName(data.organizationName);
       setAuth(data.user, data.accessToken, data.refreshToken);
       navigate('/dashboard');
     } catch (err: any) {
@@ -67,8 +65,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-violet-50 via-white to-gold-50 p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <img src={resolvedLogo} alt="Zieos" className="h-20 object-contain mx-auto mb-4" />
-          <h1 className="text-3xl font-bold text-gray-900">{companyName || 'Zieos'}</h1>
+          <h1 className="text-3xl font-bold text-gray-900">ZIEOS</h1>
           <p className="text-gray-500 mt-1 text-sm">Zaltix Intelligent Engineering Operating System</p>
         </div>
 
@@ -118,7 +115,7 @@ export default function LoginPage() {
                   <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>
                 )}
                 <button type="submit" disabled={loading} className="btn-primary w-full py-3 mt-2">
-                  {loading ? 'Sending OTP…' : 'Continue'}
+                  {loading ? 'Signing in…' : 'Continue'}
                 </button>
               </form>
               <p className="text-center text-sm text-gray-500 mt-5">

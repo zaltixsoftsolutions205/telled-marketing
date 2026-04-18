@@ -30,6 +30,8 @@ export interface IQuotation extends Document {
   terms?: string;
   notes?: string;
   pdfPath?: string;
+  uploadedFile?: string;
+  uploadedFileName?: string;
   emailSent: boolean;
   emailSentAt?: Date;
   vendorSent: boolean;
@@ -83,6 +85,8 @@ const QuotationSchema = new Schema<IQuotation>(
     terms: { type: String },
     notes: { type: String },
     pdfPath: { type: String },
+    uploadedFile: { type: String },
+    uploadedFileName: { type: String },
     emailSent: { type: Boolean, default: false },
     emailSentAt: { type: Date },
     vendorSent: { type: Boolean, default: false },

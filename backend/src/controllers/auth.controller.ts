@@ -134,18 +134,20 @@ const issueTokens = async (user: any, res: Response) => {
   await redis.set(`refresh:${user._id}`, refreshToken, { ex: 7 * 24 * 60 * 60 });
   await redis.set(`session:${user._id}`, 'active', { ex: 7 * 24 * 60 * 60 });
   const fullUser = await User.findById(user._id).select('-password -refreshToken -smtpPass');
+  const org = await Organization.findById(fullUser?.organizationId).select('name').lean();
   sendSuccess(res, {
     accessToken,
     refreshToken,
     user: fullUser,
+    organizationName: org?.name ?? '',
   }, 'Login successful');
 };
 
 // POST /api/auth/login
-// Admin/platform_admin → direct token (no OTP). Other roles → OTP step.
+// Admin/platform_admin → direct token (no OTP). Other roles → OTP step (skipped for trusted devices).
 export const login = async (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, deviceToken } = req.body;
     if (!email || !password) return sendError(res, 'Email and password are required', 400);
 
     const user = await User.findOne({ email: email.toLowerCase().trim() });
@@ -178,6 +180,11 @@ export const login = async (req: Request, res: Response) => {
       smtpPass:   encryptText(password),
     });
 
+    // Trusted device → skip OTP
+    if (deviceToken && user.trustedDevices?.includes(deviceToken)) {
+      return issueTokens(user, res);
+    }
+
     const otp = generateOTP();
     await saveOTP(user.email, otp);
     await sendOTPEmail(user.email, otp, 'login');
@@ -201,7 +208,27 @@ export const verifyLoginOtp = async (req: Request, res: Response) => {
     const valid = await verifyOTP(user.email, otp.toString());
     if (!valid) return sendError(res, 'Invalid or expired OTP', 400);
 
-    return issueTokens(user, res);
+    // Generate a device token and save it so this device skips OTP next time
+    const deviceToken = crypto.randomBytes(32).toString('hex');
+    await User.findByIdAndUpdate(user._id, {
+      $addToSet: { trustedDevices: deviceToken },
+    });
+
+    const accessToken = jwt.sign(
+      { id: user._id.toString(), role: user.role },
+      process.env.JWT_ACCESS_SECRET as string,
+      { expiresIn: process.env.JWT_ACCESS_EXPIRES as any }
+    );
+    const refreshToken = jwt.sign(
+      { id: user._id.toString() },
+      process.env.JWT_REFRESH_SECRET as string,
+      { expiresIn: process.env.JWT_REFRESH_EXPIRES as any }
+    );
+    await redis.set(`refresh:${user._id}`, refreshToken, { ex: 7 * 24 * 60 * 60 });
+    await redis.set(`session:${user._id}`, 'active', { ex: 7 * 24 * 60 * 60 });
+    const fullUser = await User.findById(user._id).select('-password -refreshToken -smtpPass');
+
+    sendSuccess(res, { accessToken, refreshToken, user: fullUser, deviceToken }, 'Login successful');
   } catch (e) {
     console.error(e);
     sendError(res, 'OTP verification failed', 500);
@@ -297,7 +324,7 @@ export const forgotPassword = async (req: Request, res: Response) => {
 
     await sendEmail(
       user.email,
-      'Reset Your Telled Marketing Password',
+      'Reset Your ZIEOS Password',
       `
         <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:20px">
           <div style="background:linear-gradient(135deg,#4f2d7f,#6b46c1);color:#fff;padding:28px;text-align:center;border-radius:8px 8px 0 0">
@@ -313,7 +340,7 @@ export const forgotPassword = async (req: Request, res: Response) => {
             <p style="color:#666;font-size:12px;word-break:break-all">Or copy this link: ${resetUrl}</p>
           </div>
           <div style="background:#f8f8f8;padding:14px;text-align:center;font-size:12px;color:#888;border-radius:0 0 8px 8px">
-            © ${new Date().getFullYear()} Telled Marketing
+            © ${new Date().getFullYear()} ZIEOS
           </div>
         </div>
       `

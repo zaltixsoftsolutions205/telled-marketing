@@ -181,7 +181,7 @@ export const generateDRFPDF = (data: {
   // ── Footer ────────────────────────────────────────────────────────────────
   doc.fillColor(VIOLET).rect(0, y + 8, W, 22).fill();
   doc.fillColor('#d4c5f0').fontSize(7.5).font('Helvetica')
-     .text('This is a system-generated document from Telled Marketing  |  Confidential', 0, y + 13, { width: W, align: 'center' });
+     .text('This is a system-generated document from ZIEOS  |  Confidential', 0, y + 13, { width: W, align: 'center' });
 
   doc.end();
   stream.on('finish', () => { logger.info(`DRF PDF generated: ${fileName}`); resolve(fileName); });
@@ -296,7 +296,7 @@ export const generateQuotationPDF = (data: {
     ['Quotation No.', data.quotationNumber],
     ['Customer ID', ''],
     ['Quote Validity', data.validUntil ? fmtDate(data.validUntil) : '15 Days'],
-    ['Prepared By', data.salesPersonName || 'Telled Marketing'],
+    ['Prepared By', data.salesPersonName || 'ZIEOS'],
   ];
   const rLW = 90, rVW = rightW - rLW, rH = 16;
   let ry = rightStartY;
@@ -328,7 +328,7 @@ export const generateQuotationPDF = (data: {
   const spCols = [inner / 4, inner / 4, inner / 4, inner / 4];
   const spHeaders = ['Sales Person', 'Contact Number', 'Email ID', 'Delivery'];
   const spValues  = [
-    data.salesPersonName || 'Telled Marketing',
+    data.salesPersonName || 'ZIEOS',
     data.salesPersonPhone || '',
     data.salesPersonEmail || '',
     '2 Weeks',
@@ -483,7 +483,7 @@ export const generatePayslipPDF = (data: {
   doc.pipe(stream);
 
   doc.fontSize(20).fillColor('#4f2d7f').text('PAYSLIP', { align: 'center' });
-  doc.fontSize(12).fillColor('#666').text('Telled Marketing', { align: 'center' }); doc.moveDown();
+  doc.fontSize(12).fillColor('#666').text('ZIEOS', { align: 'center' }); doc.moveDown();
   doc.moveTo(50, 110).lineTo(550, 110).stroke('#ddd');
   doc.fontSize(12).fillColor('#333');
   doc.text(`Employee: ${data.employeeName}`, 50, 125); doc.text(`Role: ${data.role}`, 50, 143);

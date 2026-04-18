@@ -12,7 +12,7 @@ export const useLogoStore = create<LogoState>()(
   persist(
     (set) => ({
       logoUrl: null,
-      companyName: 'Telled Marketing',
+      companyName: 'ZIEOS',
       setLogoUrl: (url) => set({ logoUrl: url }),
       setCompanyName: (name) => set({ companyName: name }),
     }),

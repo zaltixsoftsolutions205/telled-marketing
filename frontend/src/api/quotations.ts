@@ -22,6 +22,18 @@ export const quotationsApi = {
     return data.data;
   },
 
+  parsePdf: async (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const { data } = await api.post('/quotations/parse-pdf', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+    return data.data as { filePath: string; fileName: string; suggestedAmount: number | null; extractedText: string };
+  },
+
+  createFromUpload: async (formData: FormData) => {
+    const { data } = await api.post('/quotations', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+    return data.data;
+  },
+
   update: async (id: string, body: unknown) => {
     const { data } = await api.put(`/quotations/${id}`, body);
     return data.data;

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { drfApi } from '@/api/drf';
 import { quotationsApi } from '@/api/quotations';
@@ -10,7 +10,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { formatDate, formatCurrency } from '@/utils/formatters';
 import { useAuthStore } from '@/store/authStore';
 import {
-  FileBadge, CheckCircle2, XCircle, Clock, AlertTriangle, Filter, UserCheck, FileText, Plus, Trash2, Mail, RefreshCw, RotateCcw, Send, CalendarClock,
+  FileBadge, CheckCircle2, XCircle, Clock, AlertTriangle, Filter, UserCheck, FileText, Plus, Trash2, Mail, RefreshCw, RotateCcw, Send, CalendarClock, Upload, X, CheckCircle,
 } from 'lucide-react';
 import ContactEmailPicker from '@/components/common/ContactEmailPicker';
 import ExcelImportButton from '@/components/common/ExcelImportButton';
@@ -146,14 +146,21 @@ export default function DRFPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{ approved: string[]; rejected: string[]; scanned: number; skipped: string[]; errors: string[] } | null>(null);
 
-  // Quotation modal state
+  // Quotation modal state (upload-based)
   const [quotationDRF, setQuotationDRF] = useState<any>(null);
-  const [qItems, setQItems] = useState([{ ...emptyItem }]);
-  const [qForm, setQForm] = useState({ taxRate: 18, validUntil: '', terms: '', notes: '' });
+  const [qUploadStep, setQUploadStep] = useState<'upload' | 'review'>('upload');
+  const [qUploadFile, setQUploadFile] = useState<File | null>(null);
+  const [qParsing, setQParsing] = useState(false);
+  const [qFilePath, setQFilePath] = useState('');
+  const [qFileName, setQFileName] = useState('');
+  const [qAmount, setQAmount] = useState('');
   const [qToEmail, setQToEmail] = useState('');
   const [qCcEmail, setQCcEmail] = useState('');
+  const [qValidUntil, setQValidUntil] = useState('');
+  const [qNotes, setQNotes] = useState('');
   const [qSaving, setQSaving] = useState(false);
   const [qError, setQError] = useState('');
+  const qFileInputRef = useRef<HTMLInputElement>(null);
 
   // Resend Quotation modal state
   const [resendQuotationDRF, setResendQuotationDRF] = useState<any>(null);
@@ -297,11 +304,35 @@ export default function DRFPage() {
 
   const openQuotationModal = (drf: any) => {
     setQuotationDRF(drf);
-    setQItems([{ ...emptyItem }]);
-    setQForm({ taxRate: 18, validUntil: '', terms: '', notes: '' });
+    setQUploadStep('upload');
+    setQUploadFile(null);
+    setQFilePath('');
+    setQFileName('');
+    setQAmount('');
     setQToEmail(drf.leadId?.email || '');
     setQCcEmail('');
+    setQValidUntil('');
+    setQNotes('');
     setQError('');
+  };
+
+  const handleQFileSelect = async (file: File) => {
+    setQUploadFile(file);
+    setQParsing(true);
+    try {
+      const result = await quotationsApi.parsePdf(file);
+      setQFilePath(result.filePath);
+      setQFileName(result.fileName);
+      setQAmount(result.suggestedAmount ? String(result.suggestedAmount) : '');
+      setQUploadStep('review');
+    } catch {
+      setQFilePath('');
+      setQFileName(file.name);
+      setQAmount('');
+      setQUploadStep('review');
+    } finally {
+      setQParsing(false);
+    }
   };
 
   const openResendQuotationModal = (drf: any) => {
@@ -331,49 +362,41 @@ export default function DRFPage() {
     }
   };
 
-  const updateQItem = (idx: number, field: string, value: string | number) => {
-    setQItems(prev => prev.map((item, i) => {
-      if (i !== idx) return item;
-      const updated = { ...item, [field]: value };
-      if (field === 'quantity' || field === 'unitPrice') {
-        updated.total = Number(updated.quantity) * Number(updated.unitPrice);
-      }
-      return updated;
-    }));
-  };
-
   const handleCreateQuotation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!quotationDRF) return;
-    const validItems = qItems.filter(i => i.description.trim());
-    if (!validItems.length) { setQError('Add at least one line item with a description.'); return; }
-    setQSaving(true);
-    setQError('');
+    if (!qAmount || Number(qAmount) <= 0) { setQError('Please enter the quotation amount'); return; }
+    setQSaving(true); setQError('');
     try {
-      const created = await quotationsApi.create({
-        leadId: quotationDRF.leadId?._id || quotationDRF.leadId,
-        items: validItems,
-        taxRate: qForm.taxRate,
-        validUntil: qForm.validUntil || undefined,
-        terms: qForm.terms || undefined,
-        notes: qForm.notes || undefined,
-      });
-      // Close modal and mark success regardless of email result
+      let created: any;
+      if (qFilePath) {
+        created = await quotationsApi.create({
+          leadId: quotationDRF.leadId?._id || quotationDRF.leadId,
+          uploadedFile: qFilePath,
+          uploadedFileName: qFileName,
+          totalAmount: Number(qAmount),
+          validUntil: qValidUntil || undefined,
+          notes: qNotes || undefined,
+        });
+      } else if (qUploadFile) {
+        const fd = new FormData();
+        fd.append('quotationFile', qUploadFile);
+        fd.append('leadId', quotationDRF.leadId?._id || quotationDRF.leadId);
+        fd.append('totalAmount', qAmount);
+        if (qValidUntil) fd.append('validUntil', qValidUntil);
+        if (qNotes) fd.append('notes', qNotes);
+        created = await quotationsApi.createFromUpload(fd);
+      }
       setDRFs(prev => prev.map(d => d._id === quotationDRF._id ? { ...d, quotationSent: true } : d));
       setQuotationDRF(null);
-      notify('Quotation Created', `Quotation created for "${(quotationDRF.leadId as any)?.companyName || 'lead'}".`, 'quotation', '/quotations');
-      // Try to send email in background — don't block on failure
+      notify('Quotation Created', `Quotation created for "${quotationDRF.leadId?.companyName || 'lead'}".`, 'quotation', '/quotations');
       if (created?._id) quotationsApi.sendEmail(created._id, qToEmail.trim() || undefined, qCcEmail.trim() || undefined).catch(() => {});
-    } catch (err: unknown) {
-      setQError((err as any)?.response?.data?.message || 'Failed to create quotation');
+    } catch (err: any) {
+      setQError(err?.response?.data?.message || 'Failed to create quotation');
     } finally {
       setQSaving(false);
     }
   };
-
-  const qSubtotal = qItems.reduce((s, i) => s + (i.total || 0), 0);
-  const qTax = (qSubtotal * qForm.taxRate) / 100;
-  const qTotal = qSubtotal + qTax;
 
   if (loading && !analytics) return <LoadingSpinner className="h-64" />;
 
@@ -849,11 +872,10 @@ export default function DRFPage() {
         </form>
       </Modal>
 
-      {/* Create Quotation Modal */}
-      <Modal isOpen={!!quotationDRF} onClose={() => setQuotationDRF(null)} title="Create Quotation" size="lg">
+      {/* Create Quotation Modal — upload-first */}
+      <Modal isOpen={!!quotationDRF} onClose={() => setQuotationDRF(null)} title="Send Quotation" size="md">
         {quotationDRF && (
           <div className="space-y-4">
-            {/* DRF summary */}
             <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-start gap-3">
               <CheckCircle2 size={16} className="text-emerald-600 mt-0.5 flex-shrink-0" />
               <div>
@@ -862,168 +884,89 @@ export default function DRFPage() {
               </div>
             </div>
 
-            <form onSubmit={handleCreateQuotation} className="space-y-4">
-              {/* Line items */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-sm font-semibold text-gray-800">Line Items</label>
-                  <button
-                    type="button"
-                    onClick={() => setQItems(prev => [...prev, { ...emptyItem }])}
-                    className="inline-flex items-center gap-1 text-xs text-violet-600 hover:text-violet-700"
-                  >
-                    <Plus size={13} /> Add item
+            {qUploadStep === 'upload' ? (
+              <div className="space-y-4">
+                <p className="text-sm text-gray-500">Upload your prepared quotation PDF. The amount will be read automatically.</p>
+                <div
+                  onClick={() => qFileInputRef.current?.click()}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleQFileSelect(f); }}
+                  className="border-2 border-dashed border-violet-300 rounded-2xl p-10 text-center cursor-pointer hover:border-violet-500 hover:bg-violet-50/40 transition-all"
+                >
+                  {qParsing ? (
+                    <div className="space-y-2">
+                      <div className="w-10 h-10 border-2 border-violet-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                      <p className="text-sm text-violet-600 font-medium">Reading quotation…</p>
+                    </div>
+                  ) : (
+                    <>
+                      <Upload size={36} className="mx-auto text-violet-400 mb-3" />
+                      <p className="text-sm font-semibold text-gray-700">Click or drag your quotation PDF here</p>
+                      <p className="text-xs text-gray-400 mt-1">PDF, DOC, DOCX supported · max 10 MB</p>
+                    </>
+                  )}
+                </div>
+                <input ref={qFileInputRef} type="file" accept=".pdf,.doc,.docx" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleQFileSelect(f); }} />
+                <div className="flex justify-end">
+                  <button onClick={() => setQuotationDRF(null)} className="btn-secondary">Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleCreateQuotation} className="space-y-4">
+                <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                  <CheckCircle size={20} className="text-emerald-600 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-emerald-800 truncate">{qFileName}</p>
+                    <p className="text-xs text-emerald-600">Quotation file ready</p>
+                  </div>
+                  <button type="button" onClick={() => { setQUploadStep('upload'); setQUploadFile(null); }} className="text-gray-400 hover:text-red-500 transition-colors">
+                    <X size={16} />
                   </button>
                 </div>
-                <div className="space-y-2">
-                  <div className="grid grid-cols-12 gap-2 text-xs text-gray-500 font-medium px-1">
-                    <div className="col-span-5">Description *</div>
-                    <div className="col-span-2 text-right">Qty</div>
-                    <div className="col-span-2 text-right">Unit Price</div>
-                    <div className="col-span-2 text-right">Total</div>
-                    <div className="col-span-1"></div>
-                  </div>
-                  {qItems.map((item, idx) => (
-                    <div key={idx} className="grid grid-cols-12 gap-2 items-center">
-                      <input
-                        className="input-field text-sm py-1.5 col-span-5"
-                        placeholder="Item description"
-                        value={item.description}
-                        onChange={(e) => updateQItem(idx, 'description', e.target.value)}
-                      />
-                      <input
-                        type="number"
-                        min="1"
-                        className="input-field text-sm py-1.5 col-span-2 text-right"
-                        value={item.quantity}
-                        onChange={(e) => updateQItem(idx, 'quantity', Number(e.target.value))}
-                      />
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        className="input-field text-sm py-1.5 col-span-2 text-right"
-                        value={item.unitPrice}
-                        onChange={(e) => updateQItem(idx, 'unitPrice', Number(e.target.value))}
-                      />
-                      <div className="col-span-2 text-right text-sm font-medium text-gray-700 pr-1">
-                        {formatCurrency(item.total)}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setQItems(prev => prev.filter((_, i) => i !== idx))}
-                        disabled={qItems.length === 1}
-                        className="col-span-1 p-1 text-gray-300 hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
 
-                {/* Totals */}
-                <div className="mt-3 bg-gray-50 rounded-lg p-3 space-y-1 text-sm">
-                  <div className="flex justify-between text-gray-600">
-                    <span>Subtotal</span>
-                    <span>{formatCurrency(qSubtotal)}</span>
-                  </div>
-                  <div className="flex justify-between text-gray-600 items-center">
-                    <span className="flex items-center gap-2">
-                      Tax
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        className="w-14 px-1.5 py-0.5 text-xs border border-gray-300 rounded text-center"
-                        value={qForm.taxRate}
-                        onChange={(e) => setQForm(f => ({ ...f, taxRate: Number(e.target.value) }))}
-                      />
-                      <span className="text-xs text-gray-400">%</span>
-                    </span>
-                    <span>{formatCurrency(qTax)}</span>
-                  </div>
-                  <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-1 mt-1">
-                    <span>Total</span>
-                    <span className="text-violet-700">{formatCurrency(qTotal)}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Extra fields */}
-              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-gray-700 block mb-1">Valid Until</label>
-                  <input
-                    type="date"
-                    className="input-field text-sm py-1.5"
-                    value={qForm.validUntil}
-                    onChange={(e) => setQForm(f => ({ ...f, validUntil: e.target.value }))}
-                  />
+                  <label className="label">Total Amount (₹) *</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-gray-500 font-semibold">₹</span>
+                    <input type="number" step="0.01" min="0" required className="input-field pl-7 text-lg font-bold text-violet-700"
+                      placeholder="0.00" value={qAmount} onChange={e => setQAmount(e.target.value)} />
+                  </div>
+                  {qAmount && Number(qAmount) > 0
+                    ? <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1"><CheckCircle size={11} /> Amount detected from your quotation</p>
+                    : <p className="text-xs text-amber-600 mt-1">Could not auto-detect amount — please enter manually</p>}
                 </div>
+
                 <div>
-                  <label className="text-xs font-medium text-gray-700 block mb-1">Terms</label>
-                  <input
-                    className="input-field text-sm py-1.5"
-                    placeholder="Payment terms..."
-                    value={qForm.terms}
-                    onChange={(e) => setQForm(f => ({ ...f, terms: e.target.value }))}
-                  />
+                  <label className="label">Valid Until</label>
+                  <input type="date" className="input-field" value={qValidUntil} onChange={e => setQValidUntil(e.target.value)} />
                 </div>
-              </div>
 
-              <div>
-                <label className="text-xs font-medium text-gray-700 block mb-1">Notes</label>
-                <textarea
-                  className="input-field text-sm py-1.5 resize-none"
-                  rows={2}
-                  placeholder="Additional notes..."
-                  value={qForm.notes}
-                  onChange={(e) => setQForm(f => ({ ...f, notes: e.target.value }))}
-                />
-              </div>
+                <div>
+                  <label className="label">Send To *</label>
+                  <ContactEmailPicker required placeholder="customer@company.com" value={qToEmail} onChange={setQToEmail} defaultContactType="CUSTOMER" defaultResponsibility="Procurement" />
+                </div>
 
-              {/* Recipient email */}
-              <div>
-                <label className="text-xs font-medium text-gray-700 block mb-1">
-                  Send To (Email) *
-                  <span className="ml-1 text-gray-400 font-normal">— quotation PDF will be emailed here</span>
-                </label>
-                <ContactEmailPicker
-                  required
-                  placeholder="customer@company.com"
-                  value={qToEmail}
-                  onChange={setQToEmail}
-                  defaultContactType="CUSTOMER"
-                  defaultResponsibility="Procurement"
-                />
-              </div>
+                <div>
+                  <label className="label">CC</label>
+                  <ContactEmailPicker placeholder="cc@example.com" value={qCcEmail} onChange={setQCcEmail} defaultContactType="CUSTOMER" defaultResponsibility="Technical" applyLabel="Add to CC" />
+                </div>
 
-              {/* CC */}
-              <div>
-                <label className="text-xs font-medium text-gray-700 block mb-1">
-                  CC
-                  <span className="ml-1 text-gray-400 font-normal">— add as many as needed</span>
-                </label>
-                <ContactEmailPicker
-                  placeholder="cc@example.com"
-                  value={qCcEmail}
-                  onChange={setQCcEmail}
-                  defaultContactType="CUSTOMER"
-                  defaultResponsibility="Technical"
-                  applyLabel="Add to CC"
-                />
-              </div>
+                <div>
+                  <label className="label">Notes</label>
+                  <textarea rows={2} className="input-field" placeholder="Additional notes..." value={qNotes} onChange={e => setQNotes(e.target.value)} />
+                </div>
 
-              {qError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">{qError}</div>}
+                {qError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">{qError}</div>}
 
-              <div className="flex gap-3 justify-end pt-1">
-                <button type="button" onClick={() => setQuotationDRF(null)} className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50">Cancel</button>
-                <button type="submit" disabled={qSaving} className="px-4 py-2 text-sm bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50 flex items-center gap-2">
-                  <FileText size={14} />
-                  {qSaving ? 'Sending…' : 'Create & Send Quotation'}
-                </button>
-              </div>
-            </form>
+                <div className="flex gap-3 justify-end pt-1">
+                  <button type="button" onClick={() => setQuotationDRF(null)} className="btn-secondary">Cancel</button>
+                  <button type="submit" disabled={qSaving} className="btn-primary flex items-center gap-2">
+                    <FileText size={14} />{qSaving ? 'Sending…' : 'Create & Send Quotation'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         )}
       </Modal>

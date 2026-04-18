@@ -22,6 +22,7 @@ const titleMap: Record<string, string> = {
   '/users':           'User Management',
   '/training':        'Training',
   '/settings':        'Settings',
+  '/profile':         'My Profile',
 };
 
 export default function DashboardLayout() {

@@ -18,7 +18,7 @@ const htmlPage = (title: string, body: string) => `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>${title} — Telled Marketing</title>
+  <title>${title} — ZIEOS</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:Arial,sans-serif;background:#f4f4f4;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
@@ -46,9 +46,9 @@ const htmlPage = (title: string, body: string) => `<!DOCTYPE html>
 </head>
 <body>
   <div class="card">
-    <div class="hdr"><h1>Telled Marketing</h1><p>Admin Application Review</p></div>
+    <div class="hdr"><h1>ZIEOS</h1><p>Admin Application Review</p></div>
     <div class="body">${body}</div>
-    <div class="ft">© ${new Date().getFullYear()} Telled Marketing</div>
+    <div class="ft">© ${new Date().getFullYear()} ZIEOS</div>
   </div>
 </body>
 </html>`;

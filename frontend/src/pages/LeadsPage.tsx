@@ -89,7 +89,7 @@ const emptyForm = {
   companyName: '', contactPersonPrefix: 'Mr.', contactPersonName: '',
   designation: '', email: '', phone: '',
   address: '', website: '', annualTurnover: '',
-  oemName: '', oemEmail: '', channelPartner: 'Telled Marketing',
+  oemName: '', oemEmail: '', channelPartner: 'ZIEOS',
   expectedClosure: '', source: '', city: '', state: '',
   assignedTo: '', status: 'New' as LeadStatus, notes: '',
 };
@@ -99,7 +99,7 @@ const emptyDrfForm = {
   designation: '', contactNo: '', email: '',
   address: '', website: '', annualTurnover: '',
   interestedModules: '', oemEmail: '', oemCcEmails: '',
-  channelPartner: 'Telled Marketing',
+  channelPartner: 'ZIEOS',
   expectedClosure: '', partnerSalesRep: '',
 };
 
@@ -139,7 +139,7 @@ export default function LeadsPage() {
       annualTurnover: (lead as any).annualTurnover || '',
       oemName: lead.oemName || '',
       oemEmail: (lead as any).oemEmail || lead.oemEmail || '',
-      channelPartner: (lead as any).channelPartner || 'Telled Marketing',
+      channelPartner: (lead as any).channelPartner || 'ZIEOS',
       expectedClosure: (lead as any).expectedClosure || '',
       source: (lead as any).source || '',
       city: lead.city || '',
@@ -240,7 +240,7 @@ export default function LeadsPage() {
       interestedModules: lead.oemName || '',
       oemEmail: (lead as any).oemEmail || '',
       oemCcEmails: '',
-      channelPartner: (lead as any).channelPartner || 'Telled Marketing',
+      channelPartner: (lead as any).channelPartner || 'ZIEOS',
       expectedClosure: (lead as any).expectedClosure || '',
       partnerSalesRep: assignedUser?.name || user?.name || '',
     });

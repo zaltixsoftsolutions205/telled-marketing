@@ -529,7 +529,7 @@ export default function ContactsPage() {
             >
               {allowedTypes.map((t) => (
                 <option key={t} value={t}>
-                  {t === 'TELLED' ? 'Telled Marketing (Internal)' : t === 'ARK' ? 'ARK (Vendor / OEM)' : 'Customer'}
+                  {t === 'TELLED' ? 'ZIEOS (Internal)' : t === 'ARK' ? 'ARK (Vendor / OEM)' : 'Customer'}
                 </option>
               ))}
             </select>

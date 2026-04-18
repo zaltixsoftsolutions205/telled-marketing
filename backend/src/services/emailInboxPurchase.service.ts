@@ -249,11 +249,49 @@ function extractReceivedDate(text: string): Date | null {
 function isPurchaseOrderEmail(subject: string, body: string): boolean {
   const combined = (subject + ' ' + body).toLowerCase();
   for (const keyword of PO_KEYWORDS) {
-    if (combined.includes(keyword.toLowerCase())) {
-      return true;
-    }
+    if (combined.includes(keyword.toLowerCase())) return true;
   }
   return false;
+}
+
+const PRICE_CLEARANCE_KEYWORDS = [
+  'price clearance', 'price approved', 'clearance approved', 'price confirmation',
+  'price confirmed', 'rate approved', 'rate clearance', 'approved price', 'price ok',
+  'clearance', 're: po', 're:po',
+];
+
+const ARK_INVOICE_KEYWORDS = [
+  'invoice', 'bill', 'tax invoice', 'proforma invoice', 'performa invoice',
+  'invoice attached', 'please find invoice', 'invoice for po',
+];
+
+function isPriceClearanceEmail(subject: string, body: string): boolean {
+  const combined = (subject + ' ' + body).toLowerCase();
+  return PRICE_CLEARANCE_KEYWORDS.some(k => combined.includes(k));
+}
+
+function isArkInvoiceEmail(subject: string, body: string): boolean {
+  const combined = (subject + ' ' + body).toLowerCase();
+  return ARK_INVOICE_KEYWORDS.some(k => combined.includes(k));
+}
+
+async function findPOByArkEmail(fromEmail: string, text: string): Promise<any | null> {
+  // Try to find PO number in text first
+  const poNumber = extractPONumber(text);
+  if (poNumber) {
+    const po = await PurchaseOrder.findOne({ poNumber, isArchived: false });
+    if (po) return po;
+  }
+  // Match by ARK vendor email
+  if (fromEmail) {
+    const po = await PurchaseOrder.findOne({
+      vendorEmail: { $regex: new RegExp(fromEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
+      isArchived: false,
+      poForwardedToArk: true,
+    }).sort({ createdAt: -1 });
+    if (po) return po;
+  }
+  return null;
 }
 
 function rawEmailToText(source: Buffer): string {
@@ -428,6 +466,44 @@ export async function syncPurchaseOrderEmails(creds?: ImapCredentials): Promise<
         
         logger.info(`Processing email from ${fromEmail} (${fromName}) with subject: ${subject}`);
         
+        const freshTextQuick = subject + ' ' + stripQuotedContent(rawText);
+
+        // ── Check if this is a price clearance reply from ARK ──────────────────
+        if (isPriceClearanceEmail(subject, rawText) && !isPurchaseOrderEmail(subject, rawText)) {
+          const po = await findPOByArkEmail(fromEmail, freshTextQuick);
+          if (po && !po.priceClearanceReceived) {
+            await PurchaseOrder.findByIdAndUpdate(po._id, {
+              priceClearanceReceived: true,
+              priceClearanceReceivedAt: new Date(),
+            });
+            result.updated.push(`${po.poNumber} (price clearance from ${fromEmail})`);
+            result.processed++;
+            logger.info(`Price clearance received for PO ${po.poNumber} from ${fromEmail}`);
+          } else {
+            result.skipped.push(`Price clearance email from ${fromEmail} — no matching PO found`);
+          }
+          continue;
+        }
+
+        // ── Check if this is an ARK invoice email ─────────────────────────────
+        if (isArkInvoiceEmail(subject, rawText) && !isPurchaseOrderEmail(subject, rawText)) {
+          const po = await findPOByArkEmail(fromEmail, freshTextQuick);
+          if (po && po.poSentToArk && !po.arkInvoiceReceived) {
+            const invoiceAmount = extractAmount(freshTextQuick);
+            await PurchaseOrder.findByIdAndUpdate(po._id, {
+              arkInvoiceReceived: true,
+              arkInvoiceReceivedAt: new Date(),
+              ...(invoiceAmount ? { arkInvoiceAmount: invoiceAmount } : {}),
+            });
+            result.updated.push(`${po.poNumber} (ARK invoice from ${fromEmail})`);
+            result.processed++;
+            logger.info(`ARK invoice received for PO ${po.poNumber} from ${fromEmail}`);
+          } else {
+            result.skipped.push(`Invoice email from ${fromEmail} — no matching PO awaiting ARK invoice`);
+          }
+          continue;
+        }
+
         // Skip non-PO emails quickly
         if (!isPurchaseOrderEmail(subject, rawText)) {
           logger.info(`Skipping - Not a PO email: ${subject}`);

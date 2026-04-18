@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import {
-  Plus, Search, FileText, Mail, Download, Send, Percent, RefreshCw, Eye, Trash2,
+  Plus, Search, FileText, Mail, Download, Send, Percent, RefreshCw, Eye, Trash2, Upload, X, CheckCircle,
 } from 'lucide-react';
 import { quotationsApi } from '@/api/quotations';
 import { leadsApi } from '@/api/leads';
@@ -79,6 +79,18 @@ export default function QuotationsPage() {
   });
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // ── Upload-based create flow ──────────────────────────────────────────────
+  const [uploadStep, setUploadStep] = useState<'upload' | 'review'>('upload');
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadParsing, setUploadParsing] = useState(false);
+  const [parsedFilePath, setParsedFilePath] = useState('');
+  const [parsedFileName, setParsedFileName] = useState('');
+  const [parsedAmount, setParsedAmount] = useState('');
+  const [uploadLeadId, setUploadLeadId] = useState('');
+  const [uploadValidUntil, setUploadValidUntil] = useState('');
+  const [uploadNotes, setUploadNotes] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [sendEmailTarget, setSendEmailTarget] = useState<Quotation | null>(null);
   const [sendEmailSending, setSendEmailSending] = useState(false);
@@ -105,19 +117,78 @@ export default function QuotationsPage() {
   useEffect(() => { load(); }, [load]);
 
   const openCreateModal = async () => {
-    setItems([{ ...emptyItem }]);
-    setShowItemDiscount(false);
-    setForm({ leadId: '', taxRate: 18, gstApplicable: true, discountApplicable: false, discountType: 'percent', discountValue: 0, validUntil: '', delivery: '2 Weeks', terms: '', notes: '' });
+    setUploadStep('upload');
+    setUploadFile(null);
+    setParsedFilePath('');
+    setParsedFileName('');
+    setParsedAmount('');
+    setUploadLeadId('');
+    setUploadValidUntil('');
+    setUploadNotes('');
     try {
       const leadsRes = await leadsApi.getAll({ limit: 200, stage: 'OEM Approved' });
       const drfRes = await drfApi.getAll({ status: 'Approved', limit: 200 });
       const approvedLeadIds = new Set((drfRes.data || []).map((d: any) => d.leadId?._id));
       setLeads((leadsRes.data || []).filter((l: Lead) => approvedLeadIds.has(l._id)));
-    } catch (err) {
-      console.error('openCreateModal:', err);
-      setLeads([]);
-    }
+    } catch { setLeads([]); }
     setShowCreateModal(true);
+  };
+
+  const handleFileSelect = async (file: File) => {
+    setUploadFile(file);
+    setUploadParsing(true);
+    try {
+      const result = await quotationsApi.parsePdf(file);
+      setParsedFilePath(result.filePath);
+      setParsedFileName(result.fileName);
+      setParsedAmount(result.suggestedAmount ? String(result.suggestedAmount) : '');
+      setUploadStep('review');
+    } catch {
+      // Parsing failed — still move to review with manual entry
+      setParsedFilePath('');
+      setParsedFileName(file.name);
+      setParsedAmount('');
+      setUploadStep('review');
+    } finally {
+      setUploadParsing(false);
+    }
+  };
+
+  const handleUploadCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uploadLeadId) { setToast({ message: 'Please select a customer lead', type: 'error' }); return; }
+    if (!parsedAmount || Number(parsedAmount) <= 0) { setToast({ message: 'Please enter the quotation amount', type: 'error' }); return; }
+    setSaving(true);
+    try {
+      if (parsedFilePath) {
+        // File already on server from parse step — use JSON body
+        await quotationsApi.create({
+          leadId: uploadLeadId,
+          uploadedFile: parsedFilePath,
+          uploadedFileName: parsedFileName,
+          totalAmount: Number(parsedAmount),
+          validUntil: uploadValidUntil || undefined,
+          notes: uploadNotes || undefined,
+        });
+      } else if (uploadFile) {
+        // Parse failed, re-upload with FormData
+        const fd = new FormData();
+        fd.append('quotationFile', uploadFile);
+        fd.append('leadId', uploadLeadId);
+        fd.append('totalAmount', parsedAmount);
+        if (uploadValidUntil) fd.append('validUntil', uploadValidUntil);
+        if (uploadNotes) fd.append('notes', uploadNotes);
+        await quotationsApi.createFromUpload(fd);
+      }
+      setShowCreateModal(false);
+      load();
+      notify('Quotation Created', 'Quotation uploaded successfully.', 'quotation', '/quotations');
+      setToast({ message: 'Quotation created successfully', type: 'success' });
+    } catch (err: any) {
+      setToast({ message: err?.response?.data?.message || 'Failed to create quotation', type: 'error' });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const openEditModal = (quotation: Quotation) => {
@@ -672,6 +743,7 @@ This offer may be subject to errors and changes.`;
                   <th className="table-header">Subtotal</th>
                   <th className="table-header">Tax</th>
                   <th className="table-header">Total</th>
+                  <th className="table-header">Sent Date</th>
                   <th className="table-header">Valid Until</th>
                   <th className="table-header">Status</th>
                   <th className="table-header">Actions</th>
@@ -680,7 +752,12 @@ This offer may be subject to errors and changes.`;
               <tbody className="divide-y divide-gray-50">
                 {displayed.map((q) => (
                   <tr key={q._id} className="hover:bg-violet-50/20 transition-colors">
-                    <td className="table-cell font-mono font-medium text-violet-700">{q.quotationNumber}</td>
+                    <td className="table-cell font-mono font-medium text-violet-700">
+                      <div className="flex items-center gap-1.5">
+                        {q.quotationNumber}
+                        {q.uploadedFileName && <span title={q.uploadedFileName} className="text-violet-400"><Upload size={11} /></span>}
+                      </div>
+                    </td>
                     <td className="table-cell font-medium">{(q.leadId as Lead)?.companyName || '—'}</td>
                     <td className="table-cell text-center">
                       <span className={`badge text-xs ${q.version > 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>v{q.version}</span>
@@ -692,6 +769,9 @@ This offer may be subject to errors and changes.`;
                         : <span className="text-gray-400">N/A</span>}
                     </td>
                     <td className="table-cell font-semibold text-violet-700">{formatCurrency(q.total)}</td>
+                    <td className="table-cell text-gray-400 text-xs">
+                      {q.emailSentAt ? formatDate(q.emailSentAt) : q.emailSent ? <span className="text-emerald-600 text-xs">Sent</span> : <span className="text-gray-300">—</span>}
+                    </td>
                     <td className="table-cell text-gray-400">{q.validUntil ? formatDate(q.validUntil) : '—'}</td>
                     <td className="table-cell">
                       <span className={`badge text-xs ${STATUS_COLORS[q.status] || 'bg-gray-100 text-gray-600'}`}>{q.status}</span>
@@ -716,172 +796,106 @@ This offer may be subject to errors and changes.`;
         )}
       </div>
 
-      {/* Create Quotation Modal */}
-      <Modal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} title="Create Quotation" size="xl">
-        <form onSubmit={handleCreate} className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="label">Lead *</label>
-              <select required className="input-field" value={form.leadId}
-                onChange={(e) => setForm(f => ({ ...f, leadId: e.target.value }))}>
-                <option value="">Select lead</option>
-                {leads.map(l => (
-                  <option key={l._id} value={l._id}>{l.companyName} ({l.oemName || 'No OEM'})</option>
-                ))}
-              </select>
-              {leads.length === 0 && (
-                <p className="text-xs text-amber-600 mt-1">No leads with approved DRFs available</p>
+      {/* Create Quotation Modal — upload-first flow */}
+      <Modal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} title="New Quotation" size="md">
+        {uploadStep === 'upload' ? (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-500">Upload your prepared quotation PDF. The amount will be read automatically.</p>
+
+            {/* Drop zone */}
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFileSelect(f); }}
+              className="border-2 border-dashed border-violet-300 rounded-2xl p-10 text-center cursor-pointer hover:border-violet-500 hover:bg-violet-50/40 transition-all"
+            >
+              {uploadParsing ? (
+                <div className="space-y-2">
+                  <div className="w-10 h-10 border-2 border-violet-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                  <p className="text-sm text-violet-600 font-medium">Reading quotation…</p>
+                </div>
+              ) : (
+                <>
+                  <Upload size={36} className="mx-auto text-violet-400 mb-3" />
+                  <p className="text-sm font-semibold text-gray-700">Click or drag your quotation PDF here</p>
+                  <p className="text-xs text-gray-400 mt-1">PDF, DOC, DOCX supported · max 10 MB</p>
+                </>
               )}
             </div>
+            <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); }} />
+
+            <div className="flex justify-end">
+              <button onClick={() => setShowCreateModal(false)} className="btn-secondary">Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleUploadCreate} className="space-y-4">
+            {/* File confirmation */}
+            <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+              <CheckCircle size={20} className="text-emerald-600 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-emerald-800 truncate">{parsedFileName}</p>
+                <p className="text-xs text-emerald-600">Quotation file ready</p>
+              </div>
+              <button type="button" onClick={() => { setUploadStep('upload'); setUploadFile(null); }} className="text-gray-400 hover:text-red-500 transition-colors">
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Amount — read from PDF, editable */}
+            <div>
+              <label className="label">Total Amount (₹) *</label>
+              <div className="relative">
+                <span className="absolute left-3 top-2.5 text-gray-500 font-semibold">₹</span>
+                <input
+                  type="number" step="0.01" min="0" required
+                  className="input-field pl-7 text-lg font-bold text-violet-700"
+                  placeholder="0.00"
+                  value={parsedAmount}
+                  onChange={e => setParsedAmount(e.target.value)}
+                />
+              </div>
+              {parsedAmount && Number(parsedAmount) > 0 && (
+                <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
+                  <CheckCircle size={11} /> Amount detected from your quotation
+                </p>
+              )}
+              {!parsedAmount && (
+                <p className="text-xs text-amber-600 mt-1">Could not auto-detect amount — please enter manually</p>
+              )}
+            </div>
+
+            {/* Lead */}
+            <div>
+              <label className="label">Customer / Lead *</label>
+              <select required className="input-field" value={uploadLeadId} onChange={e => setUploadLeadId(e.target.value)}>
+                <option value="">Select customer</option>
+                {leads.map(l => <option key={l._id} value={l._id}>{l.companyName}{l.oemName ? ` (${l.oemName})` : ''}</option>)}
+              </select>
+              {leads.length === 0 && <p className="text-xs text-amber-600 mt-1">No leads with approved DRFs</p>}
+            </div>
+
+            {/* Valid until */}
             <div>
               <label className="label">Valid Until</label>
-              <input type="date" className="input-field" value={form.validUntil}
-                onChange={(e) => setForm(f => ({ ...f, validUntil: e.target.value }))} />
+              <input type="date" className="input-field" value={uploadValidUntil} onChange={e => setUploadValidUntil(e.target.value)} />
             </div>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 p-3 bg-gray-50 rounded-lg">
-            {/* GST */}
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={form.gstApplicable}
-                onChange={(e) => setForm(f => ({ ...f, gstApplicable: e.target.checked }))}
-                className="w-4 h-4 accent-violet-600" />
-              <span className="text-sm font-medium text-gray-700">GST Applicable</span>
-            </label>
-            {form.gstApplicable && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">Tax Rate:</span>
-                <input type="number" className="input-field w-20 text-sm py-1" value={form.taxRate}
-                  onChange={(e) => setForm(f => ({ ...f, taxRate: Number(e.target.value) }))} min="0" max="100" />
-                <span className="text-sm text-gray-500">%</span>
-              </div>
-            )}
-            {/* Divider */}
-            <div className="h-4 w-px bg-gray-300" />
-            {/* Discount */}
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={form.discountApplicable}
-                onChange={(e) => setForm(f => ({ ...f, discountApplicable: e.target.checked, discountValue: 0 }))}
-                className="w-4 h-4 accent-violet-600" />
-              <span className="text-sm font-medium text-gray-700">Discount</span>
-            </label>
-            {form.discountApplicable && (
-              <div className="flex items-center gap-2">
-                <select className="input-field py-1 text-sm w-24"
-                  value={form.discountType}
-                  onChange={(e) => setForm(f => ({ ...f, discountType: e.target.value as 'percent' | 'flat' }))}>
-                  <option value="percent">%</option>
-                  <option value="flat">₹ Flat</option>
-                </select>
-                <input type="number" className="input-field w-24 text-sm py-1" value={form.discountValue}
-                  onChange={(e) => setForm(f => ({ ...f, discountValue: Number(e.target.value) }))} min="0" step="0.01" />
-              </div>
-            )}
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="label !mb-0">Line Items *</label>
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-500">
-                  <input type="checkbox" checked={showItemDiscount}
-                    onChange={(e) => {
-                      setShowItemDiscount(e.target.checked);
-                      if (!e.target.checked) setItems(prev => prev.map(it => ({ ...it, discount: 0, total: it.quantity * it.unitPrice })));
-                    }}
-                    className="w-3.5 h-3.5 accent-violet-600" />
-                  Item Discount
-                </label>
-                <button type="button" onClick={addItem} className="text-xs text-violet-600 hover:text-violet-800 font-medium">+ Add Row</button>
-              </div>
-            </div>
-            <div className="space-y-2">
-              {items.map((item, i) => (
-                <div key={i} className="border border-gray-200 rounded-xl bg-gray-50/50 p-3 space-y-2">
-                  {/* Row 1 */}
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1">
-                      <p className="text-[10px] text-gray-400 mb-0.5 ml-0.5">Description</p>
-                      <input className="input-field text-sm py-1.5 w-full bg-white" placeholder="e.g. Ansys RF License" value={item.description}
-                        onChange={(e) => updateItem(i, 'description', e.target.value)} required />
-                    </div>
-                    <div className="w-20 shrink-0">
-                      <p className="text-[10px] text-gray-400 mb-0.5 ml-0.5">Qty</p>
-                      <input type="number" className="input-field text-sm py-1.5 text-center w-full bg-white" min={1} value={item.quantity}
-                        onChange={(e) => updateItem(i, 'quantity', Number(e.target.value))} required />
-                    </div>
-                    <div className="w-32 shrink-0 text-right">
-                      <p className="text-[10px] text-gray-400 mb-0.5">Total</p>
-                      <p className="text-sm font-bold text-violet-700 py-1.5">{formatCurrency(item.total)}</p>
-                    </div>
-                    <button type="button" onClick={() => removeItem(i)}
-                      className="shrink-0 mt-4 w-6 h-6 flex items-center justify-center rounded-full text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors text-base leading-none">×</button>
-                  </div>
-                  {/* Row 2 */}
-                  <div className={`grid gap-2 ${showItemDiscount ? 'grid-cols-3' : 'grid-cols-2'}`}>
-                    <div>
-                      <p className="text-[10px] text-gray-400 mb-0.5 ml-0.5">List Price (₹)</p>
-                      <input type="number" className="input-field text-sm py-1.5 text-right w-full bg-white" placeholder="0" min={0} step="0.01"
-                        value={item.listPrice ?? ''} onChange={(e) => updateItem(i, 'listPrice', Number(e.target.value))} />
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-gray-400 mb-0.5 ml-0.5">Strategic Price (₹)</p>
-                      <input type="number" className="input-field text-sm py-1.5 text-right w-full bg-white" placeholder="0" min={0} step="0.01"
-                        value={item.unitPrice} onChange={(e) => updateItem(i, 'unitPrice', Number(e.target.value))} required />
-                    </div>
-                    {showItemDiscount && (
-                      <div>
-                        <p className="text-[10px] text-gray-400 mb-0.5 ml-0.5">Discount (%)</p>
-                        <input type="number" className="input-field text-sm py-1.5 text-center w-full bg-white" placeholder="0" min={0} max={100} step="0.01"
-                          value={item.discount ?? ''} onChange={(e) => updateItem(i, 'discount', Number(e.target.value))} />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-gray-50 rounded-xl p-4 text-sm space-y-1">
-            <div className="flex justify-between"><span className="text-gray-500">Base Price</span><span>{formatCurrency(subtotal)}</span></div>
-            {form.discountApplicable && discountAmount > 0 && (
-              <div className="flex justify-between text-red-600">
-                <span>Discount {form.discountType === 'percent' ? `(${form.discountValue}%)` : '(Flat)'}</span>
-                <span>− {formatCurrency(discountAmount)}</span>
-              </div>
-            )}
-            {form.gstApplicable && <div className="flex justify-between"><span className="text-gray-500">GST @ {form.taxRate}%</span><span>{formatCurrency(taxAmount)}</span></div>}
-            <div className="flex justify-between font-bold text-base pt-2 border-t border-gray-200">
-              <span>Final Price</span><span className="text-violet-700">{formatCurrency(totalAmount)}</span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
+            {/* Notes */}
             <div>
-              <label className="label">Delivery</label>
-              <input className="input-field" value={form.delivery}
-                onChange={(e) => setForm(f => ({ ...f, delivery: e.target.value }))} placeholder="e.g. 2 Weeks" />
+              <label className="label">Notes</label>
+              <textarea rows={2} className="input-field" placeholder="Any notes…" value={uploadNotes} onChange={e => setUploadNotes(e.target.value)} />
             </div>
-          </div>
 
-          <div>
-            <label className="label">Terms & Conditions</label>
-            <textarea rows={2} className="input-field" value={form.terms}
-              onChange={(e) => setForm(f => ({ ...f, terms: e.target.value }))} />
-          </div>
-          <div>
-            <label className="label">Notes</label>
-            <textarea rows={2} className="input-field" value={form.notes}
-              onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))} />
-          </div>
-
-          <div className="flex gap-3 justify-end pt-2">
-            <button type="button" onClick={() => setShowCreateModal(false)} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={saving || leads.length === 0} className="btn-primary">
-              {saving ? 'Creating...' : 'Create Quotation'}
-            </button>
-          </div>
-        </form>
+            <div className="flex gap-3 justify-end pt-1">
+              <button type="button" onClick={() => setShowCreateModal(false)} className="btn-secondary">Cancel</button>
+              <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2">
+                <FileText size={14} />{saving ? 'Saving…' : 'Save Quotation'}
+              </button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       {/* Edit Quotation Modal */}
@@ -1082,7 +1096,11 @@ This offer may be subject to errors and changes.`;
                 applyLabel="Add to CC"
               />
             </div>
-            <p className="text-xs text-gray-500">The quotation PDF will be attached to the email.</p>
+            <p className="text-xs text-gray-500">
+              {sendEmailTarget?.uploadedFileName
+                ? `Your uploaded file "${sendEmailTarget.uploadedFileName}" will be attached.`
+                : 'A system-generated quotation PDF will be attached.'}
+            </p>
             <div className="flex gap-2 justify-end pt-1">
               <button onClick={() => setSendEmailTarget(null)} className="btn-secondary py-1.5 text-sm">Cancel</button>
               <button onClick={handleConfirmSendEmail} disabled={sendEmailSending || !sendToEmail.trim()} className="btn-primary py-1.5 text-sm flex items-center gap-2">
@@ -1144,10 +1162,15 @@ This offer may be subject to errors and changes.`;
           return (
             <div>
               {/* Print action bar */}
-              <div className="flex justify-end mb-3 gap-2">
+              <div className="flex justify-end mb-3 gap-2 flex-wrap">
                 <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[selectedQuotation.status]}`}>
                   {selectedQuotation.status}
                 </span>
+                {selectedQuotation.uploadedFileName && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-700">
+                    <Upload size={10} /> {selectedQuotation.uploadedFileName}
+                  </span>
+                )}
                 <button onClick={handleDownload}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-sm rounded-lg hover:bg-violet-700 transition-colors">
                   <Download size={14} /> Download PDF

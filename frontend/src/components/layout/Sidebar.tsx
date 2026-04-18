@@ -6,7 +6,7 @@ import {
   ShoppingCart, Wrench, Headphones, Receipt, CreditCard,
   CalendarCheck, DollarSign, UserCog, LogOut, ChevronDown, ChevronRight,
   FileBadge, GraduationCap, TrendingUp, CalendarDays, Calendar, Settings,
-  BookUser, ClipboardList, Timer, ClipboardCheck,
+  BookUser, Timer, ClipboardCheck,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useLogoStore } from '@/store/logoStore';
@@ -28,7 +28,6 @@ const salesNav = [
   { to: '/drfs',       label: 'DRF Management', icon: FileBadge },
   { to: '/quotations', label: 'Quotations',      icon: FileText },
   { to: '/purchases',     label: 'Purchase Orders',    icon: ShoppingCart },
-  { to: '/po-execution',  label: 'PO Execution',       icon: ClipboardList },
   { to: '/accounts',      label: 'Accounts',           icon: Building2 },
   { to: '/contacts',   label: 'Contacts',        icon: BookUser },
   { to: '/timesheet',    label: 'Timesheet',        icon: Timer },
@@ -48,7 +47,6 @@ const engineerNav = [
 ];
 
 const hrNav = [
-  { to: '/po-execution',    label: 'PO Execution',       icon: ClipboardList },
   { to: '/invoices',        label: 'Invoices',           icon: Receipt },
   { to: '/payments',        label: 'Payments',          icon: CreditCard },
   { to: '/visits-and-claims', label: 'Visits & Claims', icon: CalendarCheck },
@@ -68,7 +66,6 @@ const adminSections = [
       { to: '/drfs',       label: 'DRF Management', icon: FileBadge },
       { to: '/quotations', label: 'Quotations',     icon: FileText },
       { to: '/purchases',    label: 'Purchase Orders', icon: ShoppingCart },
-      { to: '/po-execution', label: 'PO Execution',    icon: ClipboardList },
     ],
   },
   {
@@ -163,9 +160,9 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="py-5 px-4 border-b border-gray-100">
         <div className="flex flex-col items-center text-center gap-2">
-          <img src={resolvedLogo} alt="Telled Marketing" className="h-11 w-auto object-contain" />
+          <img src={resolvedLogo} alt="ZIEOS" className="h-11 w-auto object-contain" />
           <div>
-            <p className="font-semibold text-gray-900 text-sm leading-tight">{companyName || 'Telled Marketing'}</p>
+            <p className="font-semibold text-gray-900 text-sm leading-tight">{companyName || 'ZIEOS'}</p>
             <p className="text-[11px] text-gray-400 mt-0.5">CRM & Operations</p>
           </div>
         </div>
@@ -216,7 +213,7 @@ export default function Sidebar() {
         </div>
         <div className="flex items-center justify-between mb-2">
           <span className={cn('badge text-[10px]', roleColors[role] || 'bg-gray-100 text-gray-600')}>
-            {role?.replace('_', ' ')}
+            {role === 'hr_finance' ? 'HR Finance' : role === 'platform_admin' ? 'Platform Admin' : role ? role.charAt(0).toUpperCase() + role.slice(1) : ''}
           </span>
           <span className="text-[10px] text-gray-400">{user?.department || ''}</span>
         </div>

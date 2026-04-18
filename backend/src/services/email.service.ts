@@ -141,9 +141,9 @@ body{font-family:Arial,sans-serif;background:#f4f4f4;margin:0}
 table{width:100%;border-collapse:collapse;margin:16px 0}
 td{padding:8px;border:1px solid #eee}
 </style></head><body><div class="c">
-<div class="h"><h1>Telled Marketing</h1><p>${title}</p></div>
+<div class="h"><h1>ZIEOS</h1><p>${title}</p></div>
 <div class="b">${content}</div>
-<div class="f">© ${new Date().getFullYear()} Telled Marketing</div>
+<div class="f">© ${new Date().getFullYear()} ZIEOS</div>
 </div></body></html>`;
 
 const send = async (
@@ -157,7 +157,7 @@ const send = async (
 ) => {
   try {
     const transporter = createTransporter();
-    const senderName = fromName || process.env.EMAIL_FROM_NAME || 'Telled Marketing';
+    const senderName = fromName || process.env.EMAIL_FROM_NAME || 'ZIEOS';
     const senderEmail = process.env.EMAIL_FROM || process.env.SMTP_USER;
     await transporter.sendMail({
       from: `"${senderName}" <${senderEmail}>`,
@@ -270,7 +270,7 @@ export const sendDRFEmail = async (
         ${row('Contact No.', data.contactNo || '')}
         ${row('E-mail', data.email || '')}
         ${row('Partner Sales Rep', data.salesName)}
-        ${row('Channel Partner', data.channelPartner || 'Telled Marketing')}
+        ${row('Channel Partner', data.channelPartner || 'ZIEOS')}
         ${row('Potential / Interested Modules', data.interestedModules || data.oemName || '')}
         ${row('Expected Closure', data.expectedClosure || '')}
       </table>
@@ -290,7 +290,7 @@ export const sendDRFEmail = async (
   } else {
     const transporter = getHostingerTransporter();
     await transporter.sendMail({
-      from: `"${data.salesName || 'Telled Marketing'}" <${process.env.USER_EMAIL_FROM}>`,
+      from: `"${data.salesName || 'ZIEOS'}" <${process.env.USER_EMAIL_FROM}>`,
       to,
       replyTo: data.salesEmail || process.env.USER_EMAIL_FROM,
       subject,
@@ -314,14 +314,14 @@ export const sendWelcomeEmail = async (data: {
 
   await sendViaHostinger(
     data.to,
-    `Welcome to Telled Marketing — Your account is ready`,
+    `Welcome to ZIEOS — Your account is ready`,
     `<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"/></head>
 <body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif">
   <div style="max-width:560px;margin:30px auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.1)">
     <div style="background:linear-gradient(135deg,#4f2d7f,#6b46c1);color:#fff;padding:28px;text-align:center">
-      <h2 style="margin:0;font-size:20px">Welcome to Telled Marketing</h2>
+      <h2 style="margin:0;font-size:20px">Welcome to ZIEOS</h2>
       <p style="margin:6px 0 0;opacity:.85;font-size:13px">${data.orgName}</p>
     </div>
     <div style="padding:28px">
@@ -346,7 +346,7 @@ export const sendWelcomeEmail = async (data: {
       </div>
     </div>
     <div style="background:#f8f8f8;padding:14px;text-align:center;font-size:11px;color:#9ca3af">
-      © ${new Date().getFullYear()} Telled Marketing
+      © ${new Date().getFullYear()} ZIEOS
     </div>
   </div>
 </body>
@@ -457,10 +457,10 @@ export const sendTicketStatusUpdate = async (
             ` : ''}
           </table>
           
-          <p>You can view the full ticket details by logging into the Telled Marketing portal.</p>
+          <p>You can view the full ticket details by logging into the ZIEOS portal.</p>
         </div>
         <div class="footer">
-          <p>This is an automated notification from Telled Marketing. Please do not reply to this email.</p>
+          <p>This is an automated notification from ZIEOS. Please do not reply to this email.</p>
         </div>
       </div>
     </body>
@@ -490,7 +490,7 @@ const sendViaHostinger = async (
 ) => {
   const transporter = getHostingerTransporter();
   await transporter.sendMail({
-    from: `"Telled Marketing" <${process.env.USER_EMAIL_FROM}>`,
+    from: `"ZIEOS" <${process.env.USER_EMAIL_FROM}>`,
     to,
     subject,
     html,
@@ -500,8 +500,8 @@ const sendViaHostinger = async (
 
 export const sendOTPEmail = async (to: string, otp: string, context: 'registration' | 'login' = 'registration') => {
   const subject = context === 'login'
-    ? 'Your Sign-In OTP — Telled Marketing'
-    : 'Your OTP for Telled Marketing Registration';
+    ? 'Your Sign-In OTP — ZIEOS'
+    : 'Your OTP for ZIEOS Registration';
   const heading = context === 'login' ? 'Sign-In Verification' : 'Email Verification';
   const desc = context === 'login'
     ? 'Use the code below to complete your sign-in.'
@@ -549,7 +549,7 @@ export const sendApplicationNotificationEmail = async (data: {
         <!-- Header -->
         <div style="background:linear-gradient(135deg,#4f2d7f,#6b46c1);color:#fff;padding:30px;text-align:center">
           <h1 style="margin:0;font-size:22px;font-weight:700">New Registration Application</h1>
-          <p style="margin:8px 0 0;opacity:.85;font-size:14px">Telled Marketing — Admin Review Required</p>
+          <p style="margin:8px 0 0;opacity:.85;font-size:14px">ZIEOS — Admin Review Required</p>
         </div>
 
         <!-- Body -->
@@ -601,7 +601,7 @@ export const sendApplicationNotificationEmail = async (data: {
 
         <!-- Footer -->
         <div style="background:#f8f8f8;padding:16px;text-align:center;font-size:12px;color:#888">
-          © ${new Date().getFullYear()} Telled Marketing · This is an automated notification
+          © ${new Date().getFullYear()} ZIEOS · This is an automated notification
         </div>
       </div>
     </body>
@@ -627,11 +627,11 @@ export const sendApprovalEmail = async (data: {
 }) => {
   await sendViaHostinger(
     data.to,
-    'Your Telled Marketing Account is Approved!',
+    'Your ZIEOS Account is Approved!',
     base(`
       <h2 style="color:#059669">Application Approved!</h2>
       <p>Dear <strong>${data.contactName}</strong>,</p>
-      <p>Congratulations! Your registration for <strong>${data.orgName}</strong> on Telled Marketing has been reviewed and <strong style="color:#059669">approved</strong>.</p>
+      <p>Congratulations! Your registration for <strong>${data.orgName}</strong> on ZIEOS has been reviewed and <strong style="color:#059669">approved</strong>.</p>
       <p>Here are your login credentials:</p>
       <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:20px;margin:16px 0">
         <table style="width:100%">
@@ -655,11 +655,11 @@ export const sendRejectionEmail = async (data: {
 }) => {
   await sendViaHostinger(
     data.to,
-    'Update on Your Telled Marketing Registration',
+    'Update on Your ZIEOS Registration',
     base(`
       <h2 style="color:#dc2626">Application Update</h2>
       <p>Dear <strong>${data.contactName}</strong>,</p>
-      <p>Thank you for your interest in <strong>Telled Marketing</strong>. After reviewing your registration application for <strong>${data.orgName}</strong>, we regret to inform you that your application has not been approved at this time.</p>
+      <p>Thank you for your interest in <strong>ZIEOS</strong>. After reviewing your registration application for <strong>${data.orgName}</strong>, we regret to inform you that your application has not been approved at this time.</p>
       ${data.reason ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:14px;margin:16px 0"><strong>Reason:</strong> ${data.reason}</div>` : ''}
       <p>If you believe this is an error or would like to reapply with updated documents, please contact us at <a href="mailto:${process.env.USER_EMAIL_FROM}">${process.env.USER_EMAIL_FROM}</a>.</p>
       <p>We appreciate your understanding.</p>
@@ -706,10 +706,10 @@ export const sendTicketAssignmentNotification = async (
             </tr>
           </table>
           
-          <p>Please log into the Telled Marketing system to view and respond to this ticket.</p>
+          <p>Please log into the ZIEOS system to view and respond to this ticket.</p>
         </div>
         <div class="footer">
-          <p>This is an automated notification from Telled Marketing.</p>
+          <p>This is an automated notification from ZIEOS.</p>
         </div>
       </div>
     </body>
@@ -739,14 +739,14 @@ export const sendUserCredentialsEmail = async (
   try {
     await sendViaHostinger(
       to,
-      `Welcome to Telled Marketing — Your Login Credentials`,
+      `Welcome to ZIEOS — Your Login Credentials`,
       `<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"/></head>
 <body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif">
   <div style="max-width:560px;margin:30px auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.1)">
     <div style="background:linear-gradient(135deg,#4f2d7f,#6b46c1);color:#fff;padding:28px;text-align:center">
-      <h2 style="margin:0;font-size:20px">Welcome to Telled Marketing</h2>
+      <h2 style="margin:0;font-size:20px">Welcome to ZIEOS</h2>
       <p style="margin:6px 0 0;opacity:.85;font-size:13px">${orgName || 'Your Organization'}</p>
     </div>
     <div style="padding:28px">
@@ -783,7 +783,7 @@ export const sendUserCredentialsEmail = async (
       </div>
     </div>
     <div style="background:#f8f8f8;padding:14px;text-align:center;font-size:11px;color:#9ca3af">
-      © ${new Date().getFullYear()} Telled Marketing — Do not share your credentials with anyone.
+      © ${new Date().getFullYear()} ZIEOS — Do not share your credentials with anyone.
     </div>
   </div>
 </body>
@@ -843,7 +843,7 @@ export const sendDRFExtensionEmail = async (data: {
         </tr>
       </table>
       <p>Please take immediate action to extend or follow up on this DRF before it expires.</p>
-      <p>Regards,<br/>Telled Marketing System</p>
+      <p>Regards,<br/>ZIEOS System</p>
     </div>
   `;
 

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Plus, Search, Send, RefreshCw,
-  Receipt, Edit, Mail, Trash2, Key, Download,
+  Receipt, Edit, Mail, Trash2, Download,
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import ExcelImportButton from '@/components/common/ExcelImportButton';
@@ -10,18 +10,17 @@ import { leadsApi } from '@/api/leads';
 
 // ─── Local flow-state store (persists in localStorage) ───────────────────────
 type FlowData = {
-  vendorEmailSent?: boolean;
-  vendorEmailSentAt?: string;
-  invoiceGenerated?: boolean;
-  invoiceGeneratedAt?: string;
-  poInvoiceNumber?: string;
-  invoiceAmount?: number;
-  licenseGenerated?: boolean;
-  licenseGeneratedAt?: string;
-  licenseKey?: string;
-  licenseFile?: string;
   customerInvoiceSent?: boolean;
   customerInvoiceSentAt?: string;
+  poForwardedToArk?: boolean;
+  poForwardedToArkAt?: string;
+  priceClearanceReceived?: boolean;
+  priceClearanceReceivedAt?: string;
+  poSentToArk?: boolean;
+  poSentToArkAt?: string;
+  arkInvoiceReceived?: boolean;
+  arkInvoiceReceivedAt?: string;
+  arkInvoiceAmount?: number;
 };
 const LS_KEY = 'telled_po_flow_v1';
 const getFlowStore = (): Record<string, FlowData> => {
@@ -45,20 +44,22 @@ import { useAuthStore } from '@/store/authStore';
 import { cn } from '@/utils/cn';
 import type { PurchaseOrder, Lead } from '@/types';
 
-// ─── 5-step flow config ───────────────────────────────────────────────────────
+// ─── 6-step PO flow ───────────────────────────────────────────────────────────
 const FLOW_STEPS = [
-  { num: 1, label: 'PO Received',           short: 'Received'    },
-  { num: 2, label: 'Sent to ARK',           short: 'To ARK'      },
-  { num: 3, label: 'Invoice Generated',     short: 'Invoiced'    },
-  { num: 4, label: 'License Generated',     short: 'Licensed'    },
-  { num: 5, label: 'Invoice Sent to Customer', short: 'Sent'     },
+  { num: 1, label: 'PO Received',              short: 'Received'   },
+  { num: 2, label: 'Invoice Sent to Customer', short: 'Cust. Inv'  },
+  { num: 3, label: 'PO Forwarded to ARK',      short: 'Fwd ARK'    },
+  { num: 4, label: 'Price Clearance Received', short: 'Cleared'    },
+  { num: 5, label: 'PO Sent to ARK',           short: 'PO to ARK'  },
+  { num: 6, label: 'ARK Invoice Received',     short: 'Complete'   },
 ];
 
 function getPoStep(po: PurchaseOrder): number {
-  if (po.customerInvoiceSent) return 5;
-  if (po.licenseGenerated)    return 4;
-  if (po.invoiceGenerated)    return 3;
-  if (po.vendorEmailSent)     return 2;
+  if (po.arkInvoiceReceived)     return 6;
+  if (po.poSentToArk)            return 5;
+  if (po.priceClearanceReceived) return 4;
+  if (po.poForwardedToArk)       return 3;
+  if (po.customerInvoiceSent)    return 2;
   return 1;
 }
 
@@ -129,19 +130,24 @@ export default function PurchasesPage() {
   const [deleting, setDeleting]         = useState(false);
 
 
-  // ── Step 3: Generate Invoice modal ───────────────────────────────────────
-  const [invTarget, setInvTarget]   = useState<PurchaseOrder | null>(null);
-  const [invForm, setInvForm]       = useState({ amount: '', notes: '' });
-  const [invSaving, setInvSaving]   = useState(false);
+  // ── Step 2: Send Invoice to Customer ────────────────────────────────────
+  const [custInvTarget, setCustInvTarget] = useState<PurchaseOrder | null>(null);
+  const [custInvEmail, setCustInvEmail]   = useState('');
+  const [custInvBusy, setCustInvBusy]     = useState(false);
 
-  // ── Step 4: Generate License modal ──────────────────────────────────────
-  const [licTarget, setLicTarget]   = useState<PurchaseOrder | null>(null);
-  const [licForm, setLicForm]       = useState({ licenseKey: '', licenseFile: '' });
-  const [licSaving, setLicSaving]   = useState(false);
+  // ── Step 4: Price Clearance (manual mark) ───────────────────────────────
+  const [clearTarget, setClearTarget] = useState<PurchaseOrder | null>(null);
+  const [clearBusy, setClearBusy]     = useState(false);
 
-  // ── Step 5: Send Invoice to Customer confirm ─────────────────────────────
-  const [sendCustTarget, setSendCustTarget] = useState<PurchaseOrder | null>(null);
-  const [sendCustBusy, setSendCustBusy]     = useState(false);
+  // ── Step 5: Send PO to ARK (official) ───────────────────────────────────
+  const [sendArkTarget, setSendArkTarget]   = useState<PurchaseOrder | null>(null);
+  const [sendArkEmail, setSendArkEmail]     = useState('');
+  const [sendArkBusy, setSendArkBusy]       = useState(false);
+
+  // ── Step 6: ARK Invoice Received (manual mark) ──────────────────────────
+  const [arkInvTarget, setArkInvTarget]   = useState<PurchaseOrder | null>(null);
+  const [arkInvAmount, setArkInvAmount]   = useState('');
+  const [arkInvBusy, setArkInvBusy]       = useState(false);
 
   // ─── Data loaders ─────────────────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -200,10 +206,11 @@ export default function PurchasesPage() {
     if (!sendTarget || !sendVendorEmail.trim()) { showToast('Please enter ARK email', 'error'); return; }
     setSending(true);
     try {
-      await purchasesApi.sendToVendor(sendTarget._id, sendVendorEmail.trim(), sendVendorCc.trim() || undefined);
-      saveFlow(sendTarget._id, { vendorEmailSent: true, vendorEmailSentAt: new Date().toISOString() });
-      setSendTarget(null); showToast('PO sent to ARK');
-      setOrders(prev => mergeFlow(prev.map(o => o._id === sendTarget._id ? { ...o, vendorEmailSent: true, vendorEmailSentAt: new Date().toISOString() } : o)));
+      await purchasesApi.forwardToArk(sendTarget._id, sendVendorEmail.trim(), sendTarget.vendorName, sendVendorCc.trim() || undefined);
+      const flowData: FlowData = { poForwardedToArk: true, poForwardedToArkAt: new Date().toISOString() };
+      saveFlow(sendTarget._id, flowData);
+      setSendTarget(null); showToast('PO forwarded to ARK');
+      setOrders(prev => mergeFlow(prev.map(o => o._id === sendTarget._id ? { ...o, ...flowData } : o)));
     } catch (err: any) { showToast(err?.response?.data?.message || 'Failed to send', 'error'); }
     finally { setSending(false); }
   };
@@ -222,7 +229,7 @@ export default function PurchasesPage() {
     doc.text('INVOICE', 14, 18);
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text('Telled CRM', 14, 28);
+    doc.text('ZIEOS', 14, 28);
     doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
     doc.text(po.poInvoiceNumber || 'INV-DRAFT', pageW - 14, 18, { align: 'right' });
@@ -313,7 +320,7 @@ export default function PurchasesPage() {
     doc.setTextColor(109, 40, 217);
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
-    doc.text('Thank you for your business  •  Telled CRM', pageW / 2, footerY, { align: 'center' });
+    doc.text('Thank you for your business  •  ZIEOS', pageW / 2, footerY, { align: 'center' });
     doc.setTextColor(150, 150, 180);
     doc.text(`Generated on ${new Date().toLocaleString('en-IN')}`, pageW / 2, footerY + 6, { align: 'center' });
 
@@ -336,47 +343,63 @@ export default function PurchasesPage() {
     finally { setSyncing(false); }
   };
 
-  // ── Step 3: Generate Invoice ──────────────────────────────────────────────
-  const handleGenerateInvoice = async (e: React.FormEvent) => {
+  // ── Step 2: Send Invoice to Customer ─────────────────────────────────────
+  const handleSendCustomerInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!invTarget) return;
-    setInvSaving(true);
+    if (!custInvTarget || !custInvEmail.trim()) { showToast('Customer email required', 'error'); return; }
+    setCustInvBusy(true);
     try {
-      const invNum = `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9000) + 1000)}`;
-      const invAmt = Number(invForm.amount) || invTarget.amount;
-      const flowData: FlowData = { invoiceGenerated: true, invoiceGeneratedAt: new Date().toISOString(), poInvoiceNumber: invNum, invoiceAmount: invAmt };
-      saveFlow(invTarget._id, flowData);
-      setOrders(prev => prev.map(o => o._id === invTarget._id ? { ...o, ...flowData } : o));
-      setInvTarget(null); showToast('Invoice generated');
-    } catch { showToast('Failed to generate invoice', 'error'); }
-    finally { setInvSaving(false); }
-  };
-
-  // ── Step 4: Generate License ─────────────────────────────────────────────
-  const handleGenerateLicense = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!licTarget) return;
-    setLicSaving(true);
-    try {
-      const flowData: FlowData = { licenseGenerated: true, licenseGeneratedAt: new Date().toISOString(), licenseKey: licForm.licenseKey, licenseFile: licForm.licenseFile };
-      saveFlow(licTarget._id, flowData);
-      setOrders(prev => prev.map(o => o._id === licTarget._id ? { ...o, ...flowData } : o));
-      setLicTarget(null); showToast('License generated');
-    } catch { showToast('Failed to generate license', 'error'); }
-    finally { setLicSaving(false); }
-  };
-
-  // ── Step 5: Send Invoice to Customer ─────────────────────────────────────
-  const handleSendCustomerInvoice = async () => {
-    if (!sendCustTarget) return;
-    setSendCustBusy(true);
-    try {
+      await purchasesApi.sendCustomerInvoice(custInvTarget._id, custInvEmail.trim());
       const flowData: FlowData = { customerInvoiceSent: true, customerInvoiceSentAt: new Date().toISOString() };
-      saveFlow(sendCustTarget._id, flowData);
-      setOrders(prev => prev.map(o => o._id === sendCustTarget._id ? { ...o, ...flowData } : o));
-      setSendCustTarget(null); showToast('Invoice sent to customer');
+      saveFlow(custInvTarget._id, flowData);
+      setOrders(prev => mergeFlow(prev.map(o => o._id === custInvTarget._id ? { ...o, ...flowData } : o)));
+      setCustInvTarget(null); showToast('Invoice sent to customer');
+    } catch (err: any) { showToast(err?.response?.data?.message || 'Failed', 'error'); }
+    finally { setCustInvBusy(false); }
+  };
+
+  // ── Step 4: Mark Price Clearance ─────────────────────────────────────────
+  const handleMarkPriceClearance = async () => {
+    if (!clearTarget) return;
+    setClearBusy(true);
+    try {
+      await purchasesApi.markPriceClearance(clearTarget._id);
+      const flowData: FlowData = { priceClearanceReceived: true, priceClearanceReceivedAt: new Date().toISOString() };
+      saveFlow(clearTarget._id, flowData);
+      setOrders(prev => mergeFlow(prev.map(o => o._id === clearTarget._id ? { ...o, ...flowData } : o)));
+      setClearTarget(null); showToast('Price clearance marked');
     } catch { showToast('Failed', 'error'); }
-    finally { setSendCustBusy(false); }
+    finally { setClearBusy(false); }
+  };
+
+  // ── Step 5: Send PO to ARK ───────────────────────────────────────────────
+  const handleSendPoToArk = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sendArkTarget || !sendArkEmail.trim()) { showToast('ARK email required', 'error'); return; }
+    setSendArkBusy(true);
+    try {
+      await purchasesApi.sendPoToArk(sendArkTarget._id, sendArkEmail.trim());
+      const flowData: FlowData = { poSentToArk: true, poSentToArkAt: new Date().toISOString() };
+      saveFlow(sendArkTarget._id, flowData);
+      setOrders(prev => mergeFlow(prev.map(o => o._id === sendArkTarget._id ? { ...o, ...flowData } : o)));
+      setSendArkTarget(null); showToast('PO sent to ARK');
+    } catch (err: any) { showToast(err?.response?.data?.message || 'Failed', 'error'); }
+    finally { setSendArkBusy(false); }
+  };
+
+  // ── Step 6: Mark ARK Invoice Received ────────────────────────────────────
+  const handleMarkArkInvoice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!arkInvTarget) return;
+    setArkInvBusy(true);
+    try {
+      await purchasesApi.markArkInvoice(arkInvTarget._id, arkInvAmount ? Number(arkInvAmount) : undefined);
+      const flowData: FlowData = { arkInvoiceReceived: true, arkInvoiceReceivedAt: new Date().toISOString(), ...(arkInvAmount ? { arkInvoiceAmount: Number(arkInvAmount) } : {}) };
+      saveFlow(arkInvTarget._id, flowData);
+      setOrders(prev => mergeFlow(prev.map(o => o._id === arkInvTarget._id ? { ...o, ...flowData } : o)));
+      setArkInvTarget(null); showToast('ARK invoice marked as received');
+    } catch { showToast('Failed', 'error'); }
+    finally { setArkInvBusy(false); }
   };
 
   const phaseOrders = (phase: number) => orders.filter(o => getPoStep(o) === phase);
@@ -511,8 +534,9 @@ export default function PurchasesPage() {
                         {/* Phase badge */}
                         <td className="table-cell">
                           <div className={cn('inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold',
-                            step === 5 ? 'bg-emerald-100 text-emerald-700' :
-                            step === 4 ? 'bg-blue-100 text-blue-700' :
+                            step === 6 ? 'bg-emerald-100 text-emerald-700' :
+                            step === 5 ? 'bg-blue-100 text-blue-700' :
+                            step === 4 ? 'bg-teal-100 text-teal-700' :
                             step === 3 ? 'bg-amber-100 text-amber-700' :
                             step === 2 ? 'bg-sky-100 text-sky-700' :
                                          'bg-gray-100 text-gray-600'
@@ -525,31 +549,31 @@ export default function PurchasesPage() {
                         {/* Action button */}
                         <td className="table-cell">
                           {step === 1 && canEdit && (
-                            <button onClick={() => openSendModal(po)} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
-                              <Send size={11} />Send to ARK
+                            <button onClick={() => { setCustInvTarget(po); setCustInvEmail((po.leadId as Lead)?.email || ''); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
+                              <Receipt size={11} />Send Invoice
                             </button>
                           )}
                           {step === 2 && canEdit && (
-                            <button onClick={() => { setInvTarget(po); setInvForm({ amount: String(po.amount), notes: '' }); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
-                              <Receipt size={11} />Gen. Invoice
+                            <button onClick={() => openSendModal(po)} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
+                              <Send size={11} />Forward to ARK
                             </button>
                           )}
-                          {step === 3 && (
-                            <div className="flex flex-col gap-1">
-                              {po.poInvoiceNumber && <span className="text-[10px] text-violet-700 font-mono font-semibold">{po.poInvoiceNumber}</span>}
-                              {canEdit && (
-                                <button onClick={() => { setLicTarget(po); setLicForm({ licenseKey: '', licenseFile: '' }); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
-                                  <Key size={11} />Gen. License
-                                </button>
-                              )}
-                            </div>
+                          {step === 3 && canEdit && (
+                            <button onClick={() => setClearTarget(po)} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
+                              <Mail size={11} />Mark Clearance
+                            </button>
                           )}
                           {step === 4 && canEdit && (
-                            <button onClick={() => setSendCustTarget(po)} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
-                              <Mail size={11} />Send to Customer
+                            <button onClick={() => { setSendArkTarget(po); setSendArkEmail(po.vendorEmail || ''); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
+                              <Send size={11} />Send PO to ARK
                             </button>
                           )}
-                          {step === 5 && (
+                          {step === 5 && canEdit && (
+                            <button onClick={() => { setArkInvTarget(po); setArkInvAmount(''); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
+                              <Receipt size={11} />Mark ARK Invoice
+                            </button>
+                          )}
+                          {step === 6 && (
                             <span className="badge bg-emerald-100 text-emerald-700 text-xs px-2 py-1 whitespace-nowrap">✓ Complete</span>
                           )}
                         </td>
@@ -585,20 +609,39 @@ export default function PurchasesPage() {
         )}
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          STEP 2 — Send to ARK modal
-      ══════════════════════════════════════════════════════════════════════ */}
-      <Modal isOpen={!!sendTarget} onClose={() => { setSendTarget(null); setSendVendorEmail(''); }} title={`Send PO to ARK — ${sendTarget?.poNumber}`}>
+      {/* ══ STEP 2 — Send Invoice to Customer ══════════════════════════════════ */}
+      <Modal isOpen={!!custInvTarget} onClose={() => setCustInvTarget(null)} title={`Send Invoice to Customer — ${custInvTarget?.poNumber}`}>
+        <form onSubmit={handleSendCustomerInvoice} className="space-y-4">
+          <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-sm space-y-1">
+            <p><strong>Customer:</strong> {(custInvTarget?.leadId as Lead)?.companyName}</p>
+            <p><strong>Amount:</strong> {custInvTarget ? formatCurrency(custInvTarget.amount) : '—'}</p>
+            <p><strong>Product:</strong> {custInvTarget?.product || '—'}</p>
+          </div>
+          <div>
+            <label className="label">Customer Email *</label>
+            <ContactEmailPicker required autoFocus placeholder="customer@example.com" value={custInvEmail} onChange={val => setCustInvEmail(val)} defaultContactType="TELLED" />
+          </div>
+          <div className="flex gap-3 justify-end">
+            <button type="button" onClick={() => setCustInvTarget(null)} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={custInvBusy} className="btn-primary flex items-center gap-2">
+              <Receipt size={14} />{custInvBusy ? 'Sending…' : 'Send Invoice'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ══ STEP 3 — Forward PO to ARK ═════════════════════════════════════════ */}
+      <Modal isOpen={!!sendTarget} onClose={() => { setSendTarget(null); setSendVendorEmail(''); }} title={`Forward PO to ARK — ${sendTarget?.poNumber}`}>
         <form onSubmit={handleSendToArk} className="space-y-4">
           <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-sm space-y-1">
             <p><strong>Customer:</strong> {(sendTarget?.leadId as Lead)?.companyName}</p>
             <p><strong>Amount:</strong> {sendTarget ? formatCurrency(sendTarget.amount) : '—'}</p>
             <p><strong>Product:</strong> {sendTarget?.product || '—'}</p>
           </div>
-          <p className="text-xs text-gray-500">The PO will be forwarded as-is to ARK via email.</p>
+          <p className="text-xs text-gray-500">The same PO (unchanged) will be sent to ARK with a price clearance request.</p>
           <div>
             <label className="label">ARK Email *</label>
-            <ContactEmailPicker required autoFocus placeholder="Enter ARK email" value={sendVendorEmail} onChange={val => setSendVendorEmail(val)} defaultContactType="ARK" />
+            <ContactEmailPicker required autoFocus placeholder="ark@example.com" value={sendVendorEmail} onChange={val => setSendVendorEmail(val)} defaultContactType="ARK" />
           </div>
           <div>
             <label className="label">CC</label>
@@ -607,86 +650,76 @@ export default function PurchasesPage() {
           <div className="flex gap-3 justify-end">
             <button type="button" onClick={() => setSendTarget(null)} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={sending} className="btn-primary flex items-center gap-2">
-              <Send size={14} />{sending ? 'Sending…' : 'Send PO to ARK'}
+              <Send size={14} />{sending ? 'Sending…' : 'Forward to ARK'}
             </button>
           </div>
         </form>
       </Modal>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          STEP 3 — Generate Invoice modal
-      ══════════════════════════════════════════════════════════════════════ */}
-      <Modal isOpen={!!invTarget} onClose={() => setInvTarget(null)} title={`Generate Invoice — ${invTarget?.poNumber}`}>
-        <form onSubmit={handleGenerateInvoice} className="space-y-4">
-          <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-sm space-y-1">
-            <p><strong>Customer:</strong> {(invTarget?.leadId as Lead)?.companyName}</p>
-            <p><strong>PO Amount:</strong> {invTarget ? formatCurrency(invTarget.amount) : '—'}</p>
-            {invTarget?.vendorName && <p><strong>ARK:</strong> {invTarget.vendorName}</p>}
-          </div>
-          <div>
-            <label className="label">Invoice Amount (₹) *</label>
-            <input required type="number" step="0.01" className="input-field" value={invForm.amount} onChange={e => setInvForm(f => ({ ...f, amount: e.target.value }))} />
-          </div>
-          <div>
-            <label className="label">Notes</label>
-            <textarea rows={2} className="input-field" value={invForm.notes} onChange={e => setInvForm(f => ({ ...f, notes: e.target.value }))} />
-          </div>
-          <div className="flex gap-3 justify-end">
-            <button type="button" onClick={() => setInvTarget(null)} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={invSaving} className="btn-primary flex items-center gap-2">
-              <Receipt size={14} />{invSaving ? 'Generating…' : 'Generate Invoice'}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* ══════════════════════════════════════════════════════════════════════
-          STEP 4 — Generate License modal
-      ══════════════════════════════════════════════════════════════════════ */}
-      <Modal isOpen={!!licTarget} onClose={() => setLicTarget(null)} title={`Generate License — ${licTarget?.poNumber}`}>
-        <form onSubmit={handleGenerateLicense} className="space-y-4">
-          <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-sm space-y-1">
-            <p><strong>Customer:</strong> {(licTarget?.leadId as Lead)?.companyName}</p>
-            <p><strong>Product:</strong> {licTarget?.product || '—'}</p>
-          </div>
-          <div>
-            <label className="label">License Key</label>
-            <input className="input-field font-mono" placeholder="XXXX-XXXX-XXXX-XXXX" value={licForm.licenseKey} onChange={e => setLicForm(f => ({ ...f, licenseKey: e.target.value }))} />
-          </div>
-          <div>
-            <label className="label">License File Name</label>
-            <input className="input-field" placeholder="license.lic" value={licForm.licenseFile} onChange={e => setLicForm(f => ({ ...f, licenseFile: e.target.value }))} />
-          </div>
-          <div className="flex gap-3 justify-end">
-            <button type="button" onClick={() => setLicTarget(null)} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={licSaving || (!licForm.licenseKey && !licForm.licenseFile)} className="btn-primary flex items-center gap-2">
-              <Key size={14} />{licSaving ? 'Saving…' : 'Save License'}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* ══════════════════════════════════════════════════════════════════════
-          STEP 5 — Send Invoice to Customer confirm
-      ══════════════════════════════════════════════════════════════════════ */}
-      <Modal isOpen={!!sendCustTarget} onClose={() => setSendCustTarget(null)} title="Send Invoice to Customer">
+      {/* ══ STEP 4 — Mark Price Clearance Received ═════════════════════════════ */}
+      <Modal isOpen={!!clearTarget} onClose={() => setClearTarget(null)} title="Mark Price Clearance Received">
         <div className="space-y-4">
-          <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-sm space-y-1">
-            <p><strong>Customer:</strong> {(sendCustTarget?.leadId as Lead)?.companyName}</p>
-            <p><strong>PO:</strong> {sendCustTarget?.poNumber}</p>
-            {sendCustTarget?.poInvoiceNumber && <p><strong>Invoice:</strong> {sendCustTarget.poInvoiceNumber}</p>}
-            {sendCustTarget?.licenseKey && <p><strong>License Key:</strong> <span className="font-mono">{sendCustTarget.licenseKey}</span></p>}
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-sm space-y-1">
+            <p><strong>PO:</strong> {clearTarget?.poNumber}</p>
+            <p><strong>ARK:</strong> {clearTarget?.vendorName || clearTarget?.vendorEmail || '—'}</p>
           </div>
           <p className="text-sm text-gray-600">
-            This will send the invoice and license details to the customer, completing the PO flow.
+            Confirm that price clearance has been received from ARK.<br/>
+            <span className="text-xs text-gray-400">(Email sync can also auto-detect this from your inbox.)</span>
           </p>
           <div className="flex gap-3 justify-end">
-            <button onClick={() => setSendCustTarget(null)} className="btn-secondary">Cancel</button>
-            <button disabled={sendCustBusy} onClick={handleSendCustomerInvoice} className="btn-primary flex items-center gap-2">
-              <Mail size={14} />{sendCustBusy ? 'Sending…' : 'Send to Customer'}
+            <button onClick={() => setClearTarget(null)} className="btn-secondary">Cancel</button>
+            <button disabled={clearBusy} onClick={handleMarkPriceClearance} className="btn-primary flex items-center gap-2">
+              <Mail size={14} />{clearBusy ? 'Marking…' : 'Mark as Received'}
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* ══ STEP 5 — Send Official PO to ARK ══════════════════════════════════ */}
+      <Modal isOpen={!!sendArkTarget} onClose={() => setSendArkTarget(null)} title={`Send Official PO to ARK — ${sendArkTarget?.poNumber}`}>
+        <form onSubmit={handleSendPoToArk} className="space-y-4">
+          <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-sm space-y-1">
+            <p><strong>Customer:</strong> {(sendArkTarget?.leadId as Lead)?.companyName}</p>
+            <p><strong>Amount:</strong> {sendArkTarget ? formatCurrency(sendArkTarget.amount) : '—'}</p>
+            <p><strong>Product:</strong> {sendArkTarget?.product || '—'}</p>
+          </div>
+          <p className="text-xs text-gray-500">Send the official PO to ARK. ARK will process and send their invoice.</p>
+          <div>
+            <label className="label">ARK Email *</label>
+            <ContactEmailPicker required autoFocus placeholder="ark@example.com" value={sendArkEmail} onChange={val => setSendArkEmail(val)} defaultContactType="ARK" />
+          </div>
+          <div className="flex gap-3 justify-end">
+            <button type="button" onClick={() => setSendArkTarget(null)} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={sendArkBusy} className="btn-primary flex items-center gap-2">
+              <Send size={14} />{sendArkBusy ? 'Sending…' : 'Send PO to ARK'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ══ STEP 6 — Mark ARK Invoice Received ════════════════════════════════ */}
+      <Modal isOpen={!!arkInvTarget} onClose={() => setArkInvTarget(null)} title="Mark ARK Invoice Received">
+        <form onSubmit={handleMarkArkInvoice} className="space-y-4">
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-sm space-y-1">
+            <p><strong>PO:</strong> {arkInvTarget?.poNumber}</p>
+            <p><strong>ARK:</strong> {arkInvTarget?.vendorName || arkInvTarget?.vendorEmail || '—'}</p>
+          </div>
+          <p className="text-sm text-gray-600">
+            Confirm ARK's invoice has been received.<br/>
+            <span className="text-xs text-gray-400">(Email sync can also auto-detect this from your inbox.)</span>
+          </p>
+          <div>
+            <label className="label">ARK Invoice Amount (₹)</label>
+            <input type="number" step="0.01" className="input-field" placeholder="Enter invoice amount" value={arkInvAmount} onChange={e => setArkInvAmount(e.target.value)} />
+          </div>
+          <div className="flex gap-3 justify-end">
+            <button type="button" onClick={() => setArkInvTarget(null)} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={arkInvBusy} className="btn-primary flex items-center gap-2">
+              <Receipt size={14} />{arkInvBusy ? 'Marking…' : 'Mark as Received'}
+            </button>
+          </div>
+        </form>
       </Modal>
 
       {/* ── Create PO modal ──────────────────────────────────────────────────── */}

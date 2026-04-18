@@ -31,9 +31,9 @@ import EngineerPerformancePage from '@/pages/EngineerPerformancePage';
 import AttendancePage from '@/pages/AttendancePage';
 import LeavePage from '@/pages/LeavePage';
 import SettingsPage from '@/pages/SettingsPage';
+import ProfilePage from '@/pages/ProfilePage';
 import VisitsAndClaimsPage from '@/pages/VisitsAndClaimsPage';
 import ContactsPage from '@/pages/ContactsPage';
-import POExecutionPage from '@/pages/POExecutionPage';
 import TimesheetPage from '@/pages/TimesheetPage';
 import type { Role } from '@/types';
 
@@ -76,6 +76,7 @@ export default function App() {
 
             {/* All roles */}
             <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="profile" element={<ProfilePage />} />
 
             {/* Admin + Sales */}
             <Route path="leads" element={<RoleRoute roles={['admin', 'sales']}><LeadsPage /></RoleRoute>} />
@@ -83,7 +84,6 @@ export default function App() {
             <Route path="drfs" element={<RoleRoute roles={['admin', 'sales']}><DRFPage /></RoleRoute>} />
             <Route path="quotations" element={<RoleRoute roles={['admin', 'sales']}><QuotationsPage /></RoleRoute>} />
             <Route path="purchases" element={<RoleRoute roles={['admin', 'sales']}><PurchasesPage /></RoleRoute>} />
-            <Route path="po-execution" element={<RoleRoute roles={['admin', 'sales', 'hr_finance', 'engineer']}><POExecutionPage /></RoleRoute>} />
 
             {/* Admin + Sales + Engineer + HR */}
             <Route path="accounts" element={<RoleRoute roles={['admin', 'sales', 'engineer', 'hr_finance']}><AccountsPage /></RoleRoute>} />

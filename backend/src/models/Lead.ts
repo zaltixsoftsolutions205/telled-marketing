@@ -64,7 +64,7 @@ const LeadSchema = new Schema<ILead>(
     website:         { type: String },
     annualTurnover:  { type: String },
     designation:     { type: String },
-    channelPartner:  { type: String, default: 'Telled Marketing' },
+    channelPartner:  { type: String, default: 'ZIEOS' },
     expectedClosure: { type: String },
     notes:      { type: String },
     isArchived: { type: Boolean, default: false },

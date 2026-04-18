@@ -14,9 +14,11 @@ import {
   archiveQuotation,
   deleteQuotation,
   getQuotationStats,
+  parsePdfQuotation,
 } from '../controllers/quotation.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { authorize } from '../middleware/role.middleware';
+import { upload } from '../middleware/upload.middleware';
 
 const router = Router();
 
@@ -25,10 +27,13 @@ router.use(authenticate);
 // Stats endpoint
 router.get('/stats', authorize('admin', 'sales', 'hr_finance'), getQuotationStats);
 
+// PDF parse endpoint (must be before /:id)
+router.post('/parse-pdf', authorize('admin', 'sales'), upload.single('file'), parsePdfQuotation);
+
 // CRUD endpoints
 router.get('/', authorize('admin', 'sales', 'engineer', 'hr_finance'), getQuotations);
 router.get('/:id', authorize('admin', 'sales', 'engineer'), getQuotationById);
-router.post('/', authorize('admin', 'sales'), createQuotation);
+router.post('/', authorize('admin', 'sales'), upload.single('quotationFile'), createQuotation);
 router.put('/:id', authorize('admin', 'sales'), updateQuotation);
 
 // Action endpoints
