@@ -131,10 +131,12 @@ export const registerSubmit = async (req: Request, res: Response) => {
         rejectUrl,
         documentPaths,
       });
-      logger.info(`[Register] Notification email sent to admin for application ${appId}`);
-    } catch (emailErr) {
+      const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.USER_EMAIL_FROM || '';
+      logger.info(`[Register] Notification email sent to admin (${adminEmail}) for application ${appId}`);
+      console.log(`✅ [Register] Notification email sent to: ${adminEmail}`);
+    } catch (emailErr: any) {
       logger.error('[Register] Failed to send admin notification email:', emailErr);
-      // Don't block the response — application is saved, admin can review manually
+      console.error(`❌ [Register] Email send FAILED for application ${appId}:`, emailErr?.message || emailErr);
     }
 
     sendSuccess(
