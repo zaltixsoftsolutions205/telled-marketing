@@ -608,18 +608,26 @@ router.post('/:id/mark-ark-invoice', authorize('admin', 'sales', 'hr_finance'), 
 router.post('/sync-emails', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
   try {
     logger.info('Manual PO email sync triggered by user:', req.user?.email);
-    let creds: ImapCredentials | undefined;
-    const user = await User.findById(req.user!.id).select('smtpHost smtpPort smtpUser smtpPass');
-    if (user?.smtpUser && user?.smtpPass) {
-      try {
-        const smtpHost = user.smtpHost || 'smtp.hostinger.com';
-        const imapHost = smtpHost.includes('office365') || smtpHost.includes('outlook')
-          ? 'imap-mail.outlook.com'
-          : smtpHost.replace(/^smtp\./, 'imap.');
-        creds = { host: imapHost, port: 993, user: user.smtpUser, pass: decryptText(user.smtpPass) };
-      } catch { /* fall back to env vars */ }
+    const user = await User.findById(req.user!.id).select('smtpHost smtpUser smtpPass email');
+
+    if (!user?.smtpUser || !user?.smtpPass) {
+      sendError(res, 'Email not configured. Set up your SMTP credentials in profile settings.', 400);
+      return;
     }
-    const result = await syncPurchaseOrderEmails(creds);
+
+    let creds: ImapCredentials;
+    try {
+      const smtpHost = user.smtpHost || 'smtp.hostinger.com';
+      const imapHost = smtpHost.includes('office365') || smtpHost.includes('outlook')
+        ? 'imap-mail.outlook.com'
+        : smtpHost.replace(/^smtp\./, 'imap.');
+      creds = { host: imapHost, port: 993, user: user.smtpUser, pass: decryptText(user.smtpPass) };
+    } catch {
+      sendError(res, 'Failed to read email credentials. Please re-save your SMTP settings.', 400);
+      return;
+    }
+
+    const result = await syncPurchaseOrderEmails(creds, req.user!.id);
 
     // Log detailed results
     logger.info(`PO sync results:`, {

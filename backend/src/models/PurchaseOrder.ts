@@ -34,6 +34,10 @@ export interface IPurchaseOrder extends Document {
   paymentReference?: string;
   paymentNotes?: string;
   paidBy?: mongoose.Types.ObjectId;
+  // Auto-sync metadata
+  paymentTerms?: string;
+  currency?: string;
+  syncedFromEmail?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -72,6 +76,9 @@ const POSchema = new Schema<IPurchaseOrder>(
     paymentReference:  { type: String },
     paymentNotes:      { type: String },
     paidBy:            { type: Schema.Types.ObjectId, ref: 'User' },
+    paymentTerms:      { type: String },
+    currency:          { type: String, default: 'INR' },
+    syncedFromEmail:   { type: String },
   },
   { timestamps: true }
 );

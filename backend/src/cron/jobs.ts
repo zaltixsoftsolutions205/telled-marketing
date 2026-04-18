@@ -15,19 +15,34 @@ import { syncSupportEmails, patchUnassignedTickets } from '../services/emailInbo
 // Add this function before startCronJobs
 async function syncPurchaseOrderEmailsJob() {
   try {
-    const result = await syncPurchaseOrderEmails();
-    if (result.created.length || result.updated.length) {
-      logger.info(`PO Email sync: ${result.created.length} created, ${result.updated.length} updated, ${result.skipped.length} skipped, ${result.errors.length} errors`);
+    const User = (await import('../models/User')).default;
+    const { decryptText } = await import('../utils/crypto');
 
-      // Log details for monitoring
-      if (result.created.length) {
-        logger.info(`Created POs: ${result.created.join(', ')}`);
-      }
-      if (result.updated.length) {
-        logger.info(`Updated POs: ${result.updated.join(', ')}`);
-      }
-      if (result.errors.length) {
-        logger.error(`PO sync errors: ${result.errors.join(', ')}`);
+    const users = await User.find({
+      isActive: true,
+      role: { $in: ['admin', 'sales'] },
+      smtpUser: { $exists: true, $ne: '' },
+      smtpPass: { $exists: true, $ne: '' },
+    }).select('_id smtpHost smtpUser smtpPass email');
+
+    if (users.length === 0) {
+      logger.info('PO sync skipped — no sales/admin users with SMTP configured');
+      return;
+    }
+
+    for (const u of users) {
+      try {
+        const smtpHost = u.smtpHost || 'smtp.hostinger.com';
+        const imapHost = smtpHost.includes('office365') || smtpHost.includes('outlook')
+          ? 'imap-mail.outlook.com'
+          : smtpHost.replace(/^smtp\./, 'imap.');
+        const creds = { host: imapHost, port: 993, user: u.smtpUser!, pass: decryptText(u.smtpPass!) };
+        const result = await syncPurchaseOrderEmails(creds, u._id.toString());
+        if (result.created.length || result.updated.length) {
+          logger.info(`PO sync (${u.email}): created=${result.created.length} updated=${result.updated.length}`);
+        }
+      } catch (e) {
+        logger.error(`PO sync failed for ${u.email}:`, e);
       }
     }
   } catch (e) {
