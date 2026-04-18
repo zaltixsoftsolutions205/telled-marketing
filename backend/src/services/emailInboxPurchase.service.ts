@@ -141,29 +141,9 @@ async function ocrImage(buf: Buffer): Promise<string> {
   }
 }
 
-async function ocrScannedPdf(pdfBuf: Buffer): Promise<string> {
-  try {
-    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs' as any).catch(() => null);
-    if (!pdfjsLib) return '';
-    const { createCanvas } = await import('canvas');
-    const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfBuf) });
-    const pdf = await loadingTask.promise;
-    let allText = '';
-    for (let p = 1; p <= Math.min(pdf.numPages, 5); p++) {
-      const page = await pdf.getPage(p);
-      const viewport = page.getViewport({ scale: 2.0 });
-      const canvas = createCanvas(viewport.width, viewport.height);
-      const ctx = canvas.getContext('2d') as any;
-      await page.render({ canvasContext: ctx, viewport }).promise;
-      const imgBuf = canvas.toBuffer('image/png');
-      const pageText = await ocrImage(imgBuf);
-      allText += ' ' + pageText;
-    }
-    return allText.trim();
-  } catch (e) {
-    logger.warn('PDF page OCR failed:', (e as Error).message);
-    return '';
-  }
+async function ocrScannedPdf(_pdfBuf: Buffer): Promise<string> {
+  // canvas/pdfjs-dist removed — scanned PDFs return empty text
+  return '';
 }
 
 async function ocrAttachment(attachment: Attachment): Promise<string> {
