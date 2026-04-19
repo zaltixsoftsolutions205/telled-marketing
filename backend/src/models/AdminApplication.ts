@@ -1,7 +1,7 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IDocument {
-  type: 'business_registration' | 'gst_certificate' | 'id_proof' | 'address_proof' | 'other';
+  type: 'business_registration' | 'gst_certificate' | 'id_proof' | 'address_proof' | 'pan_certificate' | 'incorporation_certificate' | 'other';
   filename: string;
   originalName: string;
   path: string;
@@ -34,7 +34,7 @@ export interface IAdminApplication extends Document {
 const DocumentSchema = new Schema<IDocument>({
   type: {
     type: String,
-    enum: ['business_registration', 'gst_certificate', 'id_proof', 'address_proof', 'other'],
+    enum: ['business_registration', 'gst_certificate', 'id_proof', 'address_proof', 'pan_certificate', 'incorporation_certificate', 'other'],
     required: true
   },
   filename: { type: String, required: true },
