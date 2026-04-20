@@ -722,6 +722,80 @@ export const sendTicketAssignmentNotification = async (
   await sendEmailWithUserSmtp(to, `New Support Ticket Assigned: ${ticketId}`, html, senderSmtp);
 };
 
+export const sendFeedbackRequestEmail = async (
+  to: string,
+  ticketId: string,
+  subject: string,
+  companyName: string,
+  senderSmtp?: UserSmtpConfig,
+) => {
+  const html = `
+    <!DOCTYPE html><html><head>
+    <style>
+      body{font-family:Arial,sans-serif;}
+      .container{max-width:600px;margin:0 auto;padding:20px;}
+      .header{background:#4f2d7f;color:white;padding:20px;text-align:center;}
+      .content{padding:20px;background:#f9f9f9;}
+      .badge{display:inline-block;background:#e8f5e9;color:#2e7d32;padding:6px 16px;border-radius:20px;font-weight:bold;margin:10px 0;}
+      .footer{text-align:center;padding:20px;color:#666;font-size:12px;}
+    </style></head><body>
+    <div class="container">
+      <div class="header"><h2>Support Ticket Resolved</h2></div>
+      <div class="content">
+        <p>Dear ${companyName},</p>
+        <p>Your support ticket has been resolved by our team.</p>
+        <table style="width:100%;margin:16px 0;">
+          <tr><td style="padding:8px;background:#f0eaf9;"><strong>Ticket ID</strong></td><td style="padding:8px;">${ticketId}</td></tr>
+          <tr><td style="padding:8px;background:#f0eaf9;"><strong>Subject</strong></td><td style="padding:8px;">${subject}</td></tr>
+          <tr><td style="padding:8px;background:#f0eaf9;"><strong>Status</strong></td><td style="padding:8px;"><span class="badge">Resolved</span></td></tr>
+        </table>
+        <p>Please reply to this email or contact your account manager to:</p>
+        <ul>
+          <li>Confirm the issue is resolved</li>
+          <li>Share any feedback</li>
+          <li>Request a reopen if the issue persists</li>
+        </ul>
+        <p style="color:#e65100;"><strong>Note:</strong> This ticket will be automatically closed after <strong>3 days</strong> if no feedback is received.</p>
+      </div>
+      <div class="footer"><p>This is an automated notification from ZIEOS Support System.</p></div>
+    </div></body></html>
+  `;
+  await sendEmailWithUserSmtp(to, `Support Ticket Resolved - ${ticketId}`, html, senderSmtp);
+};
+
+export const sendTicketReopenedEmail = async (
+  to: string,
+  ticketId: string,
+  subject: string,
+  companyName: string,
+  senderSmtp?: UserSmtpConfig,
+) => {
+  const html = `
+    <!DOCTYPE html><html><head>
+    <style>
+      body{font-family:Arial,sans-serif;}
+      .container{max-width:600px;margin:0 auto;padding:20px;}
+      .header{background:#e65100;color:white;padding:20px;text-align:center;}
+      .content{padding:20px;background:#f9f9f9;}
+      .footer{text-align:center;padding:20px;color:#666;font-size:12px;}
+    </style></head><body>
+    <div class="container">
+      <div class="header"><h2>Support Ticket Reopened</h2></div>
+      <div class="content">
+        <p>Dear ${companyName},</p>
+        <p>Your support ticket has been <strong>reopened</strong> and our team is working on it again.</p>
+        <table style="width:100%;margin:16px 0;">
+          <tr><td style="padding:8px;background:#f0eaf9;"><strong>Ticket ID</strong></td><td style="padding:8px;">${ticketId}</td></tr>
+          <tr><td style="padding:8px;background:#f0eaf9;"><strong>Subject</strong></td><td style="padding:8px;">${subject}</td></tr>
+        </table>
+        <p style="color:#e65100;"><strong>Note:</strong> If this issue is not resolved within <strong>3 days</strong>, a new support ticket will be automatically created.</p>
+      </div>
+      <div class="footer"><p>This is an automated notification from ZIEOS Support System.</p></div>
+    </div></body></html>
+  `;
+  await sendEmailWithUserSmtp(to, `Support Ticket Reopened - ${ticketId}`, html, senderSmtp);
+};
+
 export const sendUserCredentialsEmail = async (
   to: string,
   name: string,

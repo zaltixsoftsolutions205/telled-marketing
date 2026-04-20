@@ -4,8 +4,9 @@ import { Response } from 'express';
 import SupportTicket from '../models/SupportTicket';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
-import { getPaginationParams, generateTicketId } from '../utils/helpers';
-import { sendTicketStatusUpdate, sendTicketAssignmentNotification, UserSmtpConfig } from '../services/email.service';
+import { getPaginationParams } from '../utils/helpers';
+import { sendTicketStatusUpdate, sendTicketAssignmentNotification, sendFeedbackRequestEmail, sendTicketReopenedEmail, UserSmtpConfig } from '../services/email.service';
+import { generateTicketId } from '../utils/helpers';
 import { notifyUser } from '../utils/notify';
 import mongoose from 'mongoose';
 import logger from '../utils/logger';
@@ -106,13 +107,18 @@ export const updateTicket = async (req: AuthRequest, res: Response): Promise<voi
     
     const oldStatus = ticket.status;
     const oldAssignee = ticket.assignedEngineer?.toString();
-    
+
+    // Block direct "Closed" — must go through resolve flow
+    if (req.body.status === 'Closed') {
+      sendError(res, 'Use the Resolve endpoint to close a ticket', 400);
+      return;
+    }
+
     // Update ticket
     Object.assign(ticket, req.body);
-    
-    if (['Closed', 'Resolved'].includes(req.body.status)) {
-      ticket.closedAt = new Date();
-      ticket.closedBy = req.user!.id as unknown as mongoose.Types.ObjectId;
+
+    if (req.body.status === 'Resolved') {
+      ticket.resolvedAt = new Date();
     }
     
     ticket.lastResponseAt = new Date();
@@ -167,22 +173,111 @@ export const updateTicket = async (req: AuthRequest, res: Response): Promise<voi
 export const addNote = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const ticket = await SupportTicket.findById(req.params.id);
-    if (!ticket) {
-      sendError(res, 'Ticket not found', 404);
-      return;
-    }
-    
-    ticket.internalNotes.push({
-      note: req.body.note,
-      addedBy: req.user!.id as unknown as mongoose.Types.ObjectId,
-      addedAt: new Date()
-    });
+    if (!ticket) { sendError(res, 'Ticket not found', 404); return; }
+    ticket.internalNotes.push({ note: req.body.note, addedBy: req.user!.id as unknown as mongoose.Types.ObjectId, addedAt: new Date() });
     ticket.lastResponseAt = new Date();
     await ticket.save();
-    
     sendSuccess(res, ticket, 'Note added');
   } catch (error) {
     logger.error('Add note error:', error);
+    sendError(res, 'Failed', 500);
+  }
+};
+
+export const resolveTicket = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const ticket = await SupportTicket.findById(req.params.id)
+      .populate('accountId', 'companyName contactEmail')
+      .populate('assignedEngineer', 'name email');
+    if (!ticket) { sendError(res, 'Ticket not found', 404); return; }
+    if (ticket.status === 'Closed') { sendError(res, 'Ticket already closed', 400); return; }
+
+    const oldStatus = ticket.status;
+    ticket.status = 'Resolved';
+    ticket.resolvedAt = new Date();
+    ticket.lastResponseAt = new Date();
+    if (req.body.note) {
+      ticket.internalNotes.push({ note: req.body.note, addedBy: req.user!.id as unknown as mongoose.Types.ObjectId, addedAt: new Date() });
+    }
+    await ticket.save();
+
+    const account = ticket.accountId as any;
+    if (account?.contactEmail) {
+      const senderSmtp = await getUserSmtp(req.user!.id);
+      await sendFeedbackRequestEmail(account.contactEmail, ticket.ticketId, ticket.subject, account.companyName || 'Customer', senderSmtp)
+        .catch(e => logger.error('Failed to send feedback request email:', e));
+      if (oldStatus !== 'Resolved') {
+        await sendTicketStatusUpdate(account.contactEmail, ticket.ticketId, ticket.subject, oldStatus, 'Resolved', req.user?.name || 'System', req.body.note, senderSmtp)
+          .catch(e => logger.error('Failed to send status update:', e));
+      }
+    }
+
+    sendSuccess(res, ticket, 'Ticket marked as resolved. Customer notified to provide feedback.');
+  } catch (error) {
+    logger.error('Resolve ticket error:', error);
+    sendError(res, 'Failed', 500);
+  }
+};
+
+export const submitFeedback = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const ticket = await SupportTicket.findById(req.params.id);
+    if (!ticket) { sendError(res, 'Ticket not found', 404); return; }
+    if (ticket.status !== 'Resolved') { sendError(res, 'Ticket is not in Resolved state', 400); return; }
+
+    ticket.customerFeedback = req.body.feedback || 'Customer confirmed resolution';
+    ticket.customerFeedbackAt = new Date();
+    ticket.status = 'Closed';
+    ticket.closedAt = new Date();
+    ticket.closedBy = req.user!.id as unknown as mongoose.Types.ObjectId;
+    ticket.lastResponseAt = new Date();
+    await ticket.save();
+
+    sendSuccess(res, ticket, 'Feedback received. Ticket closed.');
+  } catch (error) {
+    logger.error('Submit feedback error:', error);
+    sendError(res, 'Failed', 500);
+  }
+};
+
+export const reopenTicket = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const ticket = await SupportTicket.findById(req.params.id)
+      .populate('accountId', 'companyName contactEmail')
+      .populate('assignedEngineer', 'name email');
+    if (!ticket) { sendError(res, 'Ticket not found', 404); return; }
+    if (ticket.status !== 'Closed') { sendError(res, 'Only closed tickets can be reopened', 400); return; }
+
+    // Check 3-day reopen window
+    const REOPEN_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+    if (ticket.closedAt && Date.now() - ticket.closedAt.getTime() > REOPEN_WINDOW_MS) {
+      sendError(res, 'Reopen window has expired (3 days). Please create a new ticket.', 400);
+      return;
+    }
+
+    ticket.status = 'Reopened';
+    ticket.reopenedAt = new Date();
+    ticket.reopenCount = (ticket.reopenCount || 0) + 1;
+    ticket.closedAt = undefined;
+    ticket.resolvedAt = undefined;
+    ticket.customerFeedback = undefined;
+    ticket.customerFeedbackAt = undefined;
+    ticket.lastResponseAt = new Date();
+    if (req.body.reason) {
+      ticket.internalNotes.push({ note: `Reopened: ${req.body.reason}`, addedBy: req.user!.id as unknown as mongoose.Types.ObjectId, addedAt: new Date() });
+    }
+    await ticket.save();
+
+    const account = ticket.accountId as any;
+    if (account?.contactEmail) {
+      const senderSmtp = await getUserSmtp(req.user!.id);
+      await sendTicketReopenedEmail(account.contactEmail, ticket.ticketId, ticket.subject, account.companyName || 'Customer', senderSmtp)
+        .catch(e => logger.error('Failed to send reopen email:', e));
+    }
+
+    sendSuccess(res, ticket, 'Ticket reopened. Will auto-spawn new ticket after 3 days if unresolved.');
+  } catch (error) {
+    logger.error('Reopen ticket error:', error);
     sendError(res, 'Failed', 500);
   }
 };

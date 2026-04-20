@@ -25,4 +25,16 @@ export const supportApi = {
     const { data } = await api.post(`/support/${id}/notes`, { note });
     return data.data;
   },
+  resolve: async (id: string, note?: string) => {
+    const { data } = await api.post(`/support/${id}/resolve`, { note });
+    return data.data;
+  },
+  submitFeedback: async (id: string, feedback: string) => {
+    const { data } = await api.post(`/support/${id}/feedback`, { feedback });
+    return data.data;
+  },
+  reopen: async (id: string, reason?: string) => {
+    const { data } = await api.post(`/support/${id}/reopen`, { reason });
+    return data.data;
+  },
 };

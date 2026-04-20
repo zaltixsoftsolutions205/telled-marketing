@@ -8,13 +8,19 @@ export interface ISupportTicket extends Document {
   subject: string;
   description: string;
   priority: 'Low' | 'Medium' | 'High' | 'Critical';
-  status: 'Open' | 'In Progress' | 'Resolved' | 'Closed';
+  status: 'Open' | 'In Progress' | 'Resolved' | 'Closed' | 'Reopened';
   assignedEngineer?: mongoose.Types.ObjectId;
   internalNotes: IInternalNote[];
   lastResponseAt: Date;
+  resolvedAt?: Date;
   closedAt?: Date;
   closedBy?: mongoose.Types.ObjectId;
   autoClosedAt?: Date;
+  reopenedAt?: Date;
+  reopenCount: number;
+  parentTicketId?: mongoose.Types.ObjectId;
+  customerFeedback?: string;
+  customerFeedbackAt?: Date;
   createdBy: mongoose.Types.ObjectId;
   isArchived: boolean;
   createdAt: Date;
@@ -33,13 +39,19 @@ const SupportTicketSchema = new Schema<ISupportTicket>(
     subject: { type: String, required: true },
     description: { type: String, required: true },
     priority: { type: String, enum: ['Low', 'Medium', 'High', 'Critical'], default: 'Medium' },
-    status: { type: String, enum: ['Open', 'In Progress', 'Resolved', 'Closed'], default: 'Open' },
+    status: { type: String, enum: ['Open', 'In Progress', 'Resolved', 'Closed', 'Reopened'], default: 'Open' },
     assignedEngineer: { type: Schema.Types.ObjectId, ref: 'User' },
     internalNotes: { type: [NoteSchema], default: [] },
     lastResponseAt: { type: Date, default: Date.now },
+    resolvedAt: { type: Date },
     closedAt: { type: Date },
     closedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     autoClosedAt: { type: Date },
+    reopenedAt: { type: Date },
+    reopenCount: { type: Number, default: 0 },
+    parentTicketId: { type: Schema.Types.ObjectId, ref: 'SupportTicket' },
+    customerFeedback: { type: String },
+    customerFeedbackAt: { type: Date },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     isArchived: { type: Boolean, default: false },
   },

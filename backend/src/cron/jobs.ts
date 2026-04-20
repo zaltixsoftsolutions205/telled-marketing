@@ -7,7 +7,8 @@ import SupportTicket from '../models/SupportTicket';
 import EngineerVisit from '../models/EngineerVisit';
 import logger from '../utils/logger';
 import sendEmail, { sendOEMExpiryReminder, sendInvoiceReminder, sendTicketClosureNotification } from '../services/email.service';
-import { OEM_EXPIRY_REMINDER_DAYS, TICKET_AUTO_CLOSE_DAYS, INVOICE_DUE_REMINDER_DAYS } from '../config/constants';
+import { OEM_EXPIRY_REMINDER_DAYS, TICKET_AUTO_CLOSE_DAYS, TICKET_RESOLVED_FORCE_CLOSE_DAYS, TICKET_REOPEN_EXPIRE_DAYS, INVOICE_DUE_REMINDER_DAYS } from '../config/constants';
+import User from '../models/User';
 import { syncEmailsForDRF, ImapCredentials } from '../services/emailInbox.service';
 import { syncPurchaseOrderEmails } from '../services/emailInboxPurchase.service';
 import { syncSupportEmails, patchUnassignedTickets } from '../services/emailInboxSupport.service';
@@ -260,6 +261,64 @@ export const startCronJobs = (): void => {
   // Support email to ticket sync — every 5 minutes
   cron.schedule('*/5 * * * *', async () => {
     await syncSupportEmailsJob();
+  });
+
+  // Force-close Resolved tickets with no customer feedback after 3 days — every 2 hours
+  cron.schedule('0 */2 * * *', async () => {
+    try {
+      const cutoff = new Date(Date.now() - TICKET_RESOLVED_FORCE_CLOSE_DAYS * 24 * 60 * 60 * 1000);
+      const stale = await SupportTicket.find({ status: 'Resolved', resolvedAt: { $lt: cutoff }, isArchived: false })
+        .populate<{ accountId: { contactEmail: string; companyName: string } }>('accountId', 'contactEmail companyName');
+      for (const t of stale) {
+        t.status = 'Closed';
+        t.closedAt = t.autoClosedAt = new Date();
+        t.internalNotes.push({ note: 'Auto-closed: no customer feedback received within 3 days of resolution.', addedBy: t.createdBy, addedAt: new Date() });
+        await t.save();
+        const acc = t.accountId as unknown as { contactEmail: string };
+        if (acc?.contactEmail) await sendTicketClosureNotification(acc.contactEmail, t.ticketId, t.subject).catch(() => {});
+      }
+      if (stale.length > 0) logger.info(`Force-closed ${stale.length} resolved tickets (no feedback)`);
+    } catch (e) { logger.error('Resolved force-close cron:', e); }
+  });
+
+  // Auto-spawn new ticket for Reopened tickets older than 3 days — every 2 hours
+  cron.schedule('30 */2 * * *', async () => {
+    try {
+      const cutoff = new Date(Date.now() - TICKET_REOPEN_EXPIRE_DAYS * 24 * 60 * 60 * 1000);
+      const expired = await SupportTicket.find({ status: 'Reopened', reopenedAt: { $lt: cutoff }, isArchived: false })
+        .populate<{ accountId: { _id: any; contactEmail: string; companyName: string } }>('accountId', 'contactEmail companyName _id')
+        .populate<{ assignedEngineer: { _id: any } }>('assignedEngineer', '_id');
+      for (const t of expired) {
+        // Close original
+        t.status = 'Closed';
+        t.closedAt = t.autoClosedAt = new Date();
+        t.internalNotes.push({ note: 'Auto-closed: reopen window (3 days) expired. New ticket created.', addedBy: t.createdBy, addedAt: new Date() });
+        await t.save();
+
+        // Spawn new ticket
+        const acc = t.accountId as unknown as { _id: any; contactEmail: string; companyName: string };
+        const eng = t.assignedEngineer as unknown as { _id: any } | null;
+        if (acc?._id) {
+          const fallbackEngineer = eng?._id || (await User.findOne({ role: 'engineer', isActive: true }).select('_id').lean())?._id;
+          await new SupportTicket({
+            accountId: acc._id,
+            ticketId: (await import('../utils/helpers')).generateTicketId(),
+            subject: `[Follow-up] ${t.subject}`,
+            description: `This ticket was automatically created as a follow-up to ticket ${t.ticketId} which was reopened but not resolved within 3 days.\n\nOriginal description:\n${t.description}`,
+            priority: t.priority,
+            status: 'Open',
+            assignedEngineer: fallbackEngineer,
+            createdBy: t.createdBy,
+            parentTicketId: t._id,
+            internalNotes: [{ note: `Auto-spawned from ticket ${t.ticketId} after reopen window expired.`, addedBy: t.createdBy, addedAt: new Date() }],
+            lastResponseAt: new Date(),
+          }).save();
+          logger.info(`Auto-spawned new ticket from ${t.ticketId}`);
+        }
+        if (acc?.contactEmail) await sendTicketClosureNotification(acc.contactEmail, t.ticketId, t.subject).catch(() => {});
+      }
+      if (expired.length > 0) logger.info(`Processed ${expired.length} expired-reopen tickets`);
+    } catch (e) { logger.error('Reopen-expire cron:', e); }
   });
 
   // Also run once on startup

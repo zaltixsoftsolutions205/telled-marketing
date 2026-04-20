@@ -218,7 +218,7 @@ export interface SupportTicket {
   ticketId: string;
   subject: string;
   description: string;
-  status: 'Open' | 'In Progress' | 'Resolved' | 'Closed';
+  status: 'Open' | 'In Progress' | 'Resolved' | 'Closed' | 'Reopened';
   priority: 'Low' | 'Medium' | 'High' | 'Critical';
   assignedTo?: User;
   assignedEngineer?: User;
@@ -226,6 +226,11 @@ export interface SupportTicket {
   lastResponseAt?: string;
   resolvedAt?: string;
   closedAt?: string;
+  reopenedAt?: string;
+  reopenCount?: number;
+  parentTicketId?: string;
+  customerFeedback?: string;
+  customerFeedbackAt?: string;
   createdBy: User;
   createdAt: string;
 }
