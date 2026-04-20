@@ -4,6 +4,8 @@ import logger from '../utils/logger';
 import nodemailer from 'nodemailer';
 import axios from 'axios';
 
+const appUrl = () => (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
+
 // ── Microsoft Graph API sender (for Outlook/M365 users) ──────────────────────
 const GRAPH_CLIENT_ID     = process.env.GRAPH_CLIENT_ID     || '';
 const GRAPH_CLIENT_SECRET = process.env.GRAPH_CLIENT_SECRET || '';
@@ -635,7 +637,7 @@ export const sendApprovalEmail = async (data: {
       <p>Here are your login credentials:</p>
       <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:20px;margin:16px 0">
         <table style="width:100%">
-          <tr><td style="padding:6px;font-weight:bold;color:#374151">Login URL</td><td style="padding:6px"><a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/login">${process.env.FRONTEND_URL || 'http://localhost:5173'}/login</a></td></tr>
+          <tr><td style="padding:6px;font-weight:bold;color:#374151">Login URL</td><td style="padding:6px"><a href="${appUrl()}/login">${appUrl()}/login</a></td></tr>
           <tr><td style="padding:6px;font-weight:bold;color:#374151">Email</td><td style="padding:6px">${data.loginEmail}</td></tr>
           <tr><td style="padding:6px;font-weight:bold;color:#374151">Password</td><td style="padding:6px"><strong>${data.password}</strong></td></tr>
         </table>
@@ -734,7 +736,7 @@ export const sendUserCredentialsEmail = async (
     hr_finance: 'HR & Finance',
   };
   const displayRole = role ? (roleLabel[role] || role) : 'Team Member';
-  const loginUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login`;
+  const loginUrl = `${appUrl()}/login`;
 
   try {
     await sendViaHostinger(

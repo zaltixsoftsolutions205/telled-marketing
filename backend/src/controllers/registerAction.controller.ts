@@ -66,7 +66,7 @@ export const actionApprove = async (req: Request, res: Response) => {
           <strong>Link expired or already used.</strong><br/>
           This approval link is no longer valid. Please use the admin portal to manage this application.
         </div>
-        <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/admin-applications" class="btn btn-gray">Go to Admin Portal</a>
+        <a href="${(process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim()}/admin-applications" class="btn btn-gray">Go to Admin Portal</a>
       `));
     }
 
@@ -85,7 +85,7 @@ export const actionApprove = async (req: Request, res: Response) => {
           <strong>This application was already approved.</strong><br/>
           Login credentials were sent to <strong>${app.email}</strong>.
         </div>
-        <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/admin-applications" class="btn btn-gray" style="margin-top:16px">View Admin Portal</a>
+        <a href="${(process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim()}/admin-applications" class="btn btn-gray" style="margin-top:16px">View Admin Portal</a>
       `));
     }
 
@@ -156,7 +156,7 @@ export const actionApprove = async (req: Request, res: Response) => {
       <p style="font-size:13px;color:#6b7280;margin-bottom:16px">
         The applicant will receive their login credentials at <strong>${app.email}</strong> shortly.
       </p>
-      <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/admin-applications" class="btn btn-gray">View All Applications</a>
+      <a href="${(process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim()}/admin-applications" class="btn btn-gray">View All Applications</a>
     `));
 
   } catch (e: any) {
@@ -187,7 +187,7 @@ export const actionRejectForm = async (req: Request, res: Response) => {
         <strong>Link expired or already used.</strong><br/>
         This rejection link is no longer valid.
       </div>
-      <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/admin-applications" class="btn btn-gray" style="margin-top:16px">Go to Admin Portal</a>
+      <a href="${(process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim()}/admin-applications" class="btn btn-gray" style="margin-top:16px">Go to Admin Portal</a>
     `));
   }
 
@@ -226,7 +226,7 @@ export const actionRejectForm = async (req: Request, res: Response) => {
       <textarea id="reason" name="reason" rows="4" required placeholder="Please provide a clear reason so the applicant understands what to improve or resubmit…"></textarea>
       <button type="submit" class="btn btn-red" style="margin-top:16px">Confirm Rejection & Notify Applicant</button>
     </form>
-    <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/admin-applications" class="btn btn-gray" style="margin-top:8px">Cancel — Go to Admin Portal</a>
+    <a href="${(process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim()}/admin-applications" class="btn btn-gray" style="margin-top:8px">Cancel — Go to Admin Portal</a>
   `));
 };
 
@@ -297,7 +297,7 @@ export const actionRejectSubmit = async (req: Request, res: Response) => {
         <div class="row"><span>Status</span><span style="color:#dc2626;font-weight:700">Rejected ❌</span></div>
         <div class="row"><span>Reason Sent</span><span style="max-width:280px;word-break:break-word">${reason.trim()}</span></div>
       </div>
-      <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/admin-applications" class="btn btn-gray">View All Applications</a>
+      <a href="${(process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim()}/admin-applications" class="btn btn-gray">View All Applications</a>
     `));
 
   } catch (e) {

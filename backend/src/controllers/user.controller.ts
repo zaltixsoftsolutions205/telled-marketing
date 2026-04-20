@@ -69,7 +69,7 @@ export const createUser = async (req: AuthRequest, res: Response): Promise<void>
     const Organization = (await import('../models/Organization')).default;
     const org = await Organization.findById(req.user!.organizationId).select('name').lean();
 
-    const loginUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login`;
+    const loginUrl = `${(process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim()}/login`;
 
     // 📧 SEND WELCOME EMAIL
     await sendWelcomeEmail({
