@@ -28,6 +28,9 @@ async function getUserSmtp(userId: string): Promise<UserSmtpConfig | undefined> 
 import { generatePurchaseOrderPDF } from '../services/pdf.service';
 import path from 'path';
 import logger from '../utils/logger';
+import multer from 'multer';
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const router = Router();
 router.use(authenticate);
@@ -148,7 +151,7 @@ router.put('/:id', authorize('admin', 'sales', 'engineer', 'hr_finance'), async 
 });
 
 // Send to vendor - Enhanced with better email
-router.post('/:id/send-to-vendor', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/send-to-vendor', authorize('admin', 'sales', 'engineer', 'hr_finance'), upload.single('attachment'), async (req: AuthRequest, res: Response) => {
   try {
     const po = await PurchaseOrder.findById(req.params.id)
       .populate('leadId', 'companyName contactPersonName email phone address city state');
@@ -260,13 +263,18 @@ router.post('/:id/send-to-vendor', authorize('admin', 'sales', 'engineer', 'hr_f
       </html>
     `;
 
+    const vendorAttachments: Array<{ filename: string; path?: string; content?: Buffer }> = [
+      { filename: `PO-${po.poNumber}.pdf`, path: pdfPath },
+    ];
+    if ((req as any).file) vendorAttachments.push({ filename: (req as any).file.originalname, content: (req as any).file.buffer });
+
     const ccEmail: string | undefined = req.body.cc || undefined;
     await sendEmailWithUserSmtp(
       vendorEmailToUse,
       `Purchase Order ${po.poNumber} from ${senderName}`,
       html,
       senderSmtp,
-      [{ filename: `PO-${po.poNumber}.pdf`, path: pdfPath }],
+      vendorAttachments,
       ccEmail,
     );
 
@@ -412,7 +420,7 @@ router.delete('/:id', authorize('admin', 'sales'), async (req: AuthRequest, res:
 });
 
 // ── Step 2: Send Invoice to Customer ─────────────────────────────────────────
-router.post('/:id/send-customer-invoice', authorize('admin', 'sales', 'hr_finance'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/send-customer-invoice', authorize('admin', 'sales', 'hr_finance'), upload.single('attachment'), async (req: AuthRequest, res: Response) => {
   try {
     const po = await PurchaseOrder.findById(req.params.id)
       .populate('leadId', 'companyName contactPersonName email phone');
@@ -427,28 +435,59 @@ router.post('/:id/send-customer-invoice', authorize('admin', 'sales', 'hr_financ
     const senderEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || '';
 
     const invNumber = `INV-${new Date().getFullYear()}-${String(Math.floor(1000 + Math.random() * 9000))}`;
+    const amountFormatted = `₹ ${po.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
-    const html = `
-      <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:20px">
-        <div style="background:linear-gradient(135deg,#6d28d9,#4c1d95);color:#fff;padding:20px;border-radius:8px 8px 0 0;text-align:center">
-          <h2 style="margin:0">Invoice — ${invNumber}</h2>
-          <p style="margin:6px 0 0;opacity:.85">Ref: PO ${po.poNumber}</p>
-        </div>
-        <div style="padding:24px;background:#f9fafb;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px">
-          <p>Dear ${lead?.contactPersonName || lead?.companyName},</p>
-          <p>Please find below the invoice against your Purchase Order <strong>${po.poNumber}</strong>.</p>
-          <table style="border-collapse:collapse;width:100%;margin:16px 0;font-size:14px">
-            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">Invoice No</td><td style="padding:8px;border:1px solid #ddd">${invNumber}</td></tr>
-            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">PO Number</td><td style="padding:8px;border:1px solid #ddd">${po.poNumber}</td></tr>
-            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">Product</td><td style="padding:8px;border:1px solid #ddd">${po.product || '—'}</td></tr>
-            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">Amount</td><td style="padding:8px;border:1px solid #ddd;font-weight:bold;color:#6d28d9">₹ ${po.amount.toLocaleString('en-IN')}</td></tr>
-          </table>
-          <p>Please process the payment at your earliest convenience.</p>
-          <p>Regards,<br/><strong>${senderName}</strong><br/>${senderEmail}</p>
-        </div>
-      </div>`;
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:32px 0">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden">
+  <tr><td style="background:linear-gradient(135deg,#6d28d9,#4c1d95);padding:36px;text-align:center">
+    <h1 style="color:#fff;margin:0;font-size:26px;font-weight:700;letter-spacing:-0.5px">INVOICE</h1>
+    <p style="color:rgba(255,255,255,0.8);margin:8px 0 0;font-size:14px">${invNumber}</p>
+  </td></tr>
+  <tr><td style="background:#faf5ff;padding:24px 32px;border-bottom:2px solid #ede9fe">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td style="vertical-align:middle">
+          <p style="margin:0;color:#7c3aed;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px">Total Amount Due</p>
+          <p style="margin:6px 0 0;color:#4c1d95;font-size:36px;font-weight:800">${amountFormatted}</p>
+        </td>
+        <td align="right" style="vertical-align:top">
+          <p style="margin:0;color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:0.5px">PO Reference</p>
+          <p style="margin:3px 0 6px;color:#111827;font-size:14px;font-weight:700">${po.poNumber}</p>
+          <p style="margin:0;color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:0.5px">Invoice Date</p>
+          <p style="margin:3px 0 0;color:#111827;font-size:13px">${new Date().toLocaleDateString('en-IN')}</p>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+  <tr><td style="padding:32px">
+    <p style="margin:0 0 8px;color:#374151;font-size:15px">Dear <strong>${lead?.contactPersonName || lead?.companyName || 'Customer'}</strong>,</p>
+    <p style="margin:0 0 24px;color:#6b7280;font-size:14px;line-height:1.6">Please find below the invoice for your Purchase Order <strong>${po.poNumber}</strong>. Kindly process the payment at your earliest convenience.</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;font-size:14px">
+      <tr style="background:#f9fafb"><td style="padding:12px 16px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;width:42%">Invoice No</td><td style="padding:12px 16px;color:#111827;border-bottom:1px solid #e5e7eb">${invNumber}</td></tr>
+      <tr><td style="padding:12px 16px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb">PO Number</td><td style="padding:12px 16px;color:#111827;border-bottom:1px solid #e5e7eb">${po.poNumber}</td></tr>
+      <tr style="background:#f9fafb"><td style="padding:12px 16px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb">Product / Service</td><td style="padding:12px 16px;color:#111827;border-bottom:1px solid #e5e7eb">${po.product || '—'}</td></tr>
+      <tr><td style="padding:12px 16px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb">Customer</td><td style="padding:12px 16px;color:#111827;border-bottom:1px solid #e5e7eb">${lead?.companyName || '—'}</td></tr>
+      <tr style="background:#faf5ff"><td style="padding:14px 16px;color:#6d28d9;font-weight:700;font-size:15px">Total Amount</td><td style="padding:14px 16px;color:#6d28d9;font-weight:800;font-size:18px">${amountFormatted}</td></tr>
+    </table>
+    <p style="margin:24px 0 0;color:#6b7280;font-size:13px">For any queries, please contact us at <strong>${senderEmail}</strong>.</p>
+    <p style="margin:16px 0 0;color:#374151;font-size:14px">Regards,<br/><strong style="color:#111827">${senderName}</strong></p>
+  </td></tr>
+  <tr><td style="background:#f9fafb;padding:16px;text-align:center;border-top:1px solid #e5e7eb">
+    <p style="margin:0;color:#9ca3af;font-size:12px">&copy; ${new Date().getFullYear()} ZIEOS &bull; All rights reserved</p>
+  </td></tr>
+</table>
+</td></tr></table>
+</body></html>`;
 
-    await sendEmailWithUserSmtp(customerEmail, `Invoice ${invNumber} — PO ${po.poNumber}`, html, senderSmtp, undefined, req.body.cc);
+    const attachments: Array<{ filename: string; content: Buffer }> = [];
+    if ((req as any).file) {
+      attachments.push({ filename: (req as any).file.originalname, content: (req as any).file.buffer });
+    }
+
+    await sendEmailWithUserSmtp(customerEmail, `Invoice ${invNumber} — PO ${po.poNumber}`, html, senderSmtp, attachments.length ? attachments : undefined, req.body.cc);
     await PurchaseOrder.findByIdAndUpdate(req.params.id, {
       customerInvoiceSent: true,
       customerInvoiceSentAt: new Date(),
@@ -461,7 +500,7 @@ router.post('/:id/send-customer-invoice', authorize('admin', 'sales', 'hr_financ
 });
 
 // ── Step 3: Forward PO to ARK ─────────────────────────────────────────────────
-router.post('/:id/forward-to-ark', authorize('admin', 'sales', 'hr_finance'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/forward-to-ark', authorize('admin', 'sales', 'hr_finance'), upload.single('attachment'), async (req: AuthRequest, res: Response) => {
   try {
     const po = await PurchaseOrder.findById(req.params.id)
       .populate('leadId', 'companyName contactPersonName email phone address city state');
@@ -510,8 +549,12 @@ router.post('/:id/forward-to-ark', authorize('admin', 'sales', 'hr_finance'), as
         </div>
       </div>`;
 
-    await sendEmailWithUserSmtp(arkEmail, `PO ${po.poNumber} — Price Clearance Request`, html, senderSmtp,
-      [{ filename: `PO-${po.poNumber}.pdf`, path: pdfPath }], req.body.cc);
+    const arkAttachments: Array<{ filename: string; path?: string; content?: Buffer }> = [
+      { filename: `PO-${po.poNumber}.pdf`, path: pdfPath },
+    ];
+    if ((req as any).file) arkAttachments.push({ filename: (req as any).file.originalname, content: (req as any).file.buffer });
+
+    await sendEmailWithUserSmtp(arkEmail, `PO ${po.poNumber} — Price Clearance Request`, html, senderSmtp, arkAttachments, req.body.cc);
 
     await PurchaseOrder.findByIdAndUpdate(req.params.id, {
       poForwardedToArk: true,
@@ -541,7 +584,7 @@ router.post('/:id/mark-price-clearance', authorize('admin', 'sales', 'hr_finance
 });
 
 // ── Step 5: Send PO to ARK (official, after price clearance) ─────────────────
-router.post('/:id/send-po-to-ark', authorize('admin', 'sales', 'hr_finance'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/send-po-to-ark', authorize('admin', 'sales', 'hr_finance'), upload.single('attachment'), async (req: AuthRequest, res: Response) => {
   try {
     const po = await PurchaseOrder.findById(req.params.id)
       .populate('leadId', 'companyName contactPersonName email phone address city state');
@@ -588,8 +631,12 @@ router.post('/:id/send-po-to-ark', authorize('admin', 'sales', 'hr_finance'), as
         </div>
       </div>`;
 
-    await sendEmailWithUserSmtp(arkEmail, `Official PO ${po.poNumber} — Please process`, html, senderSmtp,
-      [{ filename: `PO-${po.poNumber}.pdf`, path: pdfPath }], req.body.cc);
+    const sendArkAttachments: Array<{ filename: string; path?: string; content?: Buffer }> = [
+      { filename: `PO-${po.poNumber}.pdf`, path: pdfPath },
+    ];
+    if ((req as any).file) sendArkAttachments.push({ filename: (req as any).file.originalname, content: (req as any).file.buffer });
+
+    await sendEmailWithUserSmtp(arkEmail, `Official PO ${po.poNumber} — Please process`, html, senderSmtp, sendArkAttachments, req.body.cc);
 
     await PurchaseOrder.findByIdAndUpdate(req.params.id, {
       poSentToArk: true,

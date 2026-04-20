@@ -10,6 +10,7 @@ import { jsPDF } from 'jspdf';
 import ExcelImportButton from '@/components/common/ExcelImportButton';
 import { purchasesApi } from '@/api/purchases';
 import { leadsApi } from '@/api/leads';
+import { accountsApi } from '@/api/accounts';
 
 // ─── Local flow-state store (persists in localStorage) ───────────────────────
 type FlowData = {
@@ -141,6 +142,7 @@ export default function PurchasesPage() {
   const [sendTarget, setSendTarget]       = useState<PurchaseOrder | null>(null);
   const [sendVendorEmail, setSendVendorEmail] = useState('');
   const [sendVendorCc, setSendVendorCc]   = useState('');
+  const [sendVendorFile, setSendVendorFile] = useState<File | null>(null);
   const [sending, setSending]             = useState(false);
 
   // ── Delete ───────────────────────────────────────────────────────────────
@@ -151,6 +153,7 @@ export default function PurchasesPage() {
   // ── Step 2: Send Invoice to Customer ────────────────────────────────────
   const [custInvTarget, setCustInvTarget] = useState<PurchaseOrder | null>(null);
   const [custInvEmail, setCustInvEmail]   = useState('');
+  const [custInvFile, setCustInvFile]     = useState<File | null>(null);
   const [custInvBusy, setCustInvBusy]     = useState(false);
 
   // ── Step 4: Price Clearance (manual mark) ───────────────────────────────
@@ -160,12 +163,18 @@ export default function PurchasesPage() {
   // ── Step 5: Send PO to ARK (official) ───────────────────────────────────
   const [sendArkTarget, setSendArkTarget]   = useState<PurchaseOrder | null>(null);
   const [sendArkEmail, setSendArkEmail]     = useState('');
+  const [sendArkFile, setSendArkFile]       = useState<File | null>(null);
   const [sendArkBusy, setSendArkBusy]       = useState(false);
 
   // ── Step 6: ARK Invoice Received (manual mark) ──────────────────────────
   const [arkInvTarget, setArkInvTarget]   = useState<PurchaseOrder | null>(null);
   const [arkInvAmount, setArkInvAmount]   = useState('');
   const [arkInvBusy, setArkInvBusy]       = useState(false);
+
+  // ── Convert to Account ───────────────────────────────────────────────────
+  const [convertTarget, setConvertTarget] = useState<PurchaseOrder | null>(null);
+  const [convertName, setConvertName]     = useState('');
+  const [convertBusy, setConvertBusy]     = useState(false);
 
   // ─── Data loaders ─────────────────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -224,10 +233,10 @@ export default function PurchasesPage() {
     if (!sendTarget || !sendVendorEmail.trim()) { showToast('Please enter ARK email', 'error'); return; }
     setSending(true);
     try {
-      await purchasesApi.forwardToArk(sendTarget._id, sendVendorEmail.trim(), sendTarget.vendorName, sendVendorCc.trim() || undefined);
+      await purchasesApi.forwardToArk(sendTarget._id, sendVendorEmail.trim(), sendTarget.vendorName, sendVendorCc.trim() || undefined, sendVendorFile || undefined);
       const flowData: FlowData = { poForwardedToArk: true, poForwardedToArkAt: new Date().toISOString() };
       saveFlow(sendTarget._id, flowData);
-      setSendTarget(null); showToast('PO forwarded to ARK');
+      setSendTarget(null); setSendVendorFile(null); showToast('PO forwarded to ARK');
       setOrders(prev => mergeFlow(prev.map(o => o._id === sendTarget._id ? { ...o, ...flowData } : o)));
     } catch (err: any) { showToast(err?.response?.data?.message || 'Failed to send', 'error'); }
     finally { setSending(false); }
@@ -417,11 +426,11 @@ export default function PurchasesPage() {
     if (!custInvTarget || !custInvEmail.trim()) { showToast('Customer email required', 'error'); return; }
     setCustInvBusy(true);
     try {
-      await purchasesApi.sendCustomerInvoice(custInvTarget._id, custInvEmail.trim());
+      await purchasesApi.sendCustomerInvoice(custInvTarget._id, custInvEmail.trim(), undefined, custInvFile || undefined);
       const flowData: FlowData = { customerInvoiceSent: true, customerInvoiceSentAt: new Date().toISOString() };
       saveFlow(custInvTarget._id, flowData);
       setOrders(prev => mergeFlow(prev.map(o => o._id === custInvTarget._id ? { ...o, ...flowData } : o)));
-      setCustInvTarget(null); showToast('Invoice sent to customer');
+      setCustInvTarget(null); setCustInvFile(null); showToast('Invoice sent to customer');
     } catch (err: any) { showToast(err?.response?.data?.message || 'Failed', 'error'); }
     finally { setCustInvBusy(false); }
   };
@@ -446,11 +455,11 @@ export default function PurchasesPage() {
     if (!sendArkTarget || !sendArkEmail.trim()) { showToast('ARK email required', 'error'); return; }
     setSendArkBusy(true);
     try {
-      await purchasesApi.sendPoToArk(sendArkTarget._id, sendArkEmail.trim());
+      await purchasesApi.sendPoToArk(sendArkTarget._id, sendArkEmail.trim(), undefined, sendArkFile || undefined);
       const flowData: FlowData = { poSentToArk: true, poSentToArkAt: new Date().toISOString() };
       saveFlow(sendArkTarget._id, flowData);
       setOrders(prev => mergeFlow(prev.map(o => o._id === sendArkTarget._id ? { ...o, ...flowData } : o)));
-      setSendArkTarget(null); showToast('PO sent to ARK');
+      setSendArkTarget(null); setSendArkFile(null); showToast('PO sent to ARK');
     } catch (err: any) { showToast(err?.response?.data?.message || 'Failed', 'error'); }
     finally { setSendArkBusy(false); }
   };
@@ -470,6 +479,21 @@ export default function PurchasesPage() {
     finally { setArkInvBusy(false); }
   };
 
+  // ── Convert to Account handler ────────────────────────────────────────────
+  const handleConvertToAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!convertTarget) return;
+    setConvertBusy(true);
+    try {
+      const leadId = typeof convertTarget.leadId === 'string' ? convertTarget.leadId : (convertTarget.leadId as Lead)._id;
+      await accountsApi.convert({ leadId, accountName: convertName.trim() || ((convertTarget.leadId as Lead)?.companyName ?? '') });
+      setOrders(prev => prev.map(o => o._id === convertTarget._id ? { ...o, converted: true } : o));
+      setConvertTarget(null);
+      showToast('Converted to account successfully');
+    } catch (err: any) { showToast(err?.response?.data?.message || 'Failed to convert', 'error'); }
+    finally { setConvertBusy(false); }
+  };
+
   const phaseOrders = (phase: number) => orders.filter(o => getPoStep(o) === phase);
 
   // ─── RENDER ───────────────────────────────────────────────────────────────
@@ -484,26 +508,6 @@ export default function PurchasesPage() {
           <p className="text-sm text-gray-500 mt-0.5">{total} total</p>
         </div>
         <div className="flex items-center gap-2">
-          <ExcelImportButton
-            entityName="Purchase Orders"
-            columnHint="poNumber, amount, vendorName, vendorEmail, receivedDate (YYYY-MM-DD), product, notes"
-            onImport={async (rows) => {
-              let imported = 0;
-              for (const row of rows) {
-                const amount = parseFloat(row.amount || '0');
-                if (!amount) continue;
-                try {
-                  await purchasesApi.create({ amount, vendorName: row.vendorName || '', vendorEmail: row.vendorEmail || '', receivedDate: row.receivedDate || new Date().toISOString().split('T')[0], product: row.product || '', notes: row.notes || '' });
-                  imported++;
-                } catch { /* skip */ }
-              }
-              load();
-              return { imported };
-            }}
-          />
-          <button onClick={openSyncModal} className="btn-secondary flex items-center gap-2">
-            <RefreshCw size={16} /> Sync Emails
-          </button>
           {canEdit && (
             <button onClick={openCreate} className="btn-primary flex items-center gap-2"><Plus size={16} /> Add PO</button>
           )}
@@ -641,8 +645,13 @@ export default function PurchasesPage() {
                               <Receipt size={11} />Mark ARK Invoice
                             </button>
                           )}
-                          {step === 6 && (
-                            <span className="badge bg-emerald-100 text-emerald-700 text-xs px-2 py-1 whitespace-nowrap">✓ Complete</span>
+                          {step === 6 && !po.converted && canEdit && (
+                            <button onClick={() => { setConvertTarget(po); setConvertName((po.leadId as Lead)?.companyName || ''); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
+                              <BuildingIcon size={11} />Convert to Account
+                            </button>
+                          )}
+                          {step === 6 && po.converted && (
+                            <span className="badge bg-emerald-100 text-emerald-700 text-xs px-2 py-1 whitespace-nowrap">✓ Converted</span>
                           )}
                         </td>
 
@@ -689,8 +698,13 @@ export default function PurchasesPage() {
             <label className="label">Customer Email *</label>
             <ContactEmailPicker required autoFocus placeholder="customer@example.com" value={custInvEmail} onChange={val => setCustInvEmail(val)} defaultContactType="TELLED" />
           </div>
+          <div>
+            <label className="label">Attach File (optional)</label>
+            <input type="file" className="input-field py-2 text-sm" onChange={e => setCustInvFile(e.target.files?.[0] || null)} />
+            {custInvFile && <p className="text-xs text-violet-600 mt-1">{custInvFile.name}</p>}
+          </div>
           <div className="flex gap-3 justify-end">
-            <button type="button" onClick={() => setCustInvTarget(null)} className="btn-secondary">Cancel</button>
+            <button type="button" onClick={() => { setCustInvTarget(null); setCustInvFile(null); }} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={custInvBusy} className="btn-primary flex items-center gap-2">
               <Receipt size={14} />{custInvBusy ? 'Sending…' : 'Send Invoice'}
             </button>
@@ -715,8 +729,13 @@ export default function PurchasesPage() {
             <label className="label">CC</label>
             <ContactEmailPicker placeholder="CC (optional)" value={sendVendorCc} onChange={val => setSendVendorCc(val)} defaultContactType="ALL" />
           </div>
+          <div>
+            <label className="label">Attach File (optional)</label>
+            <input type="file" className="input-field py-2 text-sm" onChange={e => setSendVendorFile(e.target.files?.[0] || null)} />
+            {sendVendorFile && <p className="text-xs text-violet-600 mt-1">{sendVendorFile.name}</p>}
+          </div>
           <div className="flex gap-3 justify-end">
-            <button type="button" onClick={() => setSendTarget(null)} className="btn-secondary">Cancel</button>
+            <button type="button" onClick={() => { setSendTarget(null); setSendVendorFile(null); }} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={sending} className="btn-primary flex items-center gap-2">
               <Send size={14} />{sending ? 'Sending…' : 'Forward to ARK'}
             </button>
@@ -757,8 +776,13 @@ export default function PurchasesPage() {
             <label className="label">ARK Email *</label>
             <ContactEmailPicker required autoFocus placeholder="ark@example.com" value={sendArkEmail} onChange={val => setSendArkEmail(val)} defaultContactType="ARK" />
           </div>
+          <div>
+            <label className="label">Attach File (optional)</label>
+            <input type="file" className="input-field py-2 text-sm" onChange={e => setSendArkFile(e.target.files?.[0] || null)} />
+            {sendArkFile && <p className="text-xs text-violet-600 mt-1">{sendArkFile.name}</p>}
+          </div>
           <div className="flex gap-3 justify-end">
-            <button type="button" onClick={() => setSendArkTarget(null)} className="btn-secondary">Cancel</button>
+            <button type="button" onClick={() => { setSendArkTarget(null); setSendArkFile(null); }} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={sendArkBusy} className="btn-primary flex items-center gap-2">
               <Send size={14} />{sendArkBusy ? 'Sending…' : 'Send PO to ARK'}
             </button>
@@ -785,6 +809,26 @@ export default function PurchasesPage() {
             <button type="button" onClick={() => setArkInvTarget(null)} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={arkInvBusy} className="btn-primary flex items-center gap-2">
               <Receipt size={14} />{arkInvBusy ? 'Marking…' : 'Mark as Received'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ══ Convert to Account ════════════════════════════════════════════════ */}
+      <Modal isOpen={!!convertTarget} onClose={() => setConvertTarget(null)} title="Convert to Account">
+        <form onSubmit={handleConvertToAccount} className="space-y-4">
+          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-sm space-y-1">
+            <p><strong>PO:</strong> {convertTarget?.poNumber}</p>
+            <p><strong>Customer:</strong> {(convertTarget?.leadId as Lead)?.companyName}</p>
+          </div>
+          <div>
+            <label className="label">Account Name *</label>
+            <input required autoFocus className="input-field" value={convertName} onChange={e => setConvertName(e.target.value)} placeholder="Account name" />
+          </div>
+          <div className="flex gap-3 justify-end">
+            <button type="button" onClick={() => setConvertTarget(null)} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={convertBusy} className="btn-primary flex items-center gap-2">
+              <BuildingIcon size={14} />{convertBusy ? 'Converting…' : 'Convert to Account'}
             </button>
           </div>
         </form>
@@ -861,8 +905,8 @@ export default function PurchasesPage() {
 
 
 
-      {/* ══ PO Intelligence — Sync Emails Modal ═══════════════════════════════ */}
-      <Modal isOpen={showSyncModal} onClose={() => setShowSyncModal(false)} title="PO Intelligence — Sync Emails" size="lg">
+      {/* ══ PO Intelligence — Sync Emails Modal (disabled) ════════════════════ */}
+      {false && <Modal isOpen={showSyncModal} onClose={() => setShowSyncModal(false)} title="PO Intelligence — Sync Emails" size="lg">
         <div className="space-y-4">
           {/* Scan controls */}
           <div className="flex items-center gap-3">
@@ -1041,7 +1085,7 @@ export default function PurchasesPage() {
             <button onClick={() => setShowSyncModal(false)} className="btn-secondary">Close</button>
           </div>
         </div>
-      </Modal>
+      </Modal>}
 
       <ConfirmDialog isOpen={!!deleteTarget} title="Delete Purchase Order" message={`Delete PO ${deleteTarget?.poNumber}? This cannot be undone.`} confirmLabel="Delete" loading={deleting} onConfirm={handleDelete} onClose={() => setDeleteTarget(null)} danger />
     </div>

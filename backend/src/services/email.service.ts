@@ -35,7 +35,7 @@ async function sendViaGoogleWorkspace(
   subject: string,
   html: string,
   cc?: string,
-  attachments?: Array<{ filename: string; path: string }>,
+  attachments?: Array<{ filename: string; path?: string; content?: Buffer }>,
 ): Promise<void> {
   const { google } = await import('googleapis');
   const auth = new google.auth.JWT({
@@ -66,13 +66,14 @@ async function sendViaGoogleWorkspace(
   if (attachments?.length) {
     const fs = await import('fs');
     for (const att of attachments) {
+      const attData = att.content ? att.content : fs.readFileSync(att.path!);
       parts.push(
         `--${boundary}`,
         `Content-Type: application/octet-stream; name="${att.filename}"`,
         `Content-Transfer-Encoding: base64`,
         `Content-Disposition: attachment; filename="${att.filename}"`,
         '',
-        fs.readFileSync(att.path).toString('base64'),
+        attData.toString('base64'),
       );
     }
   }
@@ -102,7 +103,7 @@ async function sendViaGraph(
   subject: string,
   html: string,
   cc?: string,
-  attachments?: Array<{ filename: string; path: string }>,
+  attachments?: Array<{ filename: string; path?: string; content?: Buffer }>,
 ): Promise<void> {
   const token = await getGraphToken();
 
@@ -113,7 +114,7 @@ async function sendViaGraph(
   const graphAttachments = (attachments || []).map(a => ({
     '@odata.type': '#microsoft.graph.fileAttachment',
     name: a.filename,
-    contentBytes: fs.readFileSync(a.path).toString('base64'),
+    contentBytes: (a.content ? a.content : fs.readFileSync(a.path!)).toString('base64'),
   }));
 
   await axios.post(
@@ -152,7 +153,7 @@ const send = async (
   to: string,
   subject: string,
   html: string,
-  attachments?: Array<{ filename: string; path: string }>,
+  attachments?: Array<{ filename: string; path?: string; content?: Buffer }>,
   cc?: string,
   replyTo?: string,
   fromName?: string,
@@ -193,7 +194,7 @@ export const sendEmailWithUserSmtp = async (
   subject: string,
   html: string,
   senderSmtp?: UserSmtpConfig,
-  attachments?: Array<{ filename: string; path: string }>,
+  attachments?: Array<{ filename: string; path?: string; content?: Buffer }>,
   cc?: string,
 ): Promise<void> => {
   if (senderSmtp) {

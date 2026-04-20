@@ -25,20 +25,33 @@ export const purchasesApi = {
     const { data } = await api.post(`/purchase-orders/${id}/send-to-vendor`, { vendorEmail, ...(cc ? { cc } : {}) });
     return data.data;
   },
-  sendCustomerInvoice: async (id: string, customerEmail: string, cc?: string) => {
-    const { data } = await api.post(`/purchase-orders/${id}/send-customer-invoice`, { customerEmail, ...(cc ? { cc } : {}) });
+  sendCustomerInvoice: async (id: string, customerEmail: string, cc?: string, file?: File) => {
+    const form = new FormData();
+    form.append('customerEmail', customerEmail);
+    if (cc) form.append('cc', cc);
+    if (file) form.append('attachment', file);
+    const { data } = await api.post(`/purchase-orders/${id}/send-customer-invoice`, form);
     return data.data;
   },
-  forwardToArk: async (id: string, arkEmail: string, arkName?: string, cc?: string) => {
-    const { data } = await api.post(`/purchase-orders/${id}/forward-to-ark`, { arkEmail, arkName, ...(cc ? { cc } : {}) });
+  forwardToArk: async (id: string, arkEmail: string, arkName?: string, cc?: string, file?: File) => {
+    const form = new FormData();
+    form.append('arkEmail', arkEmail);
+    if (arkName) form.append('arkName', arkName);
+    if (cc) form.append('cc', cc);
+    if (file) form.append('attachment', file);
+    const { data } = await api.post(`/purchase-orders/${id}/forward-to-ark`, form);
     return data.data;
   },
   markPriceClearance: async (id: string) => {
     const { data } = await api.post(`/purchase-orders/${id}/mark-price-clearance`);
     return data.data;
   },
-  sendPoToArk: async (id: string, arkEmail: string, cc?: string) => {
-    const { data } = await api.post(`/purchase-orders/${id}/send-po-to-ark`, { arkEmail, ...(cc ? { cc } : {}) });
+  sendPoToArk: async (id: string, arkEmail: string, cc?: string, file?: File) => {
+    const form = new FormData();
+    form.append('arkEmail', arkEmail);
+    if (cc) form.append('cc', cc);
+    if (file) form.append('attachment', file);
+    const { data } = await api.post(`/purchase-orders/${id}/send-po-to-ark`, form);
     return data.data;
   },
   markArkInvoice: async (id: string, amount?: number) => {

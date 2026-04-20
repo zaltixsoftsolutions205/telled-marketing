@@ -227,8 +227,9 @@ export const verifyLoginOtp = async (req: Request, res: Response) => {
     await redis.set(`refresh:${user._id}`, refreshToken, { ex: 7 * 24 * 60 * 60 });
     await redis.set(`session:${user._id}`, 'active', { ex: 7 * 24 * 60 * 60 });
     const fullUser = await User.findById(user._id).select('-password -refreshToken -smtpPass');
+    const org = await Organization.findById(fullUser?.organizationId).select('name').lean();
 
-    sendSuccess(res, { accessToken, refreshToken, user: fullUser, deviceToken }, 'Login successful');
+    sendSuccess(res, { accessToken, refreshToken, user: fullUser, deviceToken, organizationName: org?.name ?? '' }, 'Login successful');
   } catch (e) {
     console.error(e);
     sendError(res, 'OTP verification failed', 500);
