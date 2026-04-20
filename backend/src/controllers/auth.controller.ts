@@ -320,7 +320,7 @@ export const forgotPassword = async (req: Request, res: Response) => {
     const token = crypto.randomBytes(32).toString('hex');
     await redis.set(`reset:${token}`, user._id.toString(), { ex: 15 * 60 });
 
-    const resetUrl = `${(process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim()}/reset-password?token=${token}`;
+    const resetUrl = `${process.env.APP_URL || (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim()}/reset-password?token=${token}`;
 
     await sendEmail(
       user.email,

@@ -4,7 +4,7 @@ import logger from '../utils/logger';
 import nodemailer from 'nodemailer';
 import axios from 'axios';
 
-const appUrl = () => (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
+const appUrl = () => process.env.APP_URL || (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
 
 // ── Microsoft Graph API sender (for Outlook/M365 users) ──────────────────────
 const GRAPH_CLIENT_ID     = process.env.GRAPH_CLIENT_ID     || '';

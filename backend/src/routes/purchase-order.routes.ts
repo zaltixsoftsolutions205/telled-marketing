@@ -37,6 +37,8 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const { page, limit, skip } = getPaginationParams(req);
     const filter: Record<string, unknown> = { isArchived: false };
+    // Sales users only see POs they uploaded (synced from their own mailbox)
+    if (req.user!.role === 'sales') filter.uploadedBy = req.user!.id;
     if (req.query.leadId) filter.leadId = req.query.leadId;
     if (req.query.search) {
       const re = new RegExp(req.query.search as string, 'i');
@@ -383,6 +385,17 @@ router.get('/vendor-payments', authorize('admin', 'hr_finance'), async (req: Aut
   } catch (error) {
     logger.error('Get vendor payments error:', error);
     sendError(res, 'Failed to fetch vendor payments', 500);
+  }
+});
+
+// Delete ALL POs (admin only — wipe all data)
+router.delete('/all', authorize('admin'), async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await PurchaseOrder.deleteMany({});
+    sendSuccess(res, { deleted: result.deletedCount }, `Deleted ${result.deletedCount} purchase orders`);
+  } catch (error) {
+    logger.error('Delete all POs error:', error);
+    sendError(res, 'Failed to delete all purchase orders', 500);
   }
 });
 
