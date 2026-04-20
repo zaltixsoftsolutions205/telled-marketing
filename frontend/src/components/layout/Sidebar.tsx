@@ -31,6 +31,9 @@ const salesNav = [
   { to: '/accounts',      label: 'Accounts',           icon: Building2 },
   { to: '/contacts',   label: 'Contacts',        icon: BookUser },
   { to: '/timesheet',    label: 'Timesheet',        icon: Timer },
+  { to: '/engineer-performance', label: 'My Performance', icon: TrendingUp },
+  { to: '/attendance',           label: 'My Attendance',  icon: CalendarDays },
+  { to: '/leaves',               label: 'My Leaves',      icon: Calendar },
 ];
 
 const engineerNav = [

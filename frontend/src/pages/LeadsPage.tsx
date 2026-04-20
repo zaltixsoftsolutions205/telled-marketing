@@ -91,7 +91,7 @@ const emptyForm = {
   address: '', website: '', annualTurnover: '',
   oemName: '', oemEmail: '', channelPartner: 'ZIEOS',
   expectedClosure: '', source: '', city: '', state: '',
-  assignedTo: '', status: 'New' as LeadStatus, notes: '',
+  assignedTo: '', status: 'New' as LeadStatus, notes: '', remarks: '',
 };
 
 const emptyDrfForm = {
@@ -147,6 +147,7 @@ export default function LeadsPage() {
       assignedTo: (lead.assignedTo as User)?._id || '',
       status: lead.status || 'New',
       notes: lead.notes || '',
+      remarks: (lead as any).remarks || '',
     });
     setEditTarget(lead);
   };
@@ -269,7 +270,6 @@ export default function LeadsPage() {
       partnerSalesRep:   drfForm.partnerSalesRep,
     };
     try {
-      await leadsApi.sendDrf(drfTarget._id, formData);
       await drfApi.sendFromLead(drfTarget as any, formData, user);
       setLeads(prev => prev.map(l => l._id === drfTarget._id ? { ...l, drfEmailSent: true } as any : l));
       notify('DRF Sent', `DRF email sent to ${formData.oemEmail}`, 'drf', '/drfs');
@@ -361,38 +361,44 @@ export default function LeadsPage() {
           <div className="text-center text-gray-400 py-16">No leads found</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  <th className="table-header">Company</th>
-                  <th className="table-header">Contact Person</th>
-                  <th className="table-header">Designation</th>
-                  <th className="table-header">Phone</th>
-                  <th className="table-header">E-mail</th>
-                  <th className="table-header">OEM / Modules</th>
-                  <th className="table-header">OEM Email</th>
-                  <th className="table-header">Channel Partner</th>
-                  <th className="table-header">Expected Closure</th>
-                  <th className="table-header">Status</th>
-                  <th className="table-header">Stage</th>
-                  <th className="table-header">Assigned To</th>
-                  <th className="table-header">Actions</th>
+                  <th className="table-header sticky left-0 z-10 bg-gray-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)] min-w-[160px]">Company</th>
+                  <th className="table-header min-w-[160px]">Contact / Designation</th>
+                  <th className="table-header min-w-[150px]">Phone / Email</th>
+                  <th className="table-header min-w-[130px]">OEM / Modules</th>
+                  <th className="table-header min-w-[170px]">OEM Email</th>
+                  <th className="table-header min-w-[120px]">Channel Partner</th>
+                  <th className="table-header min-w-[110px]">Closure</th>
+                  <th className="table-header min-w-[150px]">Remarks</th>
+                  <th className="table-header min-w-[110px]">Status</th>
+                  <th className="table-header min-w-[100px]">Stage</th>
+                  <th className="table-header min-w-[100px]">Assigned</th>
+                  <th className="table-header min-w-[100px]">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {leads.map((lead) => (
-                  <tr key={lead._id} className="hover:bg-violet-50/20 transition-colors">
-                    <td className="table-cell font-medium text-violet-700 whitespace-nowrap">
-                      <Link to={`/leads/${lead._id}`} className="hover:underline">{lead.companyName}</Link>
+                  <tr key={lead._id} className="hover:bg-violet-50/30 transition-colors">
+                    <td className="table-cell sticky left-0 z-10 bg-white hover:bg-violet-50/30 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+                      <Link to={`/leads/${lead._id}`} className="font-semibold text-violet-700 hover:underline whitespace-nowrap">{lead.companyName}</Link>
                     </td>
-                    <td className="table-cell whitespace-nowrap">{lead.contactPersonName || lead.contactName || '—'}</td>
-                    <td className="table-cell text-gray-500">{(lead as any).designation || '—'}</td>
-                    <td className="table-cell text-gray-400 whitespace-nowrap">{lead.phone || '—'}</td>
-                    <td className="table-cell text-gray-500">{lead.email || '—'}</td>
-                    <td className="table-cell text-gray-500">{lead.oemName || '—'}</td>
-                    <td className="table-cell text-gray-400">{(lead as any).oemEmail || lead.oemEmail || '—'}</td>
+                    <td className="table-cell">
+                      <p className="font-medium text-gray-800 whitespace-nowrap">{lead.contactPersonName || lead.contactName || '—'}</p>
+                      {(lead as any).designation && <p className="text-xs text-gray-400 mt-0.5">{(lead as any).designation}</p>}
+                    </td>
+                    <td className="table-cell">
+                      <p className="text-gray-600 whitespace-nowrap">{lead.phone || '—'}</p>
+                      <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[150px]">{lead.email || '—'}</p>
+                    </td>
+                    <td className="table-cell text-gray-600">{lead.oemName || '—'}</td>
+                    <td className="table-cell text-gray-400 text-xs">{(lead as any).oemEmail || lead.oemEmail || '—'}</td>
                     <td className="table-cell text-gray-500">{(lead as any).channelPartner || '—'}</td>
                     <td className="table-cell text-gray-500 whitespace-nowrap">{(lead as any).expectedClosure || '—'}</td>
+                    <td className="table-cell">
+                      <span className="block truncate max-w-[150px] text-gray-500 text-xs" title={(lead as any).remarks || ''}>{(lead as any).remarks || '—'}</span>
+                    </td>
                     <td className="table-cell">
                       {updatingStatus === lead._id ? (
                         <span className="badge text-xs bg-violet-100 text-violet-600 animate-pulse">Updating…</span>
@@ -409,31 +415,17 @@ export default function LeadsPage() {
                       )}
                     </td>
                     <td className="table-cell"><StatusBadge status={lead.stage} /></td>
-                    <td className="table-cell whitespace-nowrap">{(lead.assignedTo as User)?.name || '—'}</td>
+                    <td className="table-cell text-gray-500 whitespace-nowrap">{(lead.assignedTo as User)?.name || '—'}</td>
                     <td className="table-cell">
                       <div className="flex items-center gap-1">
-                        <Link to={`/leads/${lead._id}`} title="View Details"
-                          className="p-1.5 rounded-md hover:bg-violet-100 hover:text-violet-600 text-gray-400 transition-colors">
-                          <ExternalLink size={13} />
-                        </Link>
-                        <button onClick={() => openEditModal(lead)} title="Edit"
-                          className="p-1.5 rounded-md hover:bg-amber-100 hover:text-amber-600 text-gray-400 transition-colors">
-                          <Pencil size={13} />
-                        </button>
+                        <Link to={`/leads/${lead._id}`} title="View Details" className="p-1.5 rounded-md hover:bg-violet-100 hover:text-violet-600 text-gray-400 transition-colors"><ExternalLink size={13} /></Link>
+                        <button onClick={() => openEditModal(lead)} title="Edit" className="p-1.5 rounded-md hover:bg-amber-100 hover:text-amber-600 text-gray-400 transition-colors"><Pencil size={13} /></button>
                         {lead.status === 'Qualified' && (
-                          (lead as any).drfEmailSent ? (
-                            <span title="DRF sent" className="p-1.5 text-green-500"><CheckCircle size={13} /></span>
-                          ) : (
-                            <button onClick={() => openDrfModal(lead)} title="Send DRF"
-                              className="p-1.5 rounded-md hover:bg-blue-100 hover:text-blue-600 text-blue-400 transition-colors">
-                              <Send size={13} />
-                            </button>
-                          )
+                          (lead as any).drfEmailSent
+                            ? <span title="DRF sent" className="p-1.5 text-green-500"><CheckCircle size={13} /></span>
+                            : <button onClick={() => openDrfModal(lead)} title="Send DRF" className="p-1.5 rounded-md hover:bg-blue-100 hover:text-blue-600 text-blue-400 transition-colors"><Send size={13} /></button>
                         )}
-                        <button onClick={() => setDeleteTarget(lead._id)} title="Delete"
-                          className="p-1.5 rounded-md hover:bg-red-100 hover:text-red-600 text-gray-400 transition-colors">
-                          <Trash2 size={13} />
-                        </button>
+                        <button onClick={() => setDeleteTarget(lead._id)} title="Delete" className="p-1.5 rounded-md hover:bg-red-100 hover:text-red-600 text-gray-400 transition-colors"><Trash2 size={13} /></button>
                       </div>
                     </td>
                   </tr>
@@ -466,16 +458,14 @@ export default function LeadsPage() {
                 </div>
                 <StatusBadge status={lead.stage} />
               </div>
-              {((lead as any).oemEmail || lead.oemEmail || (lead as any).channelPartner || (lead as any).expectedClosure) && (
-                <div className="text-xs text-gray-500 space-y-0.5">
-                  {(lead.oemName) && <p><span className="text-gray-400">OEM:</span> {lead.oemName}</p>}
-                  {((lead as any).oemEmail || lead.oemEmail) && <p><span className="text-gray-400">OEM Email:</span> {(lead as any).oemEmail || lead.oemEmail}</p>}
-                  {(lead as any).channelPartner && <p><span className="text-gray-400">Channel Partner:</span> {(lead as any).channelPartner}</p>}
-                  {(lead as any).expectedClosure && <p><span className="text-gray-400">Closure:</span> {(lead as any).expectedClosure}</p>}
-                </div>
-              )}
+              <div className="text-xs text-gray-500 space-y-0.5">
+                {lead.oemName && <p><span className="text-gray-400">OEM:</span> {lead.oemName}</p>}
+                {((lead as any).oemEmail || lead.oemEmail) && <p><span className="text-gray-400">OEM Email:</span> {(lead as any).oemEmail || lead.oemEmail}</p>}
+                {(lead as any).channelPartner && <p><span className="text-gray-400">Channel Partner:</span> {(lead as any).channelPartner}</p>}
+                {(lead as any).expectedClosure && <p><span className="text-gray-400">Closure:</span> {(lead as any).expectedClosure}</p>}
+                {(lead as any).remarks && <p><span className="text-gray-400">Remarks:</span> {(lead as any).remarks}</p>}
+              </div>
               <div className="flex flex-wrap gap-2 items-center">
-                <span className="text-xs text-gray-500">{lead.oemName || '—'}</span>
                 {updatingStatus === lead._id ? (
                   <span className="badge text-xs bg-violet-100 text-violet-600 animate-pulse">Updating…</span>
                 ) : (
@@ -493,28 +483,14 @@ export default function LeadsPage() {
               <div className="flex items-center justify-between pt-1 border-t border-gray-100">
                 <span className="text-xs text-gray-400">{(lead.assignedTo as User)?.name || '—'} · {formatDate(lead.createdAt)}</span>
                 <div className="flex items-center gap-1.5">
-                  <Link to={`/leads/${lead._id}`} title="View Details"
-                    className="p-1.5 rounded-md hover:bg-violet-100 hover:text-violet-600 text-gray-400">
-                    <ExternalLink size={14} />
-                  </Link>
-                  <button onClick={() => openEditModal(lead)} title="Edit"
-                    className="p-1.5 rounded-md hover:bg-amber-100 hover:text-amber-600 text-gray-400">
-                    <Pencil size={14} />
-                  </button>
+                  <Link to={`/leads/${lead._id}`} className="p-1.5 rounded-md hover:bg-violet-100 hover:text-violet-600 text-gray-400"><ExternalLink size={14} /></Link>
+                  <button onClick={() => openEditModal(lead)} className="p-1.5 rounded-md hover:bg-amber-100 hover:text-amber-600 text-gray-400"><Pencil size={14} /></button>
                   {lead.status === 'Qualified' && (
-                    (lead as any).drfEmailSent ? (
-                      <span title="DRF sent" className="p-1.5 text-green-500"><CheckCircle size={14} /></span>
-                    ) : (
-                      <button onClick={() => openDrfModal(lead)} title="Send DRF"
-                        className="p-1.5 rounded-md hover:bg-blue-100 hover:text-blue-600 text-blue-400">
-                        <Send size={14} />
-                      </button>
-                    )
+                    (lead as any).drfEmailSent
+                      ? <span className="p-1.5 text-green-500"><CheckCircle size={14} /></span>
+                      : <button onClick={() => openDrfModal(lead)} className="p-1.5 rounded-md hover:bg-blue-100 hover:text-blue-600 text-blue-400"><Send size={14} /></button>
                   )}
-                  <button onClick={() => setDeleteTarget(lead._id)} title="Delete"
-                    className="p-1.5 rounded-md hover:bg-red-100 hover:text-red-600 text-gray-400">
-                    <Trash2 size={14} />
-                  </button>
+                  <button onClick={() => setDeleteTarget(lead._id)} className="p-1.5 rounded-md hover:bg-red-100 hover:text-red-600 text-gray-400"><Trash2 size={14} /></button>
                 </div>
               </div>
             </div>
@@ -620,6 +596,10 @@ export default function LeadsPage() {
             <div className="col-span-2">
               <label className="label text-xs">Notes</label>
               <textarea rows={2} className="input-field py-1.5 text-sm" value={form.notes} onChange={(e) => f('notes', e.target.value)} />
+            </div>
+            <div className="col-span-2">
+              <label className="label text-xs">Remarks</label>
+              <textarea rows={2} className="input-field py-1.5 text-sm" placeholder="Internal remarks…" value={form.remarks} onChange={(e) => f('remarks', e.target.value)} />
             </div>
           </div>
           <div className="flex gap-2 justify-end pt-1">
@@ -813,6 +793,10 @@ export default function LeadsPage() {
               <div className="col-span-2">
                 <label className="label text-xs">Notes</label>
                 <textarea rows={2} className="input-field py-1.5 text-sm" value={editForm.notes} onChange={(e) => ef('notes', e.target.value)} />
+              </div>
+              <div className="col-span-2">
+                <label className="label text-xs">Remarks</label>
+                <textarea rows={2} className="input-field py-1.5 text-sm" placeholder="Internal remarks…" value={editForm.remarks} onChange={(e) => ef('remarks', e.target.value)} />
               </div>
             </div>
             <div className="flex gap-2 justify-end pt-1">
