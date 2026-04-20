@@ -74,6 +74,13 @@ export default function VisitClaimsPage() {
   const [showPayModal, setShowPayModal] = useState(false);
   const [paymentRef, setPaymentRef] = useState('');
   const [paying, setPaying] = useState(false);
+
+  // Submit Modal
+  const [submitTarget, setSubmitTarget] = useState<VisitClaim | null>(null);
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [submitPaymentMode, setSubmitPaymentMode] = useState('');
+  const [submitInvoiceFile, setSubmitInvoiceFile] = useState<File | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   
   const limit = 15;
   
@@ -173,13 +180,26 @@ export default function VisitClaimsPage() {
     }
   };
   
-  const handleSubmitClaim = async (claimId: string) => {
+  const openSubmitModal = (claim: VisitClaim) => {
+    setSubmitTarget(claim);
+    setSubmitPaymentMode('');
+    setSubmitInvoiceFile(null);
+    setShowSubmitModal(true);
+  };
+
+  const handleSubmitClaim = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!submitTarget || !submitPaymentMode) return;
+    setSubmitting(true);
     try {
-      await visitClaimsApi.submit(claimId);
+      await visitClaimsApi.submit(submitTarget._id, submitPaymentMode, submitInvoiceFile || undefined);
       toast.success('Claim submitted for approval');
+      setShowSubmitModal(false);
       loadClaims();
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to submit claim');
+    } finally {
+      setSubmitting(false);
     }
   };
   
@@ -378,9 +398,9 @@ export default function VisitClaimsPage() {
                             
                             {canSubmit && (
                               <button
-                                onClick={() => handleSubmitClaim(claim._id)}
+                                onClick={() => openSubmitModal(claim)}
                                 className="p-1.5 text-blue-500 hover:text-blue-600 hover:bg-blue-50 rounded"
-                                title="Submit"
+                                title="Submit to HR"
                               >
                                 <Send size={14} />
                               </button>
@@ -763,6 +783,55 @@ export default function VisitClaimsPage() {
               </button>
             </div>
           </div>
+        )}
+      </Modal>
+
+      {/* Submit to HR Modal */}
+      <Modal isOpen={showSubmitModal} onClose={() => setShowSubmitModal(false)} title="Submit Claim to HR" size="sm">
+        {submitTarget && (
+          <form onSubmit={handleSubmitClaim} className="space-y-4">
+            <div className="p-3 bg-gray-50 rounded-lg text-center">
+              <p className="text-sm text-gray-600">Claim #{submitTarget.claimNumber}</p>
+              <p className="text-xl font-bold text-gray-900">{formatCurrency(submitTarget.totalAmount)}</p>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-gray-700 block mb-1">Mode of Payment *</label>
+              <select
+                required
+                value={submitPaymentMode}
+                onChange={(e) => setSubmitPaymentMode(e.target.value)}
+                className="input-field"
+              >
+                <option value="">Select payment mode</option>
+                <option value="Cash">Cash</option>
+                <option value="Bank Transfer">Bank Transfer</option>
+                <option value="UPI">UPI</option>
+                <option value="Cheque">Cheque</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-gray-700 block mb-1">Upload Invoice / Receipt (optional)</label>
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png"
+                className="block w-full text-sm text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100"
+                onChange={(e) => setSubmitInvoiceFile(e.target.files?.[0] || null)}
+              />
+              <p className="text-xs text-gray-400 mt-1">PDF, JPG or PNG, max 10MB</p>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button type="button" onClick={() => setShowSubmitModal(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50">
+                Cancel
+              </button>
+              <button type="submit" disabled={submitting} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50">
+                {submitting ? 'Submitting...' : 'Submit to HR'}
+              </button>
+            </div>
+          </form>
         )}
       </Modal>
     </div>
