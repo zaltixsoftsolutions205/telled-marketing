@@ -23,6 +23,8 @@ export interface IVisitClaim extends Document {
   approvalNotes?: string;
   paidAt?: Date;
   paymentReference?: string;
+  paymentMode?: string;
+  invoiceFile?: string;
   notes?: string;
   isArchived: boolean;
   createdAt: Date;
@@ -63,6 +65,8 @@ const VisitClaimSchema = new Schema<IVisitClaim>(
     approvalNotes: { type: String },
     paidAt: { type: Date },
     paymentReference: { type: String },
+    paymentMode: { type: String, enum: ['Cash', 'Bank Transfer', 'UPI', 'Cheque', 'Other'] },
+    invoiceFile: { type: String },
     notes: { type: String },
     isArchived: { type: Boolean, default: false }
   },

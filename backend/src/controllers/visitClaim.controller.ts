@@ -119,26 +119,36 @@ export const submitClaim = async (req: AuthRequest, res: Response): Promise<void
       sendError(res, 'Claim not found', 404);
       return;
     }
-    
+
     if (claim.engineerId.toString() !== req.user!.id && req.user!.role !== 'admin') {
       sendError(res, 'Access denied', 403);
       return;
     }
-    
+
     if (claim.status !== 'draft') {
       sendError(res, `Cannot submit claim with status: ${claim.status}`, 400);
       return;
     }
-    
+
     if (claim.expenses.length === 0) {
       sendError(res, 'Cannot submit claim with no expenses', 400);
       return;
     }
-    
+
+    const paymentMode = req.body.paymentMode;
+    if (!paymentMode) {
+      sendError(res, 'Payment mode is required', 400);
+      return;
+    }
+
     claim.status = 'submitted';
     claim.submittedAt = new Date();
+    claim.paymentMode = paymentMode;
+    if ((req as any).file) {
+      claim.invoiceFile = `/uploads/visit-claims/${(req as any).file.filename}`;
+    }
     await claim.save();
-    
+
     sendSuccess(res, claim, 'Claim submitted for approval');
   } catch (error) {
     console.error('Submit claim error:', error);

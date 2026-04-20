@@ -12,6 +12,7 @@ import User from '../models/User';
 import { syncEmailsForDRF, ImapCredentials } from '../services/emailInbox.service';
 import { syncPurchaseOrderEmails } from '../services/emailInboxPurchase.service';
 import { syncSupportEmails, patchUnassignedTickets } from '../services/emailInboxSupport.service';
+import { generateTicketId } from '../utils/helpers';
 
 // Add this function before startCronJobs
 async function syncPurchaseOrderEmailsJob() {
@@ -253,10 +254,10 @@ export const startCronJobs = (): void => {
     } catch (e) { logger.error('DRF email sync cron:', e); }
   });
 
-  // Purchase order email sync — every 5 minutes
-  cron.schedule('*/5 * * * *', async () => {
-    await syncPurchaseOrderEmailsJob();
-  });
+  // Purchase order email sync — DISABLED
+  // cron.schedule('*/5 * * * *', async () => {
+  //   await syncPurchaseOrderEmailsJob();
+  // });
 
   // Support email to ticket sync — every 5 minutes
   cron.schedule('*/5 * * * *', async () => {
@@ -302,7 +303,7 @@ export const startCronJobs = (): void => {
           const fallbackEngineer = eng?._id || (await User.findOne({ role: 'engineer', isActive: true }).select('_id').lean())?._id;
           await new SupportTicket({
             accountId: acc._id,
-            ticketId: (await import('../utils/helpers')).generateTicketId(),
+            ticketId: generateTicketId(),
             subject: `[Follow-up] ${t.subject}`,
             description: `This ticket was automatically created as a follow-up to ticket ${t.ticketId} which was reopened but not resolved within 3 days.\n\nOriginal description:\n${t.description}`,
             priority: t.priority,
@@ -321,10 +322,10 @@ export const startCronJobs = (): void => {
     } catch (e) { logger.error('Reopen-expire cron:', e); }
   });
 
-  // Also run once on startup
-  setTimeout(() => {
-    syncPurchaseOrderEmailsJob().catch(e => logger.error('Initial PO sync failed:', e));
-  }, 30000); // Run 30 seconds after startup
+  // PO sync on startup — DISABLED
+  // setTimeout(() => {
+  //   syncPurchaseOrderEmailsJob().catch(e => logger.error('Initial PO sync failed:', e));
+  // }, 30000);
 
   setTimeout(() => {
     syncSupportEmailsJob().catch(e => logger.error('Initial support email sync failed:', e));

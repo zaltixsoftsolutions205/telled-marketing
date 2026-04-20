@@ -59,6 +59,13 @@ export default function VisitsAndClaimsPage() {
   const [reviewing, setReviewing] = useState(false);
   const [stats, setStats] = useState<any>(null);
 
+  // Submit claim modal state
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [submitClaim, setSubmitClaim] = useState<VisitClaim | null>(null);
+  const [submitPaymentMode, setSubmitPaymentMode] = useState('');
+  const [submitInvoiceFile, setSubmitInvoiceFile] = useState<File | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
   // Load Visits
   const loadVisits = async () => {
     setVisitsLoading(true);
@@ -222,15 +229,27 @@ export default function VisitsAndClaimsPage() {
     }
   };
 
-  // Submit Claim
-  const handleSubmitClaim = async (claimId: string) => {
-    if (!confirm('Submit this claim for approval?')) return;
+  // Submit Claim — open modal
+  const openSubmitModal = (claim: VisitClaim) => {
+    setSubmitClaim(claim);
+    setSubmitPaymentMode('');
+    setSubmitInvoiceFile(null);
+    setShowSubmitModal(true);
+  };
+
+  const handleSubmitClaim = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!submitClaim || !submitPaymentMode) return;
+    setSubmitting(true);
     try {
-      await visitClaimsApi.submit(claimId);
+      await visitClaimsApi.submit(submitClaim._id, submitPaymentMode, submitInvoiceFile || undefined);
+      setShowSubmitModal(false);
       loadClaims();
       alert('Claim submitted for approval');
     } catch (err: any) {
       alert(err?.response?.data?.message || 'Failed to submit');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -515,10 +534,10 @@ export default function VisitsAndClaimsPage() {
                           <div className="flex gap-2">
                             {canSubmit && (
                               <button
-                                onClick={() => handleSubmitClaim(claim._id)}
+                                onClick={() => openSubmitModal(claim)}
                                 className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded hover:bg-blue-100 flex items-center gap-1"
                               >
-                                <Send size={12} /> Submit
+                                <Send size={12} /> Submit to HR
                               </button>
                             )}
                             {canReview && (
@@ -715,6 +734,53 @@ export default function VisitsAndClaimsPage() {
         </form>
       </Modal>
 
+      {/* Submit Claim Modal */}
+      <Modal isOpen={showSubmitModal} onClose={() => setShowSubmitModal(false)} title="Submit Claim to HR">
+        {submitClaim && (
+          <form onSubmit={handleSubmitClaim} className="space-y-4">
+            <div className="p-3 bg-gray-50 rounded-lg">
+              <p className="font-medium">Claim #{submitClaim.claimNumber}</p>
+              <p className="text-xl font-bold text-violet-700">{formatCurrency(submitClaim.totalAmount)}</p>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-gray-700">Mode of Payment *</label>
+              <select
+                required
+                className="input-field mt-1"
+                value={submitPaymentMode}
+                onChange={(e) => setSubmitPaymentMode(e.target.value)}
+              >
+                <option value="">Select payment mode</option>
+                <option value="Cash">Cash</option>
+                <option value="Bank Transfer">Bank Transfer</option>
+                <option value="UPI">UPI</option>
+                <option value="Cheque">Cheque</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-gray-700">Upload Invoice / Receipt (optional)</label>
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png"
+                className="mt-1 block w-full text-sm text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100"
+                onChange={(e) => setSubmitInvoiceFile(e.target.files?.[0] || null)}
+              />
+              <p className="text-xs text-gray-400 mt-1">PDF, JPG or PNG, max 10MB</p>
+            </div>
+
+            <div className="flex gap-3 justify-end pt-1">
+              <button type="button" onClick={() => setShowSubmitModal(false)} className="px-3 py-2 border rounded-md">Cancel</button>
+              <button type="submit" disabled={submitting} className="btn-primary">
+                {submitting ? 'Submitting...' : 'Submit to HR'}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
       {/* Review Claim Modal (HR) */}
       <Modal isOpen={showReviewModal} onClose={() => setShowReviewModal(false)} title="Review Claim">
         {reviewClaim && (
@@ -723,8 +789,23 @@ export default function VisitsAndClaimsPage() {
               <p className="font-medium">Claim #{reviewClaim.claimNumber}</p>
               <p className="text-2xl font-bold">{formatCurrency(reviewClaim.totalAmount)}</p>
               <p className="text-sm text-gray-500 mt-1">From: {reviewClaim.engineerId?.name}</p>
+              {reviewClaim.paymentMode && (
+                <p className="text-sm text-gray-600 mt-1">
+                  Payment Mode: <span className="font-medium text-violet-700">{reviewClaim.paymentMode}</span>
+                </p>
+              )}
+              {reviewClaim.invoiceFile && (
+                <a
+                  href={reviewClaim.invoiceFile}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block mt-2 text-xs text-blue-600 hover:underline"
+                >
+                  View Invoice / Receipt
+                </a>
+              )}
             </div>
-            
+
             <div>
               <p className="text-sm font-medium mb-2">Expenses:</p>
               <div className="space-y-1">

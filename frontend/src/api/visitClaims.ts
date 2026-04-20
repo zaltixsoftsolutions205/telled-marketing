@@ -21,6 +21,8 @@ export interface VisitClaim {
   submittedAt?: string;
   rejectionReason?: string;
   approvalNotes?: string;
+  paymentMode?: string;
+  invoiceFile?: string;
   notes?: string;
   reviewedBy?: any;
   reviewedAt?: string;
@@ -45,8 +47,11 @@ export const visitClaimsApi = {
     return data.data;
   },
   
-  submit: async (id: string) => {
-    const { data } = await api.patch(`/visit-claims/${id}/submit`);
+  submit: async (id: string, paymentMode: string, invoiceFile?: File) => {
+    const form = new FormData();
+    form.append('paymentMode', paymentMode);
+    if (invoiceFile) form.append('invoiceFile', invoiceFile);
+    const { data } = await api.patch(`/visit-claims/${id}/submit`, form);
     return data.data;
   },
   
