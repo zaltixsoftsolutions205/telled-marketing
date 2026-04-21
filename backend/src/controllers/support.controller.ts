@@ -13,8 +13,7 @@ import logger from '../utils/logger';
 import User from '../models/User';
 import { decryptText } from '../utils/crypto';
 
-const frontendUrl = () => (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
-const basePath = process.env.VITE_BASE_PATH || '/zieos';
+const appUrl = () => (process.env.APP_URL || (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim() + '/zieos').replace(/\/$/, '');
 
 async function getUserSmtp(userId: string): Promise<UserSmtpConfig | undefined> {
   try {
@@ -218,7 +217,7 @@ export const resolveTicket = async (req: AuthRequest, res: Response): Promise<vo
     const account = ticket.accountId as any;
     if (account?.contactEmail) {
       const senderSmtp = await getUserSmtp(req.user!.id);
-      const feedbackUrl = `${frontendUrl()}${basePath}/feedback/${ticket.feedbackToken}`;
+      const feedbackUrl = `${appUrl()}/feedback/${ticket.feedbackToken}`;
       await sendFeedbackRequestEmail(account.contactEmail, ticket.ticketId, ticket.subject, account.companyName || 'Customer', senderSmtp, feedbackUrl)
         .catch(e => logger.error('Failed to send feedback request email:', e));
       if (oldStatus !== 'Resolved') {
