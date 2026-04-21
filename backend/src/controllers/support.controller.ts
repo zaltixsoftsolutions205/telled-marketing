@@ -1,16 +1,20 @@
 // backend/src/controllers/support.controller.ts - Update these functions
 
 import { Response } from 'express';
+import crypto from 'crypto';
 import SupportTicket from '../models/SupportTicket';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, generateTicketId } from '../utils/helpers';
-import { sendTicketStatusUpdate, sendTicketAssignmentNotification, sendFeedbackRequestEmail, sendTicketReopenedEmail, UserSmtpConfig } from '../services/email.service';
+import { sendTicketStatusUpdate, sendTicketAcknowledgement, sendTicketAssignmentNotification, sendFeedbackRequestEmail, sendTicketReopenedEmail, UserSmtpConfig } from '../services/email.service';
 import { notifyUser } from '../utils/notify';
 import mongoose from 'mongoose';
 import logger from '../utils/logger';
 import User from '../models/User';
 import { decryptText } from '../utils/crypto';
+
+const frontendUrl = () => (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
+const basePath = process.env.VITE_BASE_PATH || '/zieos';
 
 async function getUserSmtp(userId: string): Promise<UserSmtpConfig | undefined> {
   try {
@@ -68,6 +72,15 @@ export const createTicket = async (req: AuthRequest, res: Response): Promise<voi
       .populate('assignedEngineer', 'name email')
       .populate('accountId', 'companyName contactEmail');
     
+    // Acknowledgement email to customer
+    const account = populated?.accountId as any;
+    if (account?.contactEmail) {
+      const senderSmtp = await getUserSmtp(req.user!.id);
+      await sendTicketAcknowledgement(
+        account.contactEmail, account.companyName || 'Customer', populated!.ticketId, populated!.subject, senderSmtp
+      ).catch(e => logger.error('Failed to send acknowledgement email:', e));
+    }
+
     // In-app + email notification to assigned engineer
     if (populated?.assignedEngineer) {
       const engineer = populated.assignedEngineer as any;
@@ -130,7 +143,7 @@ export const updateTicket = async (req: AuthRequest, res: Response): Promise<voi
         const senderSmtp = await getUserSmtp(req.user!.id);
         await sendTicketStatusUpdate(
           account.contactEmail, ticket.ticketId, ticket.subject,
-          oldStatus, ticket.status, req.user?.name || 'System', req.body.updateNote, senderSmtp
+          oldStatus, ticket.status, req.user?.name || 'System', req.body.updateNote, senderSmtp, account.companyName || 'Customer'
         ).catch(e => logger.error('Failed to send status update email:', e));
       }
     }
@@ -195,6 +208,8 @@ export const resolveTicket = async (req: AuthRequest, res: Response): Promise<vo
     ticket.status = 'Resolved';
     ticket.resolvedAt = new Date();
     ticket.lastResponseAt = new Date();
+    // Generate a unique token for the public feedback form link
+    ticket.feedbackToken = crypto.randomBytes(32).toString('hex');
     if (req.body.note) {
       ticket.internalNotes.push({ note: req.body.note, addedBy: req.user!.id as unknown as mongoose.Types.ObjectId, addedAt: new Date() });
     }
@@ -203,10 +218,11 @@ export const resolveTicket = async (req: AuthRequest, res: Response): Promise<vo
     const account = ticket.accountId as any;
     if (account?.contactEmail) {
       const senderSmtp = await getUserSmtp(req.user!.id);
-      await sendFeedbackRequestEmail(account.contactEmail, ticket.ticketId, ticket.subject, account.companyName || 'Customer', senderSmtp)
+      const feedbackUrl = `${frontendUrl()}${basePath}/feedback/${ticket.feedbackToken}`;
+      await sendFeedbackRequestEmail(account.contactEmail, ticket.ticketId, ticket.subject, account.companyName || 'Customer', senderSmtp, feedbackUrl)
         .catch(e => logger.error('Failed to send feedback request email:', e));
       if (oldStatus !== 'Resolved') {
-        await sendTicketStatusUpdate(account.contactEmail, ticket.ticketId, ticket.subject, oldStatus, 'Resolved', req.user?.name || 'System', req.body.note, senderSmtp)
+        await sendTicketStatusUpdate(account.contactEmail, ticket.ticketId, ticket.subject, oldStatus, 'Resolved', req.user?.name || 'System', req.body.note, senderSmtp, account.companyName || 'Customer')
           .catch(e => logger.error('Failed to send status update:', e));
       }
     }
@@ -235,6 +251,29 @@ export const submitFeedback = async (req: AuthRequest, res: Response): Promise<v
     sendSuccess(res, ticket, 'Feedback received. Ticket closed.');
   } catch (error) {
     logger.error('Submit feedback error:', error);
+    sendError(res, 'Failed', 500);
+  }
+};
+
+// Public — no auth required. Customer submits feedback via emailed link.
+export const publicFeedback = async (req: any, res: Response): Promise<void> => {
+  try {
+    const ticket = await SupportTicket.findOne({ feedbackToken: req.params.token });
+    if (!ticket) { sendError(res, 'Invalid or expired feedback link', 404); return; }
+    if (ticket.status === 'Closed') { sendSuccess(res, null, 'Feedback already submitted. Ticket is closed.'); return; }
+    if (ticket.status !== 'Resolved') { sendError(res, 'Ticket is not ready for feedback', 400); return; }
+
+    ticket.customerFeedback = (req.body.feedback || '').trim() || 'Customer confirmed resolution';
+    ticket.customerFeedbackAt = new Date();
+    ticket.status = 'Closed';
+    ticket.closedAt = new Date();
+    ticket.feedbackToken = undefined; // invalidate token after use
+    ticket.lastResponseAt = new Date();
+    await ticket.save();
+
+    sendSuccess(res, { ticketId: ticket.ticketId }, 'Thank you for your feedback! Ticket has been closed.');
+  } catch (error) {
+    logger.error('Public feedback error:', error);
     sendError(res, 'Failed', 500);
   }
 };

@@ -583,30 +583,30 @@ export const sendQuotationEmail = async (req: AuthRequest, res: Response): Promi
 
       <!-- Body -->
       <tr><td style="padding:28px 36px">
-        <p style="margin:0 0 12px;font-size:15px;color:#222">Dear <strong>${lead.contactPersonName || lead.companyName}</strong>,</p>
-        <p style="margin:0 0 24px;font-size:14px;color:#555;line-height:1.7">Thank you for your interest. Please find attached the quotation for your reference. A summary is provided below:</p>
-
-        <!-- Info table -->
-        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:8px;margin-bottom:20px">
-          ${infoRows}
-        </table>
-
-        <!-- Total box -->
-        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#1d4ed8;border-radius:8px;margin-bottom:24px">
-          <tr>
-            <td style="padding:16px 24px;color:#bfdbfe;font-size:13px;font-weight:500">Total Amount</td>
-            <td style="padding:16px 24px;color:#ffffff;font-size:20px;font-weight:700;text-align:right">&#8377; ${totalDisplay}</td>
-          </tr>
-        </table>
+        <p style="margin:0 0 16px;font-size:15px;color:#222">Dear <strong>${lead.contactPersonName || lead.companyName}</strong>,</p>
+        <p style="margin:0 0 14px;font-size:14px;color:#555;line-height:1.7">Greetings from <strong>${orgName}</strong>.</p>
+        <p style="margin:0 0 14px;font-size:14px;color:#555;line-height:1.7">Thank you for your interest in our services. Please find attached the quotation for <strong>${lead.oemName || 'the requested services'}</strong> as discussed.</p>
+        <p style="margin:0 0 24px;font-size:14px;color:#555;line-height:1.7">The quotation includes a detailed breakdown of the scope, pricing, and timelines. We have tailored this proposal to meet your requirements and ensure the best possible solution for your needs.</p>
 
         ${quotation.notes ? `<p style="margin:0 0 10px;font-size:13px;color:#444"><strong>Notes:</strong> ${quotation.notes}</p>` : ''}
-        <p style="margin:0 0 8px;font-size:13px;color:#666;line-height:1.7">The detailed quotation is attached as a PDF. Kindly review and let us know your confirmation at the earliest.</p>
-        <p style="margin:0;font-size:13px;color:#666">For any queries, please write to us at <strong>${senderContactEmail}</strong>.</p>
+        <p style="margin:0 0 14px;font-size:14px;color:#555;line-height:1.7">If you have any questions or would like to discuss any aspect of the quotation, please feel free to reach out. We would be happy to assist you further.</p>
+        <p style="margin:0 0 24px;font-size:14px;color:#555;line-height:1.7">We look forward to your feedback and the opportunity to work with you.</p>
+
+        <!-- Signature -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #e5e7eb;padding-top:20px;margin-top:4px">
+          <tr><td style="padding:16px 0 0">
+            <p style="margin:0 0 4px;font-size:14px;color:#374151;font-weight:600">Warm regards,</p>
+            <p style="margin:0 0 2px;font-size:15px;color:#111;font-weight:700">${(quotation.createdBy as any)?.name || senderSmtp?.fromName || orgName}</p>
+            <p style="margin:0 0 2px;font-size:13px;color:#374151;font-weight:600">${orgName}</p>
+            ${(quotation.createdBy as any)?.phone ? `<p style="margin:0 0 2px;font-size:13px;color:#555">${(quotation.createdBy as any).phone}</p>` : ''}
+            <p style="margin:0 0 2px;font-size:13px;color:#555">${senderContactEmail}</p>
+          </td></tr>
+        </table>
       </td></tr>
 
       <!-- Footer -->
       <tr><td style="background:#f9fafb;padding:18px 36px;border-top:1px solid #f0f0f0;text-align:center">
-        <p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.8">This is a system-generated email from <strong style="color:#1d4ed8">${orgName}</strong>.<br>&copy; ${new Date().getFullYear()} ${orgName}. All rights reserved.</p>
+        <p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.8">&copy; ${new Date().getFullYear()} ${orgName}. All rights reserved.</p>
       </td></tr>
 
     </table>

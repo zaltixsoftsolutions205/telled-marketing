@@ -21,6 +21,7 @@ export interface ISupportTicket extends Document {
   parentTicketId?: mongoose.Types.ObjectId;
   customerFeedback?: string;
   customerFeedbackAt?: Date;
+  feedbackToken?: string;
   createdBy: mongoose.Types.ObjectId;
   isArchived: boolean;
   createdAt: Date;
@@ -52,6 +53,7 @@ const SupportTicketSchema = new Schema<ISupportTicket>(
     parentTicketId: { type: Schema.Types.ObjectId, ref: 'SupportTicket' },
     customerFeedback: { type: String },
     customerFeedbackAt: { type: Date },
+    feedbackToken: { type: String, index: true, sparse: true },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     isArchived: { type: Boolean, default: false },
   },

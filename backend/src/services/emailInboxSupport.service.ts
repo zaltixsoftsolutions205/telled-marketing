@@ -5,6 +5,7 @@ import Account from '../models/Account';
 import User from '../models/User';
 import logger from '../utils/logger';
 import { generateTicketId } from '../utils/helpers';
+import { sendTicketAcknowledgement } from './email.service';
 import mongoose from 'mongoose';
 
 export interface ImapCredentials {
@@ -137,7 +138,15 @@ async function getFirstEngineer(): Promise<any | null> {
   return engineer;
 }
 
+let _syncInProgress = false;
+
 export async function syncSupportEmails(creds?: ImapCredentials): Promise<SupportEmailSyncResult> {
+  if (_syncInProgress) {
+    logger.info('Support email sync already in progress — skipping concurrent run');
+    return { scanned: 0, processed: 0, created: [], failed: [], errors: [] };
+  }
+  _syncInProgress = true;
+
   const result: SupportEmailSyncResult = {
     scanned: 0,
     processed: 0,
@@ -247,6 +256,19 @@ export async function syncSupportEmails(creds?: ImapCredentials): Promise<Suppor
           // Detect priority
           const priority = detectPriority(subject, freshText);
           
+          // Dedup: skip if a ticket for the same account+subject was created in the last 2 hours
+          const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+          const duplicate = await SupportTicket.findOne({
+            accountId: account._id,
+            subject: subject.slice(0, 200),
+            createdAt: { $gte: twoHoursAgo },
+          }).lean();
+          if (duplicate) {
+            console.log(`⚠️ Duplicate ticket detected for "${subject}" — skipping`);
+            await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true });
+            continue;
+          }
+
           // Create ticket
           const ticket = await new SupportTicket({
             accountId: account._id,
@@ -268,6 +290,14 @@ export async function syncSupportEmails(creds?: ImapCredentials): Promise<Suppor
           console.log(`✅ Created ticket: ${ticket.ticketId} (Priority: ${priority})`);
           result.created.push(ticket.ticketId);
           result.processed++;
+
+          // Send acknowledgement to customer
+          await sendTicketAcknowledgement(
+            fromEmail,
+            fromName || account.companyName || 'Customer',
+            ticket.ticketId,
+            subject.slice(0, 200),
+          ).catch(e => logger.error('Failed to send acknowledgement email:', e));
 
           // Mark as read
           await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true });
@@ -299,6 +329,8 @@ export async function syncSupportEmails(creds?: ImapCredentials): Promise<Suppor
       result.errors.push(`Connection error: ${err?.message}`);
     }
     try { client.close(); } catch (_) {}
+  } finally {
+    _syncInProgress = false;
   }
 
   // Patch ALL tickets that have no engineer — assign from account's assignedEngineer

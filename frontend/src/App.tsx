@@ -35,6 +35,7 @@ import ProfilePage from '@/pages/ProfilePage';
 import VisitsAndClaimsPage from '@/pages/VisitsAndClaimsPage';
 import ContactsPage from '@/pages/ContactsPage';
 import TimesheetPage from '@/pages/TimesheetPage';
+import FeedbackPage from '@/pages/FeedbackPage';
 import type { Role } from '@/types';
 
 // Route guards
@@ -63,6 +64,9 @@ export default function App() {
         <Routes>
           {/* Landing page — public */}
           <Route path="/" element={<LandingPage />} />
+
+          {/* Public feedback route — no auth */}
+          <Route path="/feedback/:token" element={<FeedbackPage />} />
 
           {/* Auth routes */}
           <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />

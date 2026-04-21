@@ -1,6 +1,7 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IAccount extends Document {
+  organizationId: mongoose.Types.ObjectId;
   leadId: mongoose.Types.ObjectId;
   companyName: string;
   contactName: string;
@@ -22,6 +23,7 @@ export interface IAccount extends Document {
 
 const AccountSchema = new Schema<IAccount>(
   {
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
     leadId: { type: Schema.Types.ObjectId, ref: 'Lead', required: true, unique: true },
     companyName: { type: String, required: true, trim: true },
     contactName: { type: String, default: '', trim: true },
@@ -41,6 +43,7 @@ const AccountSchema = new Schema<IAccount>(
   { timestamps: true }
 );
 
+AccountSchema.index({ organizationId: 1 });
 AccountSchema.index({ assignedEngineer: 1 });
 AccountSchema.index({ assignedSales: 1 });
 AccountSchema.index({ companyName: 'text', contactName: 'text' });

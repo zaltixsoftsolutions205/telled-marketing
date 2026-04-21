@@ -396,6 +396,42 @@ export const sendPayslip = (to: string, name: string, month: string, year: numbe
     base(`<h2>Payslip Ready</h2><p>Dear ${name}, your payslip for <b>${month} ${year}</b> is ready. Login to download.</p>`, 'Monthly Payslip'));
 // backend/src/services/email.service.ts - Add these functions at the end
 
+const supportEmailWrapper = (content: string) => `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f4f4;padding:24px 0">
+  <tr><td align="center">
+    <table width="560" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.08)">
+      <tr><td height="5" style="background:linear-gradient(90deg,#4f2d7f,#6b46c1);font-size:0;line-height:0">&nbsp;</td></tr>
+      <tr><td style="padding:28px 36px">${content}</td></tr>
+      <tr><td style="background:#f9fafb;padding:16px 36px;border-top:1px solid #f0f0f0;text-align:center">
+        <p style="margin:0;font-size:12px;color:#9ca3af">&copy; ${new Date().getFullYear()} — Support Team. All rights reserved.</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
+
+export const sendTicketAcknowledgement = async (
+  to: string,
+  customerName: string,
+  ticketId: string,
+  subject: string,
+  senderSmtp?: UserSmtpConfig,
+) => {
+  const html = supportEmailWrapper(`
+    <p style="margin:0 0 16px;font-size:15px;color:#222">Dear <strong>${customerName}</strong>,</p>
+    <p style="margin:0 0 12px;font-size:14px;color:#555;line-height:1.7">Your request has been successfully received. Our team is reviewing the details and will get back to you shortly.</p>
+    <p style="margin:0 0 24px;font-size:14px;color:#555;line-height:1.7">Thank you for reaching out to us.</p>
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;margin-bottom:8px">
+      <tr><td style="padding:10px 16px;color:#6b7280;font-size:13px;font-weight:500;width:40%;border-bottom:1px dashed #ddd6fe">Ticket ID</td><td style="padding:10px 16px;color:#111;font-size:13px;font-weight:600;border-bottom:1px dashed #ddd6fe">${ticketId}</td></tr>
+      <tr><td style="padding:10px 16px;color:#6b7280;font-size:13px;font-weight:500">Subject</td><td style="padding:10px 16px;color:#111;font-size:13px;font-weight:600">${subject}</td></tr>
+    </table>
+  `);
+  await sendEmailWithUserSmtp(to, `We've received your request — ${ticketId}`, html, senderSmtp);
+};
+
 export const sendTicketStatusUpdate = async (
   to: string,
   ticketId: string,
@@ -405,72 +441,47 @@ export const sendTicketStatusUpdate = async (
   engineerName: string,
   note?: string,
   senderSmtp?: UserSmtpConfig,
+  customerName?: string,
 ) => {
-  const statusColors: Record<string, string> = {
-    'Open': '#f59e0b',
-    'In Progress': '#3b82f6',
-    'Resolved': '#10b981',
-    'Closed': '#6b7280',
+  const name = customerName || 'Customer';
+
+  const statusMessages: Record<string, { heading: string; body: string; color: string }> = {
+    'Open': {
+      heading: 'Ticket Open',
+      body: `Your ticket has been created and is currently in <strong>Open</strong> status. Our support team will review your request and begin processing it soon.<br><br>We appreciate your patience.`,
+      color: '#f59e0b',
+    },
+    'In Progress': {
+      heading: 'Ticket In Progress',
+      body: `Your ticket is currently <strong>In Progress</strong>. Our team is actively working on your request and will keep you updated on the progress.<br><br>Please feel free to share any additional details if required.`,
+      color: '#3b82f6',
+    },
+    'Resolved': {
+      heading: 'Ticket Resolved',
+      body: `We are pleased to inform you that your ticket has been <strong>Resolved</strong>.<br><br>If the issue persists or you need further assistance, please reply to this message — we are happy to help.<br><br>Thank you for choosing our support services.`,
+      color: '#10b981',
+    },
+    'Reopened': {
+      heading: 'Ticket Reopened',
+      body: `Your ticket has been <strong>Reopened</strong>. Our team will pick it up and work towards a resolution as soon as possible.`,
+      color: '#f97316',
+    },
   };
 
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        body { font-family: Arial, sans-serif; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: #4f2d7f; color: white; padding: 20px; text-align: center; }
-        .content { padding: 20px; background: #f9f9f9; }
-        .status-badge { display: inline-block; padding: 4px 12px; border-radius: 4px; color: white; }
-        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h2>Support Ticket Status Update</h2>
-        </div>
-        <div class="content">
-          <p>Dear Customer,</p>
-          <p>Your support ticket <strong>${ticketId}</strong> has been updated by <strong>${engineerName}</strong>.</p>
-          
-          <table style="width: 100%; margin: 20px 0;">
-            <tr>
-              <td style="padding: 8px; background: #f0eaf9;"><strong>Ticket ID</strong></td>
-              <td style="padding: 8px;">${ticketId}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px; background: #f0eaf9;"><strong>Subject</strong></td>
-              <td style="padding: 8px;">${subject}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px; background: #f0eaf9;"><strong>Status</strong></td>
-              <td style="padding: 8px;">
-                <span style="background: ${statusColors[oldStatus]}; padding: 4px 8px; border-radius: 4px; color: white;">${oldStatus}</span>
-                →
-                <span style="background: ${statusColors[newStatus]}; padding: 4px 8px; border-radius: 4px; color: white;">${newStatus}</span>
-              </td>
-            </tr>
-            ${note ? `
-            <tr>
-              <td style="padding: 8px; background: #f0eaf9;"><strong>Engineer's Note</strong></td>
-              <td style="padding: 8px;">${note}</td>
-            </tr>
-            ` : ''}
-          </table>
-          
-          <p>You can view the full ticket details by logging into the ZIEOS portal.</p>
-        </div>
-        <div class="footer">
-          <p>This is an automated notification from ZIEOS. Please do not reply to this email.</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
+  const cfg = statusMessages[newStatus] || { heading: `Status: ${newStatus}`, body: `Your ticket status has been updated to <strong>${newStatus}</strong>.`, color: '#6b7280' };
 
-  await sendEmailWithUserSmtp(to, `Support Ticket ${ticketId} - Status Updated to ${newStatus}`, html, senderSmtp);
+  const html = supportEmailWrapper(`
+    <p style="margin:0 0 16px;font-size:15px;color:#222">Dear <strong>${name}</strong>,</p>
+    <p style="margin:0 0 24px;font-size:14px;color:#555;line-height:1.7">${cfg.body}</p>
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;margin-bottom:${note ? '16px' : '8px'}">
+      <tr><td style="padding:10px 16px;color:#6b7280;font-size:13px;font-weight:500;width:40%;border-bottom:1px dashed #ddd6fe">Ticket ID</td><td style="padding:10px 16px;color:#111;font-size:13px;font-weight:600;border-bottom:1px dashed #ddd6fe">${ticketId}</td></tr>
+      <tr><td style="padding:10px 16px;color:#6b7280;font-size:13px;font-weight:500;border-bottom:1px dashed #ddd6fe">Subject</td><td style="padding:10px 16px;color:#111;font-size:13px;font-weight:600;border-bottom:1px dashed #ddd6fe">${subject}</td></tr>
+      <tr><td style="padding:10px 16px;color:#6b7280;font-size:13px;font-weight:500">Status</td><td style="padding:10px 16px"><span style="background:${cfg.color};color:#fff;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">${newStatus}</span></td></tr>
+    </table>
+    ${note ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:14px 16px;font-size:13px;color:#92400e"><strong>Note:</strong> ${note}</div>` : ''}
+  `);
+
+  await sendEmailWithUserSmtp(to, `Support Ticket ${ticketId} — ${cfg.heading}`, html, senderSmtp);
 };
 
 // ── Hostinger transporter (used for OTPs, registration emails, credentials) ──
@@ -728,39 +739,150 @@ export const sendFeedbackRequestEmail = async (
   subject: string,
   companyName: string,
   senderSmtp?: UserSmtpConfig,
+  feedbackUrl?: string,
 ) => {
-  const html = `
-    <!DOCTYPE html><html><head>
-    <style>
-      body{font-family:Arial,sans-serif;}
-      .container{max-width:600px;margin:0 auto;padding:20px;}
-      .header{background:#4f2d7f;color:white;padding:20px;text-align:center;}
-      .content{padding:20px;background:#f9f9f9;}
-      .badge{display:inline-block;background:#e8f5e9;color:#2e7d32;padding:6px 16px;border-radius:20px;font-weight:bold;margin:10px 0;}
-      .footer{text-align:center;padding:20px;color:#666;font-size:12px;}
-    </style></head><body>
-    <div class="container">
-      <div class="header"><h2>Support Ticket Resolved</h2></div>
-      <div class="content">
-        <p>Dear ${companyName},</p>
-        <p>Your support ticket has been resolved by our team.</p>
-        <table style="width:100%;margin:16px 0;">
-          <tr><td style="padding:8px;background:#f0eaf9;"><strong>Ticket ID</strong></td><td style="padding:8px;">${ticketId}</td></tr>
-          <tr><td style="padding:8px;background:#f0eaf9;"><strong>Subject</strong></td><td style="padding:8px;">${subject}</td></tr>
-          <tr><td style="padding:8px;background:#f0eaf9;"><strong>Status</strong></td><td style="padding:8px;"><span class="badge">Resolved</span></td></tr>
+  const html = supportEmailWrapper(`
+    <p style="margin:0 0 16px;font-size:15px;color:#222">Dear <strong>${companyName}</strong>,</p>
+    <p style="margin:0 0 12px;font-size:14px;color:#555;line-height:1.7">We are pleased to inform you that your ticket has been <strong>Resolved</strong>.</p>
+    <p style="margin:0 0 24px;font-size:14px;color:#555;line-height:1.7">If the issue persists or you need further assistance, please reply to this message — we are happy to help.<br><br>Thank you for choosing our support services.</p>
+
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;margin-bottom:20px">
+      <tr><td style="padding:10px 16px;color:#6b7280;font-size:13px;font-weight:500;width:40%;border-bottom:1px dashed #ddd6fe">Ticket ID</td><td style="padding:10px 16px;color:#111;font-size:13px;font-weight:600;border-bottom:1px dashed #ddd6fe">${ticketId}</td></tr>
+      <tr><td style="padding:10px 16px;color:#6b7280;font-size:13px;font-weight:500;border-bottom:1px dashed #ddd6fe">Subject</td><td style="padding:10px 16px;color:#111;font-size:13px;font-weight:600;border-bottom:1px dashed #ddd6fe">${subject}</td></tr>
+      <tr><td style="padding:10px 16px;color:#6b7280;font-size:13px;font-weight:500">Status</td><td style="padding:10px 16px"><span style="background:#10b981;color:#fff;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">Resolved</span></td></tr>
+    </table>
+
+    ${feedbackUrl ? `
+    <!-- Feedback form CTA -->
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:20px 24px;margin-bottom:20px;text-align:center">
+      <p style="margin:0 0 6px;font-size:15px;font-weight:700;color:#15803d">Share Your Feedback</p>
+      <p style="margin:0 0 16px;font-size:13px;color:#374151;line-height:1.6">We value your experience. Please take a moment to let us know how we did — it helps us serve you better.</p>
+      <table cellpadding="0" cellspacing="0" border="0" style="margin:0 auto">
+        <tr><td style="background:#16a34a;border-radius:8px">
+          <a href="${feedbackUrl}" style="display:inline-block;padding:12px 28px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;letter-spacing:.3px">Submit Feedback &rarr;</a>
+        </td></tr>
+      </table>
+      <p style="margin:12px 0 0;font-size:11px;color:#9ca3af">Or copy this link: <a href="${feedbackUrl}" style="color:#16a34a;word-break:break-all">${feedbackUrl}</a></p>
+    </div>
+    ` : ''}
+
+    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;font-size:13px;color:#92400e">
+      <strong>Note:</strong> This ticket will be automatically closed after <strong>3 days</strong> if no feedback is received.
+    </div>
+  `);
+  await sendEmailWithUserSmtp(to, `Support Ticket Resolved — ${ticketId}`, html, senderSmtp);
+};
+
+export const sendAccountWelcomeEmail = async (data: {
+  to: string;
+  customerName: string;
+  orgName: string;
+  engineerName: string;
+  engineerPhone?: string;
+  engineerEmail?: string;
+  loginUrl?: string;
+  supportEmail?: string;
+}, senderSmtp?: UserSmtpConfig) => {
+  const loginUrl = data.loginUrl || appUrl();
+  const supportEmail = data.supportEmail || senderSmtp?.fromEmail || process.env.EMAIL_FROM || '';
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f4f4;padding:24px 0">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.08)">
+
+      <!-- Top bar -->
+      <tr><td height="5" style="background:linear-gradient(90deg,#4f2d7f,#6b46c1);font-size:0;line-height:0">&nbsp;</td></tr>
+
+      <!-- Header -->
+      <tr><td style="padding:32px 40px 24px;border-bottom:1px solid #f0f0f0">
+        <p style="margin:0;font-size:24px;font-weight:700;color:#4f2d7f">${data.orgName}</p>
+        <p style="margin:6px 0 0;font-size:13px;color:#9ca3af;letter-spacing:.5px">WELCOME ONBOARD</p>
+      </td></tr>
+
+      <!-- Body -->
+      <tr><td style="padding:32px 40px">
+        <p style="margin:0 0 16px;font-size:15px;color:#222">Dear <strong>${data.customerName}</strong>,</p>
+        <p style="margin:0 0 20px;font-size:14px;color:#555;line-height:1.8">
+          Welcome to <strong>${data.orgName}</strong> — we're excited to have you onboard.<br>
+          Your account has been successfully activated, and you now have full access to our platform. You're all set to explore powerful tools designed to streamline your operations and accelerate your growth.
+        </p>
+
+        <!-- Divider -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0"><tr><td style="border-top:1px solid #e5e7eb"></td></tr></table>
+
+        <!-- Getting Started -->
+        <p style="margin:0 0 12px;font-size:15px;font-weight:700;color:#4f2d7f">Getting Started</p>
+        <p style="margin:0 0 6px;font-size:14px;color:#555;line-height:1.8">Here are a few quick steps to help you begin:</p>
+        <table cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px 8px">
+          <tr><td style="padding:4px 0;font-size:14px;color:#374151">&#8226;&nbsp; Log in to your dashboard</td></tr>
+          <tr><td style="padding:4px 0;font-size:14px;color:#374151">&#8226;&nbsp; Complete your profile setup</td></tr>
+          <tr><td style="padding:4px 0;font-size:14px;color:#374151">&#8226;&nbsp; Explore key features tailored for your needs</td></tr>
         </table>
-        <p>Please reply to this email or contact your account manager to:</p>
-        <ul>
-          <li>Confirm the issue is resolved</li>
-          <li>Share any feedback</li>
-          <li>Request a reopen if the issue persists</li>
-        </ul>
-        <p style="color:#e65100;"><strong>Note:</strong> This ticket will be automatically closed after <strong>3 days</strong> if no feedback is received.</p>
-      </div>
-      <div class="footer"><p>This is an automated notification from ZIEOS Support System.</p></div>
-    </div></body></html>
-  `;
-  await sendEmailWithUserSmtp(to, `Support Ticket Resolved - ${ticketId}`, html, senderSmtp);
+
+        <!-- CTA Button -->
+        <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom:28px">
+          <tr><td style="background:#4f2d7f;border-radius:8px;padding:0">
+            <a href="${loginUrl}" style="display:inline-block;padding:14px 32px;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;letter-spacing:.3px">Access Your Account &rarr;</a>
+          </td></tr>
+        </table>
+
+        <!-- Divider -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 24px"><tr><td style="border-top:1px solid #e5e7eb"></td></tr></table>
+
+        <!-- What You Can Do -->
+        <p style="margin:0 0 12px;font-size:15px;font-weight:700;color:#4f2d7f">What You Can Do Next</p>
+        <table cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px 8px">
+          <tr><td style="padding:4px 0;font-size:14px;color:#374151">&#8226;&nbsp; Manage your operations seamlessly</td></tr>
+          <tr><td style="padding:4px 0;font-size:14px;color:#374151">&#8226;&nbsp; Track performance and insights in real-time</td></tr>
+          <tr><td style="padding:4px 0;font-size:14px;color:#374151">&#8226;&nbsp; Collaborate with your team efficiently</td></tr>
+          <tr><td style="padding:4px 0;font-size:14px;color:#374151">&#8226;&nbsp; Customize the platform to fit your workflow</td></tr>
+        </table>
+
+        <!-- Divider -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 24px"><tr><td style="border-top:1px solid #e5e7eb"></td></tr></table>
+
+        <!-- Support -->
+        <p style="margin:0 0 12px;font-size:15px;font-weight:700;color:#4f2d7f">We're Here to Help</p>
+        <p style="margin:0 0 24px;font-size:14px;color:#555;line-height:1.8">
+          Our support team is always available to guide you. If you need assistance, simply reply to this email or contact us at <strong>${supportEmail}</strong>.
+        </p>
+
+        <!-- Divider -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 24px"><tr><td style="border-top:1px solid #e5e7eb"></td></tr></table>
+
+        <p style="margin:0 0 20px;font-size:14px;color:#555;line-height:1.8">
+          We look forward to being a part of your journey and helping you achieve more with <strong>${data.orgName}</strong>.
+        </p>
+
+        <!-- Signature -->
+        <p style="margin:0 0 4px;font-size:14px;color:#374151;font-weight:600">Warm regards,</p>
+        <p style="margin:0 0 2px;font-size:15px;color:#111;font-weight:700">${data.engineerName}</p>
+        <p style="margin:0 0 2px;font-size:13px;color:#374151;font-weight:600">${data.orgName}</p>
+        ${data.engineerPhone ? `<p style="margin:0 0 2px;font-size:13px;color:#555">${data.engineerPhone}${loginUrl ? ` | ${loginUrl}` : ''}</p>` : ''}
+        <p style="margin:0;font-size:13px;color:#555">${data.engineerEmail || supportEmail}</p>
+      </td></tr>
+
+      <!-- Footer -->
+      <tr><td style="background:#f9fafb;padding:18px 40px;border-top:1px solid #f0f0f0;text-align:center">
+        <p style="margin:0;font-size:12px;color:#9ca3af;font-style:italic">Empowering your business with smarter solutions.</p>
+        <p style="margin:6px 0 0;font-size:11px;color:#d1d5db">&copy; ${new Date().getFullYear()} ${data.orgName}. All rights reserved.</p>
+      </td></tr>
+
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
+
+  await sendEmailWithUserSmtp(
+    data.to,
+    `Welcome to ${data.orgName} — Your Account is Ready`,
+    html,
+    senderSmtp,
+  );
 };
 
 export const sendTicketReopenedEmail = async (

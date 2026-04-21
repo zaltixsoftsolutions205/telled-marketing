@@ -1,6 +1,6 @@
 // frontend/src/pages/SupportPage.tsx
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, Search, MessageSquarePlus, Eye, CheckCircle, XCircle, Clock, RotateCcw, ThumbsUp, AlertTriangle } from 'lucide-react';
+import { Plus, Search, MessageSquarePlus, Eye, CheckCircle, XCircle, Clock, RotateCcw, ThumbsUp, AlertTriangle, RefreshCw, Mail } from 'lucide-react';
 import ExcelImportButton from '@/components/common/ExcelImportButton';
 import { supportApi } from '@/api/support';
 import { accountsApi } from '@/api/accounts';
@@ -53,6 +53,8 @@ export default function SupportPage() {
   const [feedbackText, setFeedbackText] = useState('');
   const [reopenReason, setReopenReason] = useState('');
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ createdTickets: string[]; scanned: number; errors: string[] } | null>(null);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const loadTickets = useCallback(async () => {
@@ -95,6 +97,21 @@ export default function SupportPage() {
   };
 
   const openCreate = async () => { await Promise.all([loadAccounts(), loadEngineers()]); setShowCreate(true); };
+
+  const handleSyncEmails = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const { data } = await api.post('/support-email/sync');
+      const result = data.data || {};
+      setSyncResult({ createdTickets: result.createdTickets || [], scanned: result.scanned ?? 0, errors: [] });
+      if (result.createdTickets?.length > 0) loadTickets();
+    } catch (err: any) {
+      setSyncResult({ createdTickets: [], scanned: 0, errors: [err?.response?.data?.message || 'Sync failed'] });
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const showMessage = (text: string, type: 'success' | 'error' | 'info') => {
     setMessage({ text, type });
@@ -234,7 +251,18 @@ export default function SupportPage() {
           <h1 className="text-2xl font-bold text-gray-900">Support Tickets</h1>
           <p className="text-sm text-gray-500 mt-1">{total} total tickets</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
+          {(user?.role === 'admin' || user?.role === 'engineer') && (
+            <button
+              onClick={handleSyncEmails}
+              disabled={syncing}
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm border border-violet-200 text-violet-700 bg-violet-50 rounded-lg hover:bg-violet-100 disabled:opacity-60 transition-colors"
+              title="Scan inbox and pull in new support emails as tickets"
+            >
+              {syncing ? <RefreshCw size={14} className="animate-spin" /> : <Mail size={14} />}
+              {syncing ? 'Syncing…' : 'Sync Emails'}
+            </button>
+          )}
           <ExcelImportButton
             entityName="Support Tickets"
             columnHint="accountName, subject, description, priority (Low/Medium/High/Critical)"
@@ -260,6 +288,30 @@ export default function SupportPage() {
           </button>
         </div>
       </div>
+
+      {/* Sync result banner */}
+      {syncResult && (
+        <div className={`rounded-lg border px-4 py-3 text-sm flex items-start gap-3 ${
+          syncResult.errors.length ? 'bg-red-50 border-red-200 text-red-800'
+          : syncResult.createdTickets.length ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+          : 'bg-gray-50 border-gray-200 text-gray-700'
+        }`}>
+          <Mail size={16} className="mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="font-semibold">
+              {syncResult.errors.length ? 'Sync error' : `Scanned ${syncResult.scanned} email${syncResult.scanned !== 1 ? 's' : ''}`}
+            </p>
+            {syncResult.errors.length > 0 && <p className="text-xs mt-0.5">{syncResult.errors[0]}</p>}
+            {syncResult.createdTickets.length > 0 && (
+              <p className="text-xs mt-0.5 text-emerald-700 font-medium">✓ {syncResult.createdTickets.length} new ticket{syncResult.createdTickets.length !== 1 ? 's' : ''} created</p>
+            )}
+            {syncResult.createdTickets.length === 0 && !syncResult.errors.length && (
+              <p className="text-xs mt-0.5 text-gray-500">No new support emails found.</p>
+            )}
+          </div>
+          <button onClick={() => setSyncResult(null)} className="text-gray-400 hover:text-gray-600 text-xs">✕</button>
+        </div>
+      )}
 
       {/* Lifecycle info banner */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-800 flex flex-wrap gap-4">

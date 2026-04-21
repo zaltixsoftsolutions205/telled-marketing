@@ -301,7 +301,7 @@ export default function SalesDashboard() {
 
   useEffect(() => {
     const loadDashboardData = async () => {
-      if (!user?._id) return;
+      if (!user?._id) { setLoading(false); return; }
       
       setLoading(true);
       try {

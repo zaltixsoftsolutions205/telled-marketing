@@ -57,7 +57,8 @@ export default function EngineerDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user?._id) dashboardApi.getEngineerStats(user._id).then(setStats).catch(console.error).finally(() => setLoading(false));
+    if (!user?._id) { setLoading(false); return; }
+    dashboardApi.getEngineerStats(user._id).then(setStats).catch(console.error).finally(() => setLoading(false));
   }, [user?._id]);
 
   if (loading) return <LoadingSpinner className="h-64" />;
