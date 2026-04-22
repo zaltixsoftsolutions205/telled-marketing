@@ -1,8 +1,22 @@
 import { Response } from 'express';
 import Attendance from '../models/Attendance';
+import Organization from '../models/Organization';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams } from '../utils/helpers';
+
+function haversineMetres(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+async function getOrgAttendanceSettings(organizationId: string) {
+  const org = await Organization.findById(organizationId).select('attendanceSettings').lean();
+  return (org as any)?.attendanceSettings || { activeMethod: 'none' };
+}
 
 export const getAttendance = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -108,6 +122,36 @@ export const checkIn = async (req: AuthRequest, res: Response): Promise<void> =>
     const existing = await Attendance.findOne({ employeeId, date: today });
     if (existing?.checkIn) { sendError(res, 'Already checked in today', 400); return; }
 
+    // ── Enforce attendance method ──
+    if (req.user!.organizationId) {
+      const settings = await getOrgAttendanceSettings(req.user!.organizationId.toString());
+
+      if (settings.activeMethod === 'geo') {
+        const { lat, lng } = req.body;
+        if (lat == null || lng == null) {
+          sendError(res, 'Location coordinates are required for geo-based check-in', 400); return;
+        }
+        const { lat: officeLat, lng: officeLng, radius, name } = settings.geo || {};
+        if (!officeLat || !officeLng) {
+          sendError(res, 'Office location not configured. Contact HR.', 400); return;
+        }
+        const dist = haversineMetres(+lat, +lng, officeLat, officeLng);
+        if (dist > radius) {
+          sendError(res, `You are ${Math.round(dist)}m from ${name || 'office'}. Must be within ${radius}m to check in.`, 403); return;
+        }
+      }
+
+      if (settings.activeMethod === 'face') {
+        if (!req.body.faceVerified) {
+          sendError(res, 'Face verification is required to check in.', 403); return;
+        }
+      }
+
+      if (settings.activeMethod === 'biometric') {
+        sendError(res, 'Manual check-in is disabled. Please use the biometric terminal.', 403); return;
+      }
+    }
+
     const record = await Attendance.findOneAndUpdate(
       { employeeId, date: today },
       { $set: { employeeId, date: today, checkIn: now, status: 'Present', markedBy: employeeId } },
@@ -125,6 +169,36 @@ export const checkOut = async (req: AuthRequest, res: Response): Promise<void> =
     const record = await Attendance.findOne({ employeeId, date: today });
     if (!record) { sendError(res, 'No check-in found for today', 400); return; }
     if (record.checkOut) { sendError(res, 'Already checked out today', 400); return; }
+
+    // ── Enforce attendance method ──
+    if (req.user!.organizationId) {
+      const settings = await getOrgAttendanceSettings(req.user!.organizationId.toString());
+
+      if (settings.activeMethod === 'geo') {
+        const { lat, lng } = req.body;
+        if (lat == null || lng == null) {
+          sendError(res, 'Location coordinates are required for geo-based check-out', 400); return;
+        }
+        const { lat: officeLat, lng: officeLng, radius, name } = settings.geo || {};
+        if (!officeLat || !officeLng) {
+          sendError(res, 'Office location not configured. Contact HR.', 400); return;
+        }
+        const dist = haversineMetres(+lat, +lng, officeLat, officeLng);
+        if (dist > radius) {
+          sendError(res, `You are ${Math.round(dist)}m from ${name || 'office'}. Must be within ${radius}m to check out.`, 403); return;
+        }
+      }
+
+      if (settings.activeMethod === 'face') {
+        if (!req.body.faceVerified) {
+          sendError(res, 'Face verification is required to check out.', 403); return;
+        }
+      }
+
+      if (settings.activeMethod === 'biometric') {
+        sendError(res, 'Manual check-out is disabled. Please use the biometric terminal.', 403); return;
+      }
+    }
 
     record.checkOut = new Date();
     await record.save();

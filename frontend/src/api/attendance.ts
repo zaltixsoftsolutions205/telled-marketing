@@ -20,12 +20,12 @@ export const attendanceApi = {
     const { data } = await api.get('/attendance/today');
     return data.data;
   },
-  checkIn: async () => {
-    const { data } = await api.post('/attendance/checkin');
+  checkIn: async (payload?: { lat?: number; lng?: number; faceVerified?: boolean }) => {
+    const { data } = await api.post('/attendance/checkin', payload || {});
     return data.data;
   },
-  checkOut: async () => {
-    const { data } = await api.post('/attendance/checkout');
+  checkOut: async (payload?: { lat?: number; lng?: number; faceVerified?: boolean }) => {
+    const { data } = await api.post('/attendance/checkout', payload || {});
     return data.data;
   },
 };
