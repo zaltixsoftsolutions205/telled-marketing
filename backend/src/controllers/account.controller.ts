@@ -7,7 +7,7 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, sanitizeQuery } from '../utils/helpers';
 import { notifyUser, notifyRole } from '../utils/notify';
-import { sendAccountWelcomeEmail, sendEmailWithUserSmtp, UserSmtpConfig } from '../services/email.service';
+import { sendAccountWelcomeEmail, UserSmtpConfig } from '../services/email.service';
 import { decryptText } from '../utils/crypto';
 import logger from '../utils/logger';
 
@@ -102,7 +102,9 @@ export const assignEngineer = async (req: AuthRequest, res: Response): Promise<v
       if (account.contactEmail) {
         try {
           const engineer = account.assignedEngineer as any;
-          const senderSmtp = await getUserSmtp(req.user!.id);
+          // Send from engineer's SMTP; fall back to assigner's SMTP
+          const engineerSmtp = await getUserSmtp(req.body.engineerId);
+          const senderSmtp = engineerSmtp || await getUserSmtp(req.user!.id);
           const org = account.organizationId
             ? await Organization.findById(account.organizationId).select('name').lean()
             : null;
@@ -115,7 +117,7 @@ export const assignEngineer = async (req: AuthRequest, res: Response): Promise<v
             engineerName: engineer?.name || req.user?.name || orgName,
             engineerPhone: engineer?.phone,
             engineerEmail: engineer?.email,
-            supportEmail: senderSmtp?.fromEmail || process.env.EMAIL_FROM,
+            supportEmail: engineer?.email || senderSmtp?.fromEmail,
           }, senderSmtp);
         } catch (e) {
           logger.error('Failed to send account welcome email:', e);
