@@ -46,6 +46,7 @@ export default function QuotationsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [poFilter, setPoFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -96,6 +97,8 @@ export default function QuotationsPage() {
   const [sendEmailSending, setSendEmailSending] = useState(false);
   const [sendToEmail, setSendToEmail] = useState('');
   const [sendCcEmail, setSendCcEmail] = useState('');
+  const [isResendEmail, setIsResendEmail] = useState(false);
+  const [resendNewFile, setResendNewFile] = useState<File | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -103,6 +106,7 @@ export default function QuotationsPage() {
       const params: Record<string, unknown> = { page, limit: 15 };
       if (search) params.search = search;
       if (statusFilter) params.status = statusFilter;
+      if (poFilter) params.poFilter = poFilter;
       const res = await quotationsApi.getAll(params);
       setQuotations(res.data || []);
       setTotal(res.pagination?.total ?? 0);
@@ -112,7 +116,7 @@ export default function QuotationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, statusFilter]);
+  }, [page, search, statusFilter, poFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -579,13 +583,15 @@ This offer may be subject to errors and changes.`;
     }
   };
 
-  const handleAction = async (action: string, id: string) => {
+  const handleAction = async (action: string, id: string, resend = false) => {
     if (action === 'sendEmail') {
       const q = quotations.find(qt => qt._id === id);
       if (q) {
         setSendEmailTarget(q);
         setSendToEmail((q.leadId as any)?.email || '');
         setSendCcEmail('');
+        setIsResendEmail(resend);
+        setResendNewFile(null);
         return;
       }
     }
@@ -612,10 +618,21 @@ This offer may be subject to errors and changes.`;
     if (!sendEmailTarget) return;
     setSendEmailSending(true);
     try {
-      await quotationsApi.sendEmail(sendEmailTarget._id, sendToEmail.trim() || undefined, sendCcEmail.trim() || undefined);
+      let targetId = sendEmailTarget._id;
+      if (isResendEmail && resendNewFile) {
+        const fd = new FormData();
+        fd.append('quotationFile', resendNewFile);
+        fd.append('leadId', (sendEmailTarget.leadId as any)?._id || sendEmailTarget.leadId);
+        fd.append('totalAmount', String(sendEmailTarget.finalAmount || sendEmailTarget.total || 0));
+        const created = await quotationsApi.createFromUpload(fd);
+        targetId = created._id;
+      }
+      await quotationsApi.sendEmail(targetId, sendToEmail.trim() || undefined, sendCcEmail.trim() || undefined);
       notify('Quotation Email Sent', 'Quotation email sent to lead successfully.', 'quotation', '/quotations');
-      setToast({ message: 'Email sent successfully', type: 'success' });
+      setToast({ message: isResendEmail ? 'Quotation resent successfully' : 'Email sent successfully', type: 'success' });
       setSendEmailTarget(null);
+      setIsResendEmail(false);
+      setResendNewFile(null);
       load();
     } catch (err: any) {
       setToast({ message: err?.response?.data?.message || 'Failed to send email', type: 'error' });
@@ -635,14 +652,23 @@ This offer may be subject to errors and changes.`;
       </button>
     );
 
-    // Mail button only if email not yet sent
+    // Mail button for first send; Resend button if already sent
     if (!q.emailSent) {
       buttons.push(
-        <button key="sendEmail" title="Send Email to Customer"
-          disabled={actionLoading === q._id + 'sendEmail'}
-          onClick={() => handleAction('sendEmail', q._id)}
+        <button key="sendEmail" title={q.poReceived ? 'PO already received' : 'Send Email to Customer'}
+          disabled={actionLoading === q._id + 'sendEmail' || !!q.poReceived}
+          onClick={() => !q.poReceived && handleAction('sendEmail', q._id)}
           className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors disabled:opacity-50">
           <Mail size={14} />
+        </button>
+      );
+    } else {
+      buttons.push(
+        <button key="resendEmail" title={q.poReceived ? 'PO already received' : 'Resend Quotation Email'}
+          disabled={!!q.poReceived}
+          onClick={() => !q.poReceived && handleAction('sendEmail', q._id, true)}
+          className={`p-1.5 rounded-lg transition-colors ${q.poReceived ? 'bg-gray-50 text-gray-300 cursor-not-allowed' : 'bg-violet-50 text-violet-600 hover:bg-violet-100'}`}>
+          <RefreshCw size={14} />
         </button>
       );
     }
@@ -715,13 +741,10 @@ This offer may be subject to errors and changes.`;
           <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             placeholder="Search by company..." className="input-field pl-9" />
         </div>
-        <select className="input-field w-40" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
+        <select className="input-field w-48" value={poFilter} onChange={(e) => { setPoFilter(e.target.value); setStatusFilter(''); setPage(1); }}>
           <option value="">All Status</option>
-          <option value="Draft">Draft</option>
-          <option value="Sent">Sent</option>
-          <option value="Accepted">Accepted</option>
-          <option value="Rejected">Rejected</option>
-          <option value="Final">Final</option>
+          <option value="po_received">PO Received</option>
+          <option value="po_not_received">PO Not Received</option>
         </select>
         <button onClick={load} className="p-2 text-gray-500 hover:text-violet-600 transition-colors"><RefreshCw size={18} /></button>
       </div>
@@ -774,7 +797,12 @@ This offer may be subject to errors and changes.`;
                     </td>
                     <td className="table-cell text-gray-400">{q.validUntil ? formatDate(q.validUntil) : '—'}</td>
                     <td className="table-cell">
-                      <span className={`badge text-xs ${STATUS_COLORS[q.status] || 'bg-gray-100 text-gray-600'}`}>{q.status}</span>
+                      <div className="flex flex-col gap-1">
+                        <span className={`badge text-xs ${STATUS_COLORS[q.status] || 'bg-gray-100 text-gray-600'}`}>{q.status}</span>
+                        {q.poReceived
+                          ? <span className="badge text-xs bg-emerald-100 text-emerald-700">PO Received</span>
+                          : <span className="badge text-xs bg-amber-100 text-amber-700">PO Not Received</span>}
+                      </div>
                     </td>
                     <td className="table-cell">
                       <div className="flex items-center gap-1.5 flex-wrap">{getActionButtons(q)}</div>
@@ -1067,7 +1095,7 @@ This offer may be subject to errors and changes.`;
       </Modal>
 
       {/* Send Email Modal */}
-      <Modal isOpen={!!sendEmailTarget} onClose={() => setSendEmailTarget(null)} title="Send Quotation Email" size="md">
+      <Modal isOpen={!!sendEmailTarget} onClose={() => { setSendEmailTarget(null); setIsResendEmail(false); }} title={isResendEmail ? 'Resend Quotation Email' : 'Send Quotation Email'} size="md">
         {sendEmailTarget && (
           <div className="space-y-4">
             <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-800">
@@ -1096,16 +1124,29 @@ This offer may be subject to errors and changes.`;
                 applyLabel="Add to CC"
               />
             </div>
-            <p className="text-xs text-gray-500">
-              {sendEmailTarget?.uploadedFileName
-                ? `Your uploaded file "${sendEmailTarget.uploadedFileName}" will be attached.`
-                : 'A system-generated quotation PDF will be attached.'}
-            </p>
+            {isResendEmail ? (
+              <div>
+                <label className="label">Upload New Quotation <span className="text-xs text-gray-400 font-normal">optional — replaces existing</span></label>
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx"
+                  onChange={e => setResendNewFile(e.target.files?.[0] || null)}
+                  className="block w-full text-sm text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100 cursor-pointer"
+                />
+                {resendNewFile && <p className="text-xs text-green-600 mt-1 truncate">{resendNewFile.name}</p>}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500">
+                {sendEmailTarget?.uploadedFileName
+                  ? `Your uploaded file "${sendEmailTarget.uploadedFileName}" will be attached.`
+                  : 'A system-generated quotation PDF will be attached.'}
+              </p>
+            )}
             <div className="flex gap-2 justify-end pt-1">
-              <button onClick={() => setSendEmailTarget(null)} className="btn-secondary py-1.5 text-sm">Cancel</button>
+              <button onClick={() => { setSendEmailTarget(null); setIsResendEmail(false); setResendNewFile(null); }} className="btn-secondary py-1.5 text-sm">Cancel</button>
               <button onClick={handleConfirmSendEmail} disabled={sendEmailSending || !sendToEmail.trim()} className="btn-primary py-1.5 text-sm flex items-center gap-2">
                 <Send size={13} />
-                {sendEmailSending ? 'Sending…' : 'Send Email'}
+                {sendEmailSending ? 'Sending…' : isResendEmail ? 'Resend Email' : 'Send Email'}
               </button>
             </div>
           </div>

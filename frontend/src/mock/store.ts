@@ -462,9 +462,12 @@ export const mockAccounts = {
 export const mockQuotations = {
   getAll: async (params: Record<string, unknown> = {}) => {
     await delay();
-    let items = [...orgQuotations()];
+    const poLeadIds = new Set(orgPOs().map((p: any) => p.leadId?._id || p.leadId));
+    let items = orgQuotations().map((q: any) => ({ ...q, poReceived: poLeadIds.has(q.leadId?._id || q.leadId) }));
     if (params.status) items = items.filter((q: any) => q.status === params.status);
     if (params.leadId) items = items.filter((q: any) => q.leadId._id === params.leadId);
+    if (params.poFilter === 'po_received') items = items.filter((q: any) => q.poReceived);
+    if (params.poFilter === 'po_not_received') items = items.filter((q: any) => !q.poReceived);
     return mockPaginate(items, Number(params.page) || 1, Number(params.limit) || 15);
   },
   getByLead: async (leadId: string) => { await delay(); return orgQuotations().filter((q: any) => q.leadId._id === leadId); },
@@ -881,11 +884,23 @@ export const mockDashboard = {
     const invoices = orgInvoices();
     const tickets  = orgTickets();
     const drfs     = orgDRFs();
+    const installs = orgInstalls();
 
     const revenueByMonth: Record<string, number> = {};
     invoices.filter((i: any) => i.status === 'Paid').forEach((i: any) => {
       const m = new Date(i.createdAt).toLocaleString('default', { month: 'short', year: '2-digit' });
       revenueByMonth[m] = (revenueByMonth[m] || 0) + i.amount;
+    });
+
+    const engineerMap: Record<string, any> = {};
+    installs.forEach((i: any) => {
+      const engId = i.engineer?._id || i.engineer || 'unassigned';
+      const engName = i.engineer?.name || 'Unassigned';
+      if (!engineerMap[engId]) engineerMap[engId] = { _id: engId, engineerName: engName, total: 0, completed: 0, inProgress: 0, scheduled: 0 };
+      engineerMap[engId].total++;
+      if (i.status === 'Completed') engineerMap[engId].completed++;
+      else if (i.status === 'In Progress') engineerMap[engId].inProgress++;
+      else if (i.status === 'Scheduled') engineerMap[engId].scheduled++;
     });
 
     return {
@@ -894,6 +909,8 @@ export const mockDashboard = {
       invoices: { totalRevenue: invoices.filter((i: any) => i.status === 'Paid').reduce((s: number, i: any) => s + i.amount, 0), pending: invoices.filter((i: any) => ['Unpaid','Partially Paid'].includes(i.status)).length, overdue: invoices.filter((i: any) => i.status === 'Overdue').length },
       tickets:  { open: tickets.filter((t: any) => t.status === 'Open').length, critical: tickets.filter((t: any) => t.priority === 'Critical').length },
       drfs:     { pending: drfs.filter((d: any) => d.status === 'Pending').length, approved: drfs.filter((d: any) => d.status === 'Approved').length, rejected: drfs.filter((d: any) => d.status === 'Rejected').length, expiringSoon: drfs.filter((d: any) => d.status === 'Approved' && d.expiryDate && new Date(d.expiryDate).getTime() - Date.now() < 30 * 86400000).length, totalThisMonth: 0 },
+      installations: { total: installs.length, completed: installs.filter((i: any) => i.status === 'Completed').length, inProgress: installs.filter((i: any) => i.status === 'In Progress').length, scheduled: installs.filter((i: any) => i.status === 'Scheduled').length, pending: installs.filter((i: any) => ['Scheduled', 'In Progress'].includes(i.status)).length },
+      installsByEngineer: Object.values(engineerMap).sort((a: any, b: any) => b.total - a.total),
       drfBySalesPerson: [],
       rejectionReasons: [],
       recentLeads: leads.slice(0, 5),

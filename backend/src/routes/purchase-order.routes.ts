@@ -25,8 +25,6 @@ async function getUserSmtp(userId: string): Promise<UserSmtpConfig | undefined> 
     };
   } catch { return undefined; }
 }
-import { generatePurchaseOrderPDF } from '../services/pdf.service';
-import path from 'path';
 import logger from '../utils/logger';
 import multer from 'multer';
 
@@ -178,24 +176,6 @@ router.post('/:id/send-to-vendor', authorize('admin', 'sales', 'engineer', 'hr_f
     const senderName = senderSmtp?.fromName || 'ZIEOS';
     const senderEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || 'support@telled.com';
 
-    // Generate PDF
-    const pdfFileName = await generatePurchaseOrderPDF({
-      poNumber: po.poNumber,
-      poDate: new Date(po.receivedDate).toLocaleDateString('en-IN'),
-      vendorName: po.vendorName || vendorEmailToUse,
-      vendorEmail: vendorEmailToUse,
-      product: po.product || 'N/A',
-      amount: po.amount,
-      customerCompany: lead?.companyName || '—',
-      customerContact: lead?.contactPersonName || '',
-      customerEmail: lead?.email || '',
-      customerPhone: lead?.phone || '',
-      customerAddress: [lead?.address, lead?.city, lead?.state].filter(Boolean).join(', ') || '',
-    });
-
-    const uploadDir = process.env.UPLOAD_PATH || './uploads';
-    const pdfPath = path.join(uploadDir, pdfFileName);
-
     // Enhanced email HTML
     const html = `
       <!DOCTYPE html>
@@ -263,9 +243,7 @@ router.post('/:id/send-to-vendor', authorize('admin', 'sales', 'engineer', 'hr_f
       </html>
     `;
 
-    const vendorAttachments: Array<{ filename: string; path?: string; content?: Buffer }> = [
-      { filename: `PO-${po.poNumber}.pdf`, path: pdfPath },
-    ];
+    const vendorAttachments: Array<{ filename: string; content: Buffer }> = [];
     if ((req as any).file) vendorAttachments.push({ filename: (req as any).file.originalname, content: (req as any).file.buffer });
 
     const ccEmail: string | undefined = req.body.cc || undefined;
@@ -274,7 +252,7 @@ router.post('/:id/send-to-vendor', authorize('admin', 'sales', 'engineer', 'hr_f
       `Purchase Order ${po.poNumber} from ${senderName}`,
       html,
       senderSmtp,
-      vendorAttachments,
+      vendorAttachments.length ? vendorAttachments : undefined,
       ccEmail,
     );
 
@@ -514,22 +492,6 @@ router.post('/:id/forward-to-ark', authorize('admin', 'sales', 'hr_finance'), up
     const senderName = senderSmtp?.fromName || 'ZIEOS';
     const senderEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || '';
 
-    const pdfFileName = await generatePurchaseOrderPDF({
-      poNumber: po.poNumber,
-      poDate: new Date(po.receivedDate).toLocaleDateString('en-IN'),
-      vendorName: po.vendorName || arkEmail,
-      vendorEmail: arkEmail,
-      product: po.product || 'N/A',
-      amount: po.amount,
-      customerCompany: lead?.companyName || '—',
-      customerContact: lead?.contactPersonName || '',
-      customerEmail: lead?.email || '',
-      customerPhone: lead?.phone || '',
-      customerAddress: [lead?.address, lead?.city, lead?.state].filter(Boolean).join(', ') || '',
-    });
-    const uploadDir = process.env.UPLOAD_PATH || './uploads';
-    const pdfPath = path.join(uploadDir, pdfFileName);
-
     const html = `
       <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:20px">
         <div style="background:linear-gradient(135deg,#6d28d9,#4c1d95);color:#fff;padding:20px;border-radius:8px 8px 0 0;text-align:center">
@@ -549,12 +511,10 @@ router.post('/:id/forward-to-ark', authorize('admin', 'sales', 'hr_finance'), up
         </div>
       </div>`;
 
-    const arkAttachments: Array<{ filename: string; path?: string; content?: Buffer }> = [
-      { filename: `PO-${po.poNumber}.pdf`, path: pdfPath },
-    ];
+    const arkAttachments: Array<{ filename: string; content: Buffer }> = [];
     if ((req as any).file) arkAttachments.push({ filename: (req as any).file.originalname, content: (req as any).file.buffer });
 
-    await sendEmailWithUserSmtp(arkEmail, `PO ${po.poNumber} — Price Clearance Request`, html, senderSmtp, arkAttachments, req.body.cc);
+    await sendEmailWithUserSmtp(arkEmail, `PO ${po.poNumber} — Price Clearance Request`, html, senderSmtp, arkAttachments.length ? arkAttachments : undefined, req.body.cc);
 
     await PurchaseOrder.findByIdAndUpdate(req.params.id, {
       poForwardedToArk: true,
@@ -598,22 +558,6 @@ router.post('/:id/send-po-to-ark', authorize('admin', 'sales', 'hr_finance'), up
     const senderName = senderSmtp?.fromName || 'ZIEOS';
     const senderEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || '';
 
-    const pdfFileName = await generatePurchaseOrderPDF({
-      poNumber: po.poNumber,
-      poDate: new Date(po.receivedDate).toLocaleDateString('en-IN'),
-      vendorName: po.vendorName || arkEmail,
-      vendorEmail: arkEmail,
-      product: po.product || 'N/A',
-      amount: po.amount,
-      customerCompany: lead?.companyName || '—',
-      customerContact: lead?.contactPersonName || '',
-      customerEmail: lead?.email || '',
-      customerPhone: lead?.phone || '',
-      customerAddress: [lead?.address, lead?.city, lead?.state].filter(Boolean).join(', ') || '',
-    });
-    const uploadDir = process.env.UPLOAD_PATH || './uploads';
-    const pdfPath = path.join(uploadDir, pdfFileName);
-
     const html = `
       <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:20px">
         <div style="background:linear-gradient(135deg,#6d28d9,#4c1d95);color:#fff;padding:20px;border-radius:8px 8px 0 0;text-align:center">
@@ -631,12 +575,10 @@ router.post('/:id/send-po-to-ark', authorize('admin', 'sales', 'hr_finance'), up
         </div>
       </div>`;
 
-    const sendArkAttachments: Array<{ filename: string; path?: string; content?: Buffer }> = [
-      { filename: `PO-${po.poNumber}.pdf`, path: pdfPath },
-    ];
+    const sendArkAttachments: Array<{ filename: string; content: Buffer }> = [];
     if ((req as any).file) sendArkAttachments.push({ filename: (req as any).file.originalname, content: (req as any).file.buffer });
 
-    await sendEmailWithUserSmtp(arkEmail, `Official PO ${po.poNumber} — Please process`, html, senderSmtp, sendArkAttachments, req.body.cc);
+    await sendEmailWithUserSmtp(arkEmail, `Official PO ${po.poNumber} — Please process`, html, senderSmtp, sendArkAttachments.length ? sendArkAttachments : undefined, req.body.cc);
 
     await PurchaseOrder.findByIdAndUpdate(req.params.id, {
       poSentToArk: true,

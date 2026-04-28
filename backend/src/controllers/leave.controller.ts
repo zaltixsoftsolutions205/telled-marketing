@@ -1,16 +1,22 @@
 import { Response } from 'express';
+import mongoose from 'mongoose';
 import Leave from '../models/Leave';
+import Organization from '../models/Organization';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams } from '../utils/helpers';
 import { notifyRole, notifyUser } from '../utils/notify';
+
+const LEAVE_TYPES = ['Casual', 'Sick', 'Annual', 'Unpaid'] as const;
+const DEFAULT_POLICY = { Casual: 12, Sick: 6, Annual: 15, Unpaid: 0 };
 
 export const getLeaves = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { page, limit, skip } = getPaginationParams(req);
     const filter: Record<string, any> = {};
 
-    if (req.user!.role === 'engineer') {
+    const role = req.user!.role;
+    if (role === 'engineer' || role === 'sales') {
       filter.employeeId = req.user!.id;
     } else if (req.query.employeeId) {
       filter.employeeId = req.query.employeeId;
@@ -35,6 +41,47 @@ export const getLeaves = async (req: AuthRequest, res: Response): Promise<void> 
   }
 };
 
+export const getLeaveBalance = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const role = req.user!.role;
+    const employeeId = (role === 'engineer' || role === 'sales')
+      ? req.user!.id
+      : ((req.query.employeeId as string) || req.user!.id);
+
+    const year = parseInt(req.query.year as string) || new Date().getFullYear();
+    const start = new Date(year, 0, 1);
+    const end = new Date(year, 11, 31, 23, 59, 59);
+
+    const org = await Organization.findById(req.user!.organizationId).select('leavePolicy').lean();
+    const policy = (org as any)?.leavePolicy || DEFAULT_POLICY;
+
+    const agg = await Leave.aggregate([
+      {
+        $match: {
+          employeeId: new mongoose.Types.ObjectId(employeeId),
+          status: 'Approved',
+          startDate: { $gte: start, $lte: end },
+        },
+      },
+      { $group: { _id: '$type', used: { $sum: '$days' } } },
+    ]);
+
+    const usedMap: Record<string, number> = {};
+    for (const a of agg) usedMap[a._id] = a.used;
+
+    const balance: Record<string, { allocated: number; used: number; remaining: number }> = {};
+    for (const type of LEAVE_TYPES) {
+      const allocated = policy[type] ?? 0;
+      const used = usedMap[type] || 0;
+      balance[type] = { allocated, used, remaining: Math.max(0, allocated - used) };
+    }
+
+    sendSuccess(res, balance, 'Leave balance fetched');
+  } catch (e) {
+    sendError(res, 'Failed to fetch leave balance', 500);
+  }
+};
+
 export const applyLeave = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { type, startDate, endDate, days, reason } = req.body;
@@ -54,7 +101,7 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<void>
     const emp = leave.employeeId as any;
     notifyRole(['admin', 'hr_finance'], {
       title: 'New Leave Request',
-      message: `${emp?.name || 'An employee'} applied for ${type} leave (${days} day${days > 1 ? 's' : ''})`,
+      message: `${emp?.name || 'An employee'} applied for ${type} leave (${days} day${Number(days) > 1 ? 's' : ''})`,
       type: 'leave',
       link: '/leaves',
     });
@@ -81,7 +128,7 @@ export const approveLeave = async (req: AuthRequest, res: Response): Promise<voi
       title: 'Leave Approved',
       message: `Your ${leave.type} leave request has been approved`,
       type: 'leave',
-      link: '/my-leaves',
+      link: '/leaves',
     });
     sendSuccess(res, leave, 'Leave approved');
   } catch (e) {
@@ -107,7 +154,7 @@ export const rejectLeave = async (req: AuthRequest, res: Response): Promise<void
       title: 'Leave Rejected',
       message: `Your ${leave.type} leave request was rejected${rejectionReason ? ': ' + rejectionReason : ''}`,
       type: 'leave',
-      link: '/my-leaves',
+      link: '/leaves',
     });
     sendSuccess(res, leave, 'Leave rejected');
   } catch (e) {

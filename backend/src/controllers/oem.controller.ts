@@ -6,7 +6,7 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendPaginated, sendError } from '../utils/response';
 import { addDays } from '../utils/helpers';
 import { OEM_EXPIRY_DAYS } from '../config/constants';
-import { sendOEMApprovalRequest, sendOEMRejectionNotification } from '../services/email.service';
+import { sendOEMApprovalRequest, sendOEMRejectionNotification, sendDRFEmail, sendOEMExtensionRequest } from '../services/email.service';
 import { syncEmailsForDRF, ImapCredentials } from '../services/emailInbox.service';
 import { decryptText } from '../utils/crypto';
 import { UserSmtpConfig } from '../services/email.service';
@@ -115,23 +115,21 @@ export const resendDRF = async (req: AuthRequest, res: Response): Promise<void> 
   try {
     const attempt = await OEMApprovalAttempt.findById(req.params.id);
     if (!attempt) { sendError(res, 'DRF not found', 404); return; }
-    if (attempt.status !== 'Rejected') { sendError(res, 'Only rejected DRFs can be resent', 400); return; }
-
-    const daysSinceRejection = attempt.rejectedDate
-      ? Math.floor((Date.now() - new Date(attempt.rejectedDate).getTime()) / (1000 * 60 * 60 * 24))
-      : 0;
-
-    if (daysSinceRejection < 30) {
-      sendError(res, `Cannot resend yet. ${30 - daysSinceRejection} day(s) remaining before resend is allowed.`, 400);
-      return;
+    if (!['Rejected', 'Approved'].includes(attempt.status)) {
+      sendError(res, 'Only rejected or approved DRFs can be resent', 400); return;
     }
 
     const lead = await Lead.findById(attempt.leadId);
     if (!lead) { sendError(res, 'Lead not found', 404); return; }
 
-    // Reset to Pending and update sentDate
+    // Keep original sentDate only for DRF number, then update sentDate to now
+    // so the email sync correctly ignores old reply emails (before this resend)
+    const d = new Date(attempt.sentDate);
+    const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    const drfNumber = `DRF-${dateStr}-${String(attempt.attemptNumber).padStart(3, '0')}`;
+
     attempt.status = 'Pending';
-    attempt.sentDate = new Date();
+    attempt.sentDate = new Date(); // updated so sync ignores emails older than this resend
     attempt.rejectedDate = undefined;
     attempt.rejectionReason = undefined;
     attempt.approvedDate = undefined;
@@ -139,12 +137,27 @@ export const resendDRF = async (req: AuthRequest, res: Response): Promise<void> 
     await attempt.save();
     await Lead.findByIdAndUpdate(attempt.leadId, { stage: 'OEM Submitted' });
 
-    const d = attempt.sentDate;
-    const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-    const drfNumber = `DRF-${dateStr}-${String(attempt.attemptNumber).padStart(3, '0')}`;
     const oemTo = lead.oemEmail || lead.email;
     const senderSmtp = await getUserSmtp(req.user!.id);
-    await sendOEMApprovalRequest(oemTo, lead.companyName, lead.oemName || '', attempt.attemptNumber, drfNumber, senderSmtp);
+    const sender = await User.findById(req.user!.id).select('name email');
+    await sendDRFEmail(oemTo, {
+      drfNumber,
+      version: attempt.attemptNumber,
+      companyName: lead.companyName,
+      contactName: (lead as any).contactPersonName || (lead as any).contactName || '',
+      oemName: lead.oemName || '',
+      salesName: sender?.name || 'Telled Sales',
+      salesEmail: sender?.email || '',
+      address: (lead as any).address || '',
+      website: (lead as any).website || '',
+      annualTurnover: (lead as any).annualTurnover || '',
+      designation: (lead as any).designation || '',
+      contactNo: (lead as any).phone || (lead as any).contactNo || '',
+      email: lead.email || '',
+      channelPartner: (lead as any).channelPartner || '',
+      interestedModules: lead.oemName || '',
+      expectedClosure: (lead as any).expectedClosure || '',
+    }, senderSmtp);
 
     sendSuccess(res, attempt, 'DRF email resent successfully');
   } catch { sendError(res, 'Failed to resend DRF', 500); }
@@ -205,14 +218,33 @@ export const syncDRFEmails = async (req: AuthRequest, res: Response): Promise<vo
   }
 };
 
-// PATCH /api/oem/:id/request-extension  — mark DRF as extension requested
+// PATCH /api/oem/:id/request-extension  — mark DRF as extension requested & email OEM
 export const requestExtension = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const attempt = await OEMApprovalAttempt.findById(req.params.id);
+    const attempt = await OEMApprovalAttempt.findById(req.params.id).populate('leadId');
     if (!attempt) { sendError(res, 'DRF not found', 404); return; }
     attempt.extensionRequested = true;
     attempt.extensionRequestedAt = new Date();
     await attempt.save();
+
+    const lead = attempt.leadId as any;
+    const oemTo = lead?.oemEmail || lead?.email;
+    if (oemTo && attempt.expiryDate) {
+      const d = new Date(attempt.sentDate);
+      const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+      const drfNumber = `DRF-${dateStr}-${String(attempt.attemptNumber).padStart(3, '0')}`;
+      const senderSmtp = await getUserSmtp(req.user!.id);
+      const sender = await User.findById(req.user!.id).select('name email');
+      await sendOEMExtensionRequest(oemTo, {
+        drfNumber,
+        companyName: lead.companyName,
+        oemName: lead.oemName || '',
+        expiryDate: attempt.expiryDate.toISOString(),
+        salesName: sender?.name || 'ZIEOS',
+        salesEmail: sender?.email || '',
+      }, senderSmtp);
+    }
+
     sendSuccess(res, attempt, 'Extension requested');
   } catch { sendError(res, 'Failed to request extension', 500); }
 };

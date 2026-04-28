@@ -142,6 +142,7 @@ export interface Quotation {
   uploadedFileName?: string;
   emailSent?: boolean;
   emailSentAt?: string;
+  poReceived?: boolean;
   createdBy: User;
   createdAt: string;
 }

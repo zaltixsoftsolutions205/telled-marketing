@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, Headphones, Wrench, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Building2, Headphones, Wrench, ShieldCheck, Mail } from 'lucide-react';
 import { accountsApi } from '@/api/accounts';
 import { installationsApi } from '@/api/installations';
 import { supportApi } from '@/api/support';
@@ -25,6 +25,8 @@ export default function AccountDetailPage() {
   const [loading, setLoading] = useState(true);
   const [showAssign, setShowAssign] = useState(false);
   const [assignEngineer, setAssignEngineer] = useState('');
+  const [sendingWelcome, setSendingWelcome] = useState(false);
+  const [welcomeSent, setWelcomeSent] = useState(false);
 
   const load = async () => {
     if (!id) return;
@@ -57,6 +59,20 @@ export default function AccountDetailPage() {
     load();
   };
 
+  const handleSendWelcome = async () => {
+    setSendingWelcome(true);
+    try {
+      await accountsApi.sendWelcomeMail(id!);
+      setWelcomeSent(true);
+    } catch (err) {
+      console.error('sendWelcomeMail:', err);
+    } finally {
+      setSendingWelcome(false);
+    }
+  };
+
+  const isAssignedEngineer = user?.role === 'engineer' && (account?.assignedEngineer as User)?._id === user?._id;
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center gap-4">
@@ -70,6 +86,16 @@ export default function AccountDetailPage() {
         <StatusBadge status={account.status} />
         {user?.role === 'admin' && (
           <button onClick={() => setShowAssign(true)} className="btn-secondary text-sm">Assign Engineer</button>
+        )}
+        {isAssignedEngineer && (
+          <button
+            onClick={handleSendWelcome}
+            disabled={sendingWelcome || welcomeSent}
+            className="btn-primary text-sm flex items-center gap-2"
+          >
+            <Mail size={14} />
+            {welcomeSent ? 'Welcome Sent' : sendingWelcome ? 'Sending…' : 'Send Welcome Mail'}
+          </button>
         )}
       </div>
 

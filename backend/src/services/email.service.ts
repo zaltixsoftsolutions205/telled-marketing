@@ -1053,4 +1053,29 @@ export const sendDRFExtensionEmail = async (data: {
   );
 };
 
+export const sendOEMExtensionRequest = async (
+  to: string,
+  data: { drfNumber: string; companyName: string; oemName: string; expiryDate: string; salesName: string; salesEmail?: string },
+  senderSmtp?: UserSmtpConfig
+) => {
+  const expiry = new Date(data.expiryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const subject = `DRF Extension Request — ${data.drfNumber} — ${data.companyName}`;
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:20px">
+      <p>Dear Sir/Madam,</p>
+      <p>We are writing to request an extension for the DRF approval for <strong>${data.companyName}</strong>.</p>
+      <table style="border-collapse:collapse;width:100%;margin:16px 0">
+        <tr><td style="padding:8px 12px;border:1px solid #ddd;background:#f5f3ff;font-weight:bold;width:45%">DRF Number</td><td style="padding:8px 12px;border:1px solid #ddd">${data.drfNumber}</td></tr>
+        <tr><td style="padding:8px 12px;border:1px solid #ddd;background:#f5f3ff;font-weight:bold">Company</td><td style="padding:8px 12px;border:1px solid #ddd">${data.companyName}</td></tr>
+        <tr><td style="padding:8px 12px;border:1px solid #ddd;background:#f5f3ff;font-weight:bold">OEM / Brand</td><td style="padding:8px 12px;border:1px solid #ddd">${data.oemName || '—'}</td></tr>
+        <tr><td style="padding:8px 12px;border:1px solid #ddd;background:#f5f3ff;font-weight:bold;color:#dc2626">Current Expiry</td><td style="padding:8px 12px;border:1px solid #ddd;color:#dc2626;font-weight:bold">${expiry}</td></tr>
+      </table>
+      <p>Kindly reply to this email with the new <strong>valid until date</strong> for the extension.</p>
+      <p>Please keep the DRF number <strong>${data.drfNumber}</strong> in your reply so it can be automatically processed.</p>
+      <p>Regards,<br/><strong>${data.salesName}</strong>${data.salesEmail ? `<br/>${data.salesEmail}` : ''}</p>
+    </div>
+  `;
+  await sendEmailWithUserSmtp(to, subject, html, senderSmtp);
+};
+
 export default send;

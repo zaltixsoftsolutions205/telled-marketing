@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth.middleware';
-import { getLeaves, applyLeave, approveLeave, rejectLeave } from '../controllers/leave.controller';
+import { getLeaves, applyLeave, approveLeave, rejectLeave, getLeaveBalance } from '../controllers/leave.controller';
 const router = Router();
 router.use(authenticate);
+router.get('/balance', getLeaveBalance);
 router.get('/', getLeaves);
 router.post('/', applyLeave);
 router.patch('/:id/approve', approveLeave);

@@ -15,6 +15,16 @@ const OrganizationSchema = new Schema<IOrganization>(
     slug:     { type: String, required: true, unique: true, lowercase: true, trim: true },
     ownerId:  { type: Schema.Types.ObjectId, ref: 'User', required: true },
     isActive: { type: Boolean, default: true },
+    attendanceSettings: { type: Schema.Types.Mixed },
+    leavePolicy: {
+      type: {
+        Casual:  { type: Number, default: 12 },
+        Sick:    { type: Number, default: 6 },
+        Annual:  { type: Number, default: 15 },
+        Unpaid:  { type: Number, default: 0 },
+      },
+      default: () => ({ Casual: 12, Sick: 6, Annual: 15, Unpaid: 0 }),
+    },
   },
   { timestamps: true }
 );

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { drfApi } from '@/api/drf';
 import { quotationsApi } from '@/api/quotations';
+import { purchasesApi } from '@/api/purchases';
 import { notify } from '@/store/notificationStore';
 import { usersApi } from '@/api/users';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
@@ -10,7 +11,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { formatDate, formatCurrency } from '@/utils/formatters';
 import { useAuthStore } from '@/store/authStore';
 import {
-  FileBadge, CheckCircle2, XCircle, Clock, AlertTriangle, Filter, UserCheck, FileText, Plus, Trash2, Mail, RefreshCw, RotateCcw, Send, CalendarClock, Upload, X, CheckCircle,
+  FileBadge, CheckCircle2, XCircle, Clock, AlertTriangle, Filter, UserCheck, FileText, Trash2, Mail, RefreshCw, RotateCcw, CalendarClock, Upload, X, CheckCircle,
 } from 'lucide-react';
 import ContactEmailPicker from '@/components/common/ContactEmailPicker';
 import ExcelImportButton from '@/components/common/ExcelImportButton';
@@ -162,13 +163,6 @@ export default function DRFPage() {
   const [qError, setQError] = useState('');
   const qFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Resend Quotation modal state
-  const [resendQuotationDRF, setResendQuotationDRF] = useState<any>(null);
-  const [resendQEmail, setResendQEmail] = useState('');
-  const [resendQCc, setResendQCc] = useState('');
-  const [resendQSaving, setResendQSaving] = useState(false);
-  const [resendQError, setResendQError] = useState('');
-
   // Extension state
   const [extensionSending, setExtensionSending] = useState<string | null>(null);
 
@@ -205,19 +199,24 @@ export default function DRFPage() {
       if (fromDate)     params.from        = fromDate;
       if (toDate)       params.to          = toDate;
       if (multiVersion) params.multiVersion = 'true';
-      const [analyticsData, drfRes, quotRes] = await Promise.all([
+      const [analyticsData, drfRes, quotRes, poRes] = await Promise.all([
         drfApi.getAnalytics(),
         drfApi.getAll(params),
         quotationsApi.getAll({ limit: 500 }),
+        purchasesApi.getAll({ limit: 500 }),
       ]);
       setAnalytics(analyticsData || {});
-      // Mark DRFs whose lead already has a quotation
+      // Mark DRFs whose lead already has a quotation or a PO
       const leadIdsWithQuotation = new Set(
         (quotRes.data || []).map((q: any) => q.leadId?._id || q.leadId)
+      );
+      const leadIdsWithPO = new Set(
+        (poRes.data || []).map((p: any) => p.leadId?._id || p.leadId)
       );
       const drfsWithFlag = (drfRes.data || []).map((d: any) => ({
         ...d,
         quotationSent: d.quotationSent || leadIdsWithQuotation.has(d.leadId?._id || d.leadId),
+        poReceived: leadIdsWithPO.has(d.leadId?._id || d.leadId),
       }));
       setDRFs(drfsWithFlag);
       setTotal(drfRes.pagination?.total ?? 0);
@@ -234,18 +233,6 @@ export default function DRFPage() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { usersApi.getSalesmen().then(setSalesUsers).catch(() => {}); }, []);
 
-  // Auto-trigger extension email for DRFs expiring within 5 days (Pending, not yet requested)
-  useEffect(() => {
-    if (!drfs.length) return;
-    const toExtend = drfs.filter(d =>
-      d.status === 'Pending' &&
-      !d.extensionRequested &&
-      getExpiryDays(d) !== null &&
-      (getExpiryDays(d) as number) <= 5
-    );
-    toExtend.forEach(drf => handleRequestExtension(drf));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drfs.length]);
 
   const resetFilters = () => {
     setStatusFilter('');
@@ -332,33 +319,6 @@ export default function DRFPage() {
       setQUploadStep('review');
     } finally {
       setQParsing(false);
-    }
-  };
-
-  const openResendQuotationModal = (drf: any) => {
-    setResendQuotationDRF(drf);
-    setResendQEmail(drf.leadId?.email || '');
-    setResendQCc('');
-    setResendQError('');
-  };
-
-  const handleResendQuotation = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!resendQuotationDRF) return;
-    if (!resendQEmail.trim()) { setResendQError('Recipient email is required'); return; }
-    setResendQSaving(true); setResendQError('');
-    try {
-      // Find the latest quotation for this lead and resend it
-      const quotRes = await quotationsApi.getAll({ leadId: resendQuotationDRF.leadId?._id, limit: 1 });
-      const latestQuotation = quotRes.data?.[0];
-      if (!latestQuotation) { setResendQError('No quotation found for this lead'); setResendQSaving(false); return; }
-      await quotationsApi.sendEmail(latestQuotation._id, resendQEmail.trim(), resendQCc.trim() || undefined);
-      notify('Quotation Resent', `Quotation resent to ${resendQEmail} for "${resendQuotationDRF.leadId?.companyName}".`, 'quotation', '/quotations');
-      setResendQuotationDRF(null);
-    } catch (err: any) {
-      setResendQError(err?.response?.data?.message || 'Failed to resend quotation');
-    } finally {
-      setResendQSaving(false);
     }
   };
 
@@ -570,7 +530,7 @@ export default function DRFPage() {
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Ver</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sent</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Expiry</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valid Until</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Owner</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DRF Extension</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -655,41 +615,45 @@ export default function DRFPage() {
                         <div className="flex items-center gap-2">
                           {drf.status === 'Approved' && isSales && !drf.quotationSent && (
                             <button
-                              onClick={() => openQuotationModal(drf)}
-                              className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md hover:bg-emerald-100 transition-colors"
-                              title="Create & Send Quotation from this DRF"
+                              onClick={() => !drf.poReceived && openQuotationModal(drf)}
+                              disabled={drf.poReceived}
+                              className={`inline-flex items-center gap-1 px-2 py-1 text-xs border rounded-md transition-colors ${
+                                drf.poReceived
+                                  ? 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed'
+                                  : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 cursor-pointer'
+                              }`}
+                              title={drf.poReceived ? 'PO already received — quotation not needed' : 'Create & Send Quotation from this DRF'}
                             >
                               <FileText size={12} />
                               Send Quotation
                             </button>
                           )}
                           {drf.status === 'Approved' && isSales && drf.quotationSent && (
-                            <button
-                              onClick={() => openResendQuotationModal(drf)}
-                              className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
-                              title="Resend Quotation email"
-                            >
-                              <Send size={12} />
-                              Resend
-                            </button>
+                            drf.poReceived ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full font-medium bg-emerald-100 text-emerald-700">
+                                <CheckCircle2 size={11} /> PO Received
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => { setResendTarget(drf); setResendError(''); }}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
+                                title="Resend DRF to OEM"
+                              >
+                                <RefreshCw size={12} /> Resend DRF
+                              </button>
+                            )
                           )}
                           {drf.status === 'Rejected' && (() => {
                             const daysLeft = getDaysUntilResend(drf);
-                            const canResend = daysLeft === 0;
                             return (
                               <>
                                 <button
-                                  onClick={() => canResend ? (setResendTarget(drf), setResendError('')) : undefined}
-                                  disabled={!canResend}
-                                  title={canResend ? 'Resend DRF email to OEM' : `Can resend in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}`}
-                                  className={`inline-flex items-center gap-1 px-2 py-1 text-xs border rounded-md transition-colors ${
-                                    canResend
-                                      ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 cursor-pointer'
-                                      : 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed'
-                                  }`}
+                                  onClick={() => { setResendTarget(drf); setResendError(''); }}
+                                  title={daysLeft > 0 ? `Resend DRF email to OEM (${30 - daysLeft}d since rejection)` : 'Resend DRF email to OEM'}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 cursor-pointer rounded-md transition-colors"
                                 >
                                   <RefreshCw size={12} />
-                                  {canResend ? 'Resend' : `Resend in ${daysLeft}d`}
+                                  Resend
                                 </button>
                                 {isAdmin && (
                                   <button
@@ -767,8 +731,8 @@ export default function DRFPage() {
       >
         <div className="space-y-4">
           <p className="text-sm text-gray-600">
-            The same OEM approval request email will be resent for{' '}
-            <strong>{resendTarget?.leadId?.companyName}</strong> (attempt #{resendTarget?.attemptNumber}).
+            The OEM approval request email will be resent for{' '}
+            <strong>{resendTarget?.leadId?.companyName}</strong>.
           </p>
           <p className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-lg p-3">
             The DRF status will reset to <strong>Pending</strong> while awaiting the new response.
@@ -971,75 +935,6 @@ export default function DRFPage() {
         )}
       </Modal>
 
-      {/* Resend Quotation Modal */}
-      <Modal
-        isOpen={!!resendQuotationDRF}
-        onClose={() => setResendQuotationDRF(null)}
-        title={`Resend Quotation — ${resendQuotationDRF?.leadId?.companyName || ''}`}
-        size="sm"
-      >
-        {resendQuotationDRF && (
-          <form onSubmit={handleResendQuotation} className="space-y-4">
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
-              <p className="font-semibold">{resendQuotationDRF.drfNumber} — {resendQuotationDRF.leadId?.oemName}</p>
-              <p className="mt-0.5 text-blue-600">The latest quotation PDF will be resent to the address below.</p>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700 block mb-1">
-                Recipient Email *
-              </label>
-              <ContactEmailPicker
-                required
-                autoFocus
-                placeholder="customer@company.com"
-                value={resendQEmail}
-                onChange={setResendQEmail}
-                defaultContactType="CUSTOMER"
-                defaultResponsibility="Procurement"
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700 block mb-1">
-                CC
-                <span className="ml-1 text-xs text-gray-400 font-normal">optional</span>
-              </label>
-              <ContactEmailPicker
-                placeholder="cc@example.com"
-                value={resendQCc}
-                onChange={setResendQCc}
-                defaultContactType="CUSTOMER"
-                defaultResponsibility="Technical"
-              />
-            </div>
-
-            {resendQError && (
-              <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">
-                {resendQError}
-              </div>
-            )}
-
-            <div className="flex gap-3 justify-end pt-1">
-              <button
-                type="button"
-                onClick={() => setResendQuotationDRF(null)}
-                className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={resendQSaving}
-                className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
-              >
-                <Send size={14} />
-                {resendQSaving ? 'Sending…' : 'Resend Quotation'}
-              </button>
-            </div>
-          </form>
-        )}
-      </Modal>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 import { Response } from 'express';
 import Quotation from '../models/Quotation';
 import Lead from '../models/Lead';
+import PurchaseOrder from '../models/PurchaseOrder';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, sanitizeQuery } from '../utils/helpers';
@@ -126,18 +127,18 @@ const generateQuotationNumber = async (): Promise<string> => {
 export const getQuotations = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { page, limit, skip } = getPaginationParams(req);
-    const { status, leadId, search } = req.query;
-    
+    const { status, leadId, search, poFilter } = req.query;
+
     const filter: Record<string, unknown> = { isArchived: false };
-    
+
     if (status) filter.status = status;
     if (leadId) filter.leadId = leadId;
-    
+
     // Role-based filtering
     if (req.user!.role === 'sales') {
       filter.createdBy = req.user!.id;
     }
-    
+
     if (search) {
       const leadIds = await Lead.find({
         $or: [
@@ -147,7 +148,17 @@ export const getQuotations = async (req: AuthRequest, res: Response): Promise<vo
       }).distinct('_id');
       filter.leadId = { $in: leadIds };
     }
-    
+
+    // PO filter: find lead IDs that have at least one PO
+    if (poFilter === 'po_received' || poFilter === 'po_not_received') {
+      const poLeadIds = await PurchaseOrder.find({ isArchived: { $ne: true } }).distinct('leadId');
+      if (poFilter === 'po_received') {
+        filter.leadId = { $in: poLeadIds };
+      } else {
+        filter.leadId = { $nin: poLeadIds };
+      }
+    }
+
     const [quotations, total] = await Promise.all([
       Quotation.find(filter)
         .populate('leadId', 'companyName contactName email contactPersonName oemName oemEmail')
@@ -157,8 +168,18 @@ export const getQuotations = async (req: AuthRequest, res: Response): Promise<vo
         .limit(limit),
       Quotation.countDocuments(filter),
     ]);
-    
-    sendPaginated(res, quotations, total, page, limit);
+
+    // Attach poReceived flag to each quotation
+    const allPoLeadIds = await PurchaseOrder.find({ isArchived: { $ne: true } }).distinct('leadId');
+    const poLeadIdSet = new Set(allPoLeadIds.map((id: unknown) => String(id)));
+    const enriched = quotations.map((q) => {
+      const obj = q.toObject() as Record<string, unknown>;
+      const qLeadId = (q.leadId as any)?._id ?? q.leadId;
+      obj.poReceived = poLeadIdSet.has(String(qLeadId));
+      return obj;
+    });
+
+    sendPaginated(res, enriched, total, page, limit);
   } catch (error) {
     logger.error('getQuotations error:', error);
     sendError(res, 'Failed to fetch quotations', 500);

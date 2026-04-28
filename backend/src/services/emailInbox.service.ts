@@ -40,17 +40,27 @@ function detectDecision(text: string): 'Approved' | 'Rejected' | null {
  * Returns ISO date string or null.
  */
 function extractExpiryDate(text: string): Date | null {
-  // Pattern: valid till / valid until / validity / expiry + date
-  const m = text.match(/valid\s+(?:till|until|upto|up to|through)[:\s]+(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i);
-  if (!m) return null;
-  const parts = m[1].split(/[-\/\.]/);
-  if (parts.length !== 3) return null;
-  let day = parseInt(parts[0], 10);
-  let month = parseInt(parts[1], 10);
-  let year = parseInt(parts[2], 10);
-  if (year < 100) year += 2000;
-  const d = new Date(Date.UTC(year, month - 1, day));
-  return isNaN(d.getTime()) ? null : d;
+  const patterns = [
+    /valid\s+(?:till|until|upto|up\s+to|through)[:\s]+(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
+    /validity[:\s]+(?:till|until|upto|up\s+to)?[:\s]*(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
+    /approved?\s+(?:till|until|upto|up\s+to)[:\s]+(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
+    /approval\s+valid\s+(?:till|until|upto|up\s+to)[:\s]+(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
+    /expir(?:y|es?)\s+(?:date[:\s]+|on[:\s]+|by[:\s]+)?(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
+    /valid\s+(?:from\s+\S+\s+)?to[:\s]+(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
+  ];
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (!m) continue;
+    const parts = m[1].split(/[-\/\.]/);
+    if (parts.length !== 3) continue;
+    let day = parseInt(parts[0], 10);
+    let month = parseInt(parts[1], 10);
+    let year = parseInt(parts[2], 10);
+    if (year < 100) year += 2000;
+    const d = new Date(Date.UTC(year, month - 1, day));
+    if (!isNaN(d.getTime())) return d;
+  }
+  return null;
 }
 
 /**
@@ -90,22 +100,30 @@ function stripQuotedContent(text: string): string {
 
 /**
  * Find a pending OEM attempt by company name (case-insensitive, partial match).
- * Returns { attempt, lead } if pending found, or { alreadyProcessed: true } if already approved/rejected.
+ * emailDate: the date of the incoming reply email — used to skip emails older than
+ * the DRF's sentDate (prevents old replies from re-triggering after a resend).
  */
-async function findAttemptByCompanyName(companyName: string): Promise<any | null> {
+async function findAttemptByCompanyName(companyName: string, emailDate?: Date): Promise<any | null> {
   const leads = await Lead.find({
     companyName: { $regex: companyName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' },
     isArchived: false,
   }).select('_id companyName');
 
   for (const lead of leads) {
-    const pending = await OEMApprovalAttempt.findOne({ leadId: lead._id, status: 'Pending' })
+    // Look at the most recent attempt regardless of status
+    const latest = await OEMApprovalAttempt.findOne({ leadId: lead._id })
       .sort({ sentDate: -1 });
-    if (pending) return { attempt: pending, lead };
-    // Check if already processed
-    const processed = await OEMApprovalAttempt.findOne({ leadId: lead._id, status: { $in: ['Approved', 'Rejected'] } })
-      .sort({ sentDate: -1 });
-    if (processed) return { alreadyProcessed: true, status: processed.status, lead };
+    if (!latest) continue;
+
+    // If the reply email predates the DRF sentDate it belongs to a previous cycle — skip
+    if (emailDate && emailDate < new Date(latest.sentDate)) {
+      return { alreadyProcessed: true, status: 'stale', lead };
+    }
+
+    if (latest.status === 'Pending') return { attempt: latest, lead };
+
+    // Already actioned in this cycle
+    return { alreadyProcessed: true, status: latest.status, lead };
   }
   return null;
 }
@@ -164,16 +182,44 @@ export async function syncEmailsForDRF(creds?: ImapCredentials): Promise<EmailSy
 
     logger.info(`Email sync: found ${uids.length} messages`);
 
-    for await (const msg of client.fetch(uids, { envelope: true, source: true }, { uid: true })) {
+    for await (const msg of client.fetch(uids, { envelope: true, source: true, internalDate: true }, { uid: true })) {
       result.scanned++;
       try {
-        const subject  = msg.envelope?.subject || '';
-        const fromAddr = (msg.envelope?.from?.[0]?.address || 'unknown').toLowerCase();
+        const subject   = msg.envelope?.subject || '';
+        const fromAddr  = (msg.envelope?.from?.[0]?.address || 'unknown').toLowerCase();
+        const emailDate = msg.envelope?.date ? new Date(msg.envelope.date) : (msg.internalDate ? new Date(msg.internalDate) : undefined);
 
         // Skip bounces and system emails
         const isSystemSender = /mailer-daemon|postmaster|no-reply|noreply|bounce|delivery|mail-daemon|notification@|alerts@/i.test(fromAddr);
         const isBounceSubject = /undelivered|delivery.*(failed|failure|status|notification)|bounce|mail delivery|returned mail|failure notice/i.test(subject);
         if (isSystemSender || isBounceSubject) continue;
+
+        // Check for extension reply first
+        const isExtensionReply = /DRF Extension Request/i.test(subject);
+        if (isExtensionReply) {
+          const extCompany = subject.match(/DRF Extension Request\s*[-–]\s*DRF-[\d]+-[\d]+\s*[-–]\s*(.+)/i)?.[1]?.trim();
+          if (extCompany) {
+            const rawText = rawEmailToText(msg.source || Buffer.alloc(0));
+            const freshText = stripQuotedContent(rawText);
+            const newExpiry = extractExpiryDate(freshText) || extractExpiryDate(rawText);
+            if (newExpiry) {
+              const leads = await Lead.find({ companyName: { $regex: extCompany.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' }, isArchived: false }).select('_id');
+              for (const lead of leads) {
+                const attempt = await OEMApprovalAttempt.findOne({ leadId: lead._id, status: 'Approved' }).sort({ sentDate: -1 });
+                if (attempt) {
+                  attempt.expiryDate = newExpiry;
+                  await attempt.save();
+                  result.approved.push(`${extCompany} (extended to ${newExpiry.toLocaleDateString('en-IN')})`);
+                  result.processed++;
+                  logger.info(`DRF expiry extended for "${extCompany}" to ${newExpiry.toISOString()} via email from ${fromAddr}`);
+                }
+              }
+            } else {
+              result.skipped.push(`"${subject.slice(0, 60)}" — extension reply but no new date found`);
+            }
+          }
+          continue;
+        }
 
         // Only process replies to OUR DRF emails
         const isDRFReply = /requesting for the approval of DRF/i.test(subject);
@@ -181,7 +227,14 @@ export async function syncEmailsForDRF(creds?: ImapCredentials): Promise<EmailSy
 
         const rawText  = rawEmailToText(msg.source || Buffer.alloc(0));
         const freshText = subject + ' ' + stripQuotedContent(rawText);
-        const decision  = detectDecision(freshText);
+        let decision  = detectDecision(freshText);
+
+        // If fresh text has no decision, scan full body (catches decisions in nested/forwarded replies)
+        if (!decision) {
+          // Strip the original DRF subject line to avoid false positives from quoted original
+          const fullTextWithoutSubject = rawText.replace(/Requesting for the approval of DRF[^.!\n]*/gi, '');
+          decision = detectDecision(fullTextWithoutSubject);
+        }
 
         if (!decision) {
           result.skipped.push(`"${subject.slice(0, 60)}" — no approval/rejection keyword found`);
@@ -195,13 +248,15 @@ export async function syncEmailsForDRF(creds?: ImapCredentials): Promise<EmailSy
           continue;
         }
 
-        const found = await findAttemptByCompanyName(companyName);
+        const found = await findAttemptByCompanyName(companyName, emailDate);
         if (!found) {
           result.skipped.push(`"${companyName}" — no DRF found in DB`);
           continue;
         }
         if (found.alreadyProcessed) {
-          result.skipped.push(`"${companyName}" — DRF already ${found.status}`);
+          if (found.status !== 'stale') {
+            result.skipped.push(`"${companyName}" — DRF already ${found.status}`);
+          }
           continue;
         }
 
@@ -209,16 +264,15 @@ export async function syncEmailsForDRF(creds?: ImapCredentials): Promise<EmailSy
         const label = `${lead.companyName} (${attempt.drfNumber || attempt._id})`;
 
         if (decision === 'Approved') {
-          // Extract expiry date from email body if present
-          const expiryDate = extractExpiryDate(freshText) || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+          const expiryDate = extractExpiryDate(freshText);
           attempt.status       = 'Approved';
           attempt.approvedDate = new Date();
           attempt.approvedBy   = `Auto (${fromAddr})`;
-          attempt.expiryDate   = expiryDate;
+          if (expiryDate) attempt.expiryDate = expiryDate;
           await attempt.save();
           await Lead.findByIdAndUpdate(lead._id, { stage: 'OEM Approved' });
           result.approved.push(label);
-          logger.info(`DRF auto-approved for "${lead.companyName}" via email from ${fromAddr}, expiry: ${expiryDate.toISOString()}`);
+          logger.info(`DRF auto-approved for "${lead.companyName}" via email from ${fromAddr}${expiryDate ? `, valid until: ${expiryDate.toISOString()}` : ''}`);
         } else {
           attempt.status          = 'Rejected';
           attempt.rejectedDate    = new Date();

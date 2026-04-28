@@ -97,36 +97,45 @@ export const assignEngineer = async (req: AuthRequest, res: Response): Promise<v
         type: 'general',
         link: '/accounts',
       });
-
-      // Send welcome email to customer if they have an email
-      if (account.contactEmail) {
-        try {
-          const engineer = account.assignedEngineer as any;
-          // Send from engineer's SMTP; fall back to assigner's SMTP
-          const engineerSmtp = await getUserSmtp(req.body.engineerId);
-          const senderSmtp = engineerSmtp || await getUserSmtp(req.user!.id);
-          const org = account.organizationId
-            ? await Organization.findById(account.organizationId).select('name').lean()
-            : null;
-          const orgName = (org as any)?.name || 'Our Company';
-
-          await sendAccountWelcomeEmail({
-            to: account.contactEmail,
-            customerName: account.contactName || account.companyName,
-            orgName,
-            engineerName: engineer?.name || req.user?.name || orgName,
-            engineerPhone: engineer?.phone,
-            engineerEmail: engineer?.email,
-            supportEmail: engineer?.email || senderSmtp?.fromEmail,
-          }, senderSmtp);
-        } catch (e) {
-          logger.error('Failed to send account welcome email:', e);
-        }
-      }
     }
 
     sendSuccess(res, account, 'Engineer assigned');
   } catch { sendError(res, 'Failed', 500); }
+};
+
+export const sendWelcomeMail = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const account = await Account.findOne({ _id: req.params.id, organizationId: req.user!.organizationId })
+      .populate('assignedEngineer', 'name email phone');
+    if (!account) { sendError(res, 'Account not found', 404); return; }
+
+    const engineer = account.assignedEngineer as any;
+    if (!engineer || String(engineer._id) !== String(req.user!.id)) {
+      sendError(res, 'Only the assigned engineer can send the welcome mail', 403); return;
+    }
+    if (!account.contactEmail) { sendError(res, 'Account has no customer email', 400); return; }
+
+    const engineerSmtp = await getUserSmtp(req.user!.id);
+    const org = account.organizationId
+      ? await Organization.findById(account.organizationId).select('name').lean()
+      : null;
+    const orgName = (org as any)?.name || 'Our Company';
+
+    await sendAccountWelcomeEmail({
+      to: account.contactEmail,
+      customerName: account.contactName || account.companyName,
+      orgName,
+      engineerName: engineer.name,
+      engineerPhone: engineer.phone,
+      engineerEmail: engineer.email,
+      supportEmail: engineer.email,
+    }, engineerSmtp);
+
+    sendSuccess(res, null, 'Welcome email sent');
+  } catch (e) {
+    logger.error('sendWelcomeMail error:', e);
+    sendError(res, 'Failed to send welcome email', 500);
+  }
 };
 
 export const deleteAccount = async (req: AuthRequest, res: Response): Promise<void> => {

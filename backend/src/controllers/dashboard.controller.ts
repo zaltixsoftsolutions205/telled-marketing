@@ -24,6 +24,8 @@ export const getAdminDashboard = async (_req: AuthRequest, res: Response): Promi
       leadsByStage, recentLeads,
       pendingDRFs, approvedDRFs, expiringSoonDRFs,
       revenueAgg,
+      totalInstalls, scheduledInstalls, inProgressInstalls, completedInstalls,
+      installsByEngineer,
     ] = await Promise.all([
       Lead.countDocuments({ isArchived: false }),
       Lead.countDocuments({ isArchived: false, status: 'New' }),
@@ -55,6 +57,16 @@ export const getAdminDashboard = async (_req: AuthRequest, res: Response): Promi
         { $limit: 6 },
         { $project: { month: '$_id', revenue: 1, _id: 0 } },
       ]),
+      Installation.countDocuments({}),
+      Installation.countDocuments({ status: 'Scheduled' }),
+      Installation.countDocuments({ status: 'In Progress' }),
+      Installation.countDocuments({ status: 'Completed' }),
+      Installation.aggregate([
+        { $lookup: { from: 'users', localField: 'engineerId', foreignField: '_id', as: 'eng' } },
+        { $unwind: { path: '$eng', preserveNullAndEmptyArrays: true } },
+        { $group: { _id: '$engineerId', engineerName: { $first: '$eng.name' }, total: { $sum: 1 }, completed: { $sum: { $cond: [{ $eq: ['$status', 'Completed'] }, 1, 0] } }, inProgress: { $sum: { $cond: [{ $eq: ['$status', 'In Progress'] }, 1, 0] } }, scheduled: { $sum: { $cond: [{ $eq: ['$status', 'Scheduled'] }, 1, 0] } } } },
+        { $sort: { total: -1 } },
+      ]),
     ]);
 
     sendSuccess(res, {
@@ -63,6 +75,8 @@ export const getAdminDashboard = async (_req: AuthRequest, res: Response): Promi
       invoices: { totalRevenue: paidInvoices[0]?.total || 0, pending: pendingInvoiceCount, overdue: overdueInvoiceCount },
       tickets:  { open: openTickets, critical: criticalTickets, resolved: resolvedTickets },
       drfs:     { pending: pendingDRFs, approved: approvedDRFs, expiringSoon: expiringSoonDRFs },
+      installations: { total: totalInstalls, scheduled: scheduledInstalls, inProgress: inProgressInstalls, completed: completedInstalls, pending: scheduledInstalls + inProgressInstalls },
+      installsByEngineer,
       leadsByStage,
       recentLeads,
       revenueByMonth: revenueAgg.reverse(),

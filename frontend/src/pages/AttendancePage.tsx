@@ -799,11 +799,6 @@ export default function AttendancePage() {
               ) : (
                 <p className="text-xs text-gray-400 mt-1">You haven't checked in yet today</p>
               )}
-              {geoError && (
-                <div className="flex items-start gap-2 mt-2 text-xs text-red-700 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
-                  <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" /> {geoError}
-                </div>
-              )}
               {attSettings.activeMethod === 'biometric' && (
                 <p className="text-xs text-blue-600 font-medium mt-2">Please use the biometric terminal at your office to mark attendance.</p>
               )}

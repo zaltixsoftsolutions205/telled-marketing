@@ -8,7 +8,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import {
   TrendingUp, Building2, Receipt, Headphones, AlertTriangle,
-  Users, Activity, FileBadge, ArrowRight,
+  Users, Activity, FileBadge, ArrowRight, Wrench, CheckCircle2, Clock,
 } from 'lucide-react';
 import type { Lead } from '@/types';
 
@@ -168,6 +168,77 @@ export default function AdminDashboard() {
             />
           </div>
         </div>
+      </div>
+
+      {/* Installations Overview */}
+      <div className="card !p-4 sm:!p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-sm sm:text-base font-bold text-gray-900">Installations Overview</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Status across all engineers</p>
+          </div>
+          <div className="flex items-center gap-4 text-xs">
+            <span className="flex items-center gap-1 text-emerald-600 font-semibold">
+              <CheckCircle2 size={13} /> {stats.installations?.completed ?? 0} Done
+            </span>
+            <span className="flex items-center gap-1 text-blue-600 font-semibold">
+              <Clock size={13} /> {stats.installations?.inProgress ?? 0} In Progress
+            </span>
+            <span className="flex items-center gap-1 text-amber-600 font-semibold">
+              <Wrench size={13} /> {stats.installations?.scheduled ?? 0} Scheduled
+            </span>
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        {(stats.installations?.total ?? 0) > 0 && (
+          <div className="w-full h-2.5 rounded-full bg-gray-100 overflow-hidden mb-5">
+            <div className="flex h-full">
+              <div
+                className="bg-emerald-500 transition-all"
+                style={{ width: `${Math.round(((stats.installations?.completed ?? 0) / (stats.installations?.total ?? 1)) * 100)}%` }}
+              />
+              <div
+                className="bg-blue-400 transition-all"
+                style={{ width: `${Math.round(((stats.installations?.inProgress ?? 0) / (stats.installations?.total ?? 1)) * 100)}%` }}
+              />
+              <div
+                className="bg-amber-400 transition-all"
+                style={{ width: `${Math.round(((stats.installations?.scheduled ?? 0) / (stats.installations?.total ?? 1)) * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Per-engineer breakdown */}
+        {stats.installsByEngineer?.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[400px]">
+              <thead>
+                <tr>
+                  <th className="text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider pb-2">Engineer</th>
+                  <th className="text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wider pb-2">Total</th>
+                  <th className="text-center text-[10px] font-semibold text-emerald-600 uppercase tracking-wider pb-2">Done</th>
+                  <th className="text-center text-[10px] font-semibold text-blue-500 uppercase tracking-wider pb-2">In Progress</th>
+                  <th className="text-center text-[10px] font-semibold text-amber-500 uppercase tracking-wider pb-2">Scheduled</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {stats.installsByEngineer.map((row: any) => (
+                  <tr key={row._id} className="hover:bg-violet-50/20 transition-colors">
+                    <td className="py-2 text-sm font-medium text-gray-700">{row.engineerName || '—'}</td>
+                    <td className="py-2 text-center text-sm font-bold text-gray-800">{row.total}</td>
+                    <td className="py-2 text-center text-sm font-semibold text-emerald-600">{row.completed}</td>
+                    <td className="py-2 text-center text-sm font-semibold text-blue-500">{row.inProgress}</td>
+                    <td className="py-2 text-center text-sm font-semibold text-amber-500">{row.scheduled}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400 text-center py-4">No installations yet</p>
+        )}
       </div>
 
       {/* Recent Leads */}
