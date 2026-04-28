@@ -1,43 +1,12 @@
-import { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
-  Plus, Search, Send, RefreshCw,
-  Receipt, Edit, Mail, Trash2, Download,
-  AlertCircle, CheckCircle, ChevronDown, ChevronUp,
-  Building2 as BuildingIcon, CreditCard, FileText, Eye, Check, X,
+  Plus, Search, Edit, Trash2, ChevronDown, ChevronUp,
+  Send, Mail, CheckCircle, Building2, FileText,
+  Receipt, Key, X, Upload, Package, RefreshCw,
 } from 'lucide-react';
-import { poSyncApi, DetectedPO } from '@/api/poSync';
-import { jsPDF } from 'jspdf';
-import ExcelImportButton from '@/components/common/ExcelImportButton';
 import { purchasesApi } from '@/api/purchases';
 import { leadsApi } from '@/api/leads';
 import { accountsApi } from '@/api/accounts';
-
-// ─── Local flow-state store (persists in localStorage) ───────────────────────
-type FlowData = {
-  customerInvoiceSent?: boolean;
-  customerInvoiceSentAt?: string;
-  poForwardedToArk?: boolean;
-  poForwardedToArkAt?: string;
-  priceClearanceReceived?: boolean;
-  priceClearanceReceivedAt?: string;
-  poSentToArk?: boolean;
-  poSentToArkAt?: string;
-  arkInvoiceReceived?: boolean;
-  arkInvoiceReceivedAt?: string;
-  arkInvoiceAmount?: number;
-};
-const LS_KEY = 'telled_po_flow_v1';
-const getFlowStore = (): Record<string, FlowData> => {
-  try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch { return {}; }
-};
-const saveFlow = (id: string, data: FlowData) => {
-  const s = getFlowStore(); s[id] = { ...s[id], ...data };
-  localStorage.setItem(LS_KEY, JSON.stringify(s));
-};
-const mergeFlow = (orders: PurchaseOrder[]): PurchaseOrder[] => {
-  const s = getFlowStore();
-  return orders.map(po => s[po._id] ? { ...po, ...s[po._id] } : po);
-};
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
@@ -46,47 +15,53 @@ import ContactEmailPicker from '@/components/common/ContactEmailPicker';
 import { formatDate, formatCurrency } from '@/utils/formatters';
 import { useAuthStore } from '@/store/authStore';
 import { cn } from '@/utils/cn';
-import type { PurchaseOrder, Lead } from '@/types';
+import type { PurchaseOrder, Lead, POLineItem } from '@/types';
 
-// ─── 6-step PO flow ───────────────────────────────────────────────────────────
-const FLOW_STEPS = [
-  { num: 1, label: 'PO Received',              short: 'Received'   },
-  { num: 2, label: 'Invoice Sent to Customer', short: 'Cust. Inv'  },
-  { num: 3, label: 'PO Forwarded to ARK',      short: 'Fwd ARK'    },
-  { num: 4, label: 'Price Clearance Received', short: 'Cleared'    },
-  { num: 5, label: 'PO Sent to ARK',           short: 'PO to ARK'  },
-  { num: 6, label: 'ARK Invoice Received',     short: 'Complete'   },
+// ─── Step config ──────────────────────────────────────────────────────────────
+const STEPS = [
+  { num: 1, label: 'PO Added',               short: 'Added',         icon: Package },
+  { num: 2, label: 'Forward PO to ARK',      short: 'Fwd to ARK',    icon: Send },
+  { num: 3, label: 'ARK Response',           short: 'ARK Response',  icon: Mail },
+  { num: 4, label: 'Docs to Customer',       short: 'Cust. Docs',    icon: FileText },
+  { num: 5, label: 'Invoice to ARK',         short: 'ARK Invoice',   icon: Receipt },
+  { num: 6, label: 'Docs to ARK',            short: 'ARK Docs',      icon: Upload },
+  { num: 7, label: 'License Generation',     short: 'License',       icon: Key },
+  { num: 8, label: 'Final Invoice',          short: 'Final Inv.',     icon: CheckCircle },
 ];
 
-function getPoStep(po: PurchaseOrder): number {
-  if (po.arkInvoiceReceived)     return 6;
-  if (po.poSentToArk)            return 5;
-  if (po.priceClearanceReceived) return 4;
-  if (po.poForwardedToArk)       return 3;
-  if (po.customerInvoiceSent)    return 2;
-  return 1;
-}
+const STEP_COLORS: Record<number, string> = {
+  1: 'bg-gray-100 text-gray-600',
+  2: 'bg-blue-100 text-blue-700',
+  3: 'bg-amber-100 text-amber-700',
+  4: 'bg-sky-100 text-sky-700',
+  5: 'bg-orange-100 text-orange-700',
+  6: 'bg-teal-100 text-teal-700',
+  7: 'bg-violet-100 text-violet-700',
+  8: 'bg-emerald-100 text-emerald-700',
+};
 
-// mini 5-dot stepper shown in each row
-function MiniStepper({ po }: { po: PurchaseOrder }) {
-  const current = getPoStep(po);
+// ─── Mini Step Progress Bar ───────────────────────────────────────────────────
+function MiniStepper({ step, completed }: { step: number; completed: boolean }) {
   return (
     <div className="flex items-center gap-0.5">
-      {FLOW_STEPS.map((s, i) => {
-        const done   = current >= s.num;
-        const active = current === s.num;
+      {STEPS.map((s, i) => {
+        const done = completed || step > s.num;
+        const active = !completed && step === s.num;
         return (
           <div key={s.num} className="flex items-center">
-            <div title={s.label} className={cn(
-              'w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 transition-all',
-              done   ? 'bg-violet-600 text-white' :
-              active ? 'bg-violet-200 text-violet-700 ring-1 ring-violet-400' :
-                       'bg-gray-100 text-gray-400'
-            )}>
-              {done && current > s.num ? '✓' : s.num}
+            <div
+              title={s.label}
+              className={cn(
+                'w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold flex-shrink-0',
+                done ? 'bg-emerald-500 text-white' :
+                active ? 'bg-violet-600 text-white ring-1 ring-violet-300' :
+                'bg-gray-100 text-gray-400'
+              )}
+            >
+              {done ? '✓' : s.num}
             </div>
-            {i < FLOW_STEPS.length - 1 && (
-              <div className={cn('w-3 h-0.5', current > s.num ? 'bg-violet-400' : 'bg-gray-200')} />
+            {i < STEPS.length - 1 && (
+              <div className={cn('w-2 h-0.5', done ? 'bg-emerald-400' : 'bg-gray-200')} />
             )}
           </div>
         );
@@ -95,124 +70,317 @@ function MiniStepper({ po }: { po: PurchaseOrder }) {
   );
 }
 
+// ─── Step Progress Bar (large, for modal) ─────────────────────────────────────
+function StepProgressBar({ step, completed }: { step: number; completed: boolean }) {
+  return (
+    <div className="flex items-center w-full overflow-x-auto pb-1">
+      {STEPS.map((s, i) => {
+        const done = completed || step > s.num;
+        const active = !completed && step === s.num;
+        const Icon = s.icon;
+        return (
+          <div key={s.num} className="flex items-center flex-1 min-w-0">
+            <div className="flex flex-col items-center flex-shrink-0">
+              <div className={cn(
+                'w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all',
+                done ? 'bg-emerald-500 border-emerald-500 text-white' :
+                active ? 'bg-violet-600 border-violet-600 text-white' :
+                'bg-white border-gray-200 text-gray-400'
+              )}>
+                {done ? <CheckCircle size={14} /> : <Icon size={13} />}
+              </div>
+              <span className={cn(
+                'text-[9px] mt-1 font-medium text-center leading-tight max-w-[52px]',
+                done ? 'text-emerald-600' : active ? 'text-violet-700' : 'text-gray-400'
+              )}>
+                {s.short}
+              </span>
+            </div>
+            {i < STEPS.length - 1 && (
+              <div className={cn('flex-1 h-0.5 mb-4 mx-0.5', done ? 'bg-emerald-400' : 'bg-gray-200')} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Products display ─────────────────────────────────────────────────────────
+function ProductsList({ po }: { po: PurchaseOrder }) {
+  if (po.items && po.items.length > 0) {
+    return (
+      <div className="space-y-0.5">
+        {po.items.map((item, i) => (
+          <p key={i} className="text-xs text-gray-600 truncate">
+            {item.product} {item.quantity > 1 ? `×${item.quantity}` : ''}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  return <span className="text-sm text-gray-500">{po.product || '—'}</span>;
+}
+
+// ─── Line Items Table (for create/edit) ───────────────────────────────────────
+function LineItemsTable({
+  items,
+  onChange,
+}: {
+  items: Partial<POLineItem>[];
+  onChange: (items: Partial<POLineItem>[]) => void;
+}) {
+  const update = (i: number, field: keyof POLineItem, val: string | number) => {
+    const next = items.map((item, idx) => {
+      if (idx !== i) return item;
+      const updated = { ...item, [field]: val };
+      if (field === 'quantity' || field === 'unitPrice') {
+        updated.amount = (Number(updated.quantity) || 0) * (Number(updated.unitPrice) || 0);
+      }
+      return updated;
+    });
+    onChange(next);
+  };
+
+  const addRow = () => onChange([...items, { product: '', quantity: 1, unitPrice: 0, amount: 0 }]);
+  const removeRow = (i: number) => onChange(items.filter((_, idx) => idx !== i));
+
+  const total = items.reduce((s, it) => s + (Number(it.amount) || 0), 0);
+
+  return (
+    <div className="space-y-2">
+      <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="text-left px-3 py-2 font-semibold text-gray-600 text-xs">Product / Service</th>
+              <th className="text-right px-3 py-2 font-semibold text-gray-600 text-xs w-20">Qty</th>
+              <th className="text-right px-3 py-2 font-semibold text-gray-600 text-xs w-28">Unit Price (₹)</th>
+              <th className="text-right px-3 py-2 font-semibold text-gray-600 text-xs w-28">Amount (₹)</th>
+              <th className="w-8"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {items.map((item, i) => (
+              <tr key={i}>
+                <td className="px-2 py-1.5">
+                  <input
+                    className="input-field text-sm py-1"
+                    placeholder="Product name"
+                    value={item.product || ''}
+                    onChange={e => update(i, 'product', e.target.value)}
+                  />
+                </td>
+                <td className="px-2 py-1.5">
+                  <input
+                    type="number"
+                    min="0.001"
+                    step="any"
+                    className="input-field text-sm py-1 text-right"
+                    value={item.quantity ?? 1}
+                    onChange={e => update(i, 'quantity', e.target.value)}
+                  />
+                </td>
+                <td className="px-2 py-1.5">
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    className="input-field text-sm py-1 text-right"
+                    value={item.unitPrice ?? 0}
+                    onChange={e => update(i, 'unitPrice', e.target.value)}
+                  />
+                </td>
+                <td className="px-3 py-1.5 text-right font-medium text-gray-700">
+                  {formatCurrency(Number(item.amount) || 0)}
+                </td>
+                <td className="px-2 py-1.5">
+                  {items.length > 1 && (
+                    <button onClick={() => removeRow(i)} className="text-gray-400 hover:text-red-500 transition-colors">
+                      <X size={14} />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="bg-violet-50 border-t border-violet-200">
+            <tr>
+              <td colSpan={3} className="px-3 py-2 text-sm font-semibold text-violet-700">Total</td>
+              <td className="px-3 py-2 text-right font-bold text-violet-700">{formatCurrency(total)}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <button
+        type="button"
+        onClick={addRow}
+        className="flex items-center gap-1.5 text-sm text-violet-600 hover:text-violet-800 font-medium"
+      >
+        <Plus size={14} /> Add Line Item
+      </button>
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function PurchasesPage() {
   const { user } = useAuthStore();
   const canEdit = user?.role === 'admin' || user?.role === 'sales';
-  const [activeTab, setActiveTab] = useState<string>('all');
+  const canFinance = user?.role === 'admin' || user?.role === 'hr_finance';
 
-  const [orders, setOrders]   = useState<PurchaseOrder[]>([]);
-  const [total, setTotal]     = useState(0);
-  const [page, setPage]       = useState(1);
-  const [search, setSearch]   = useState('');
+  const [orders, setOrders] = useState<PurchaseOrder[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<'all' | number>('all');
   const [loading, setLoading] = useState(true);
-  const [leads, setLeads]     = useState<Lead[]>([]);
-  const [syncing, setSyncing]   = useState(false);
-  const [toast, setToast]       = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  // ── PO Intelligence / Email Sync modal ──────────────────────────────────
-  const [showSyncModal, setShowSyncModal]   = useState(false);
-  const [syncDays, setSyncDays]             = useState(60);
-  const [syncResults, setSyncResults]       = useState<DetectedPO[]>([]);
-  const [syncScanned, setSyncScanned]       = useState<number | null>(null);
-  const [syncError, setSyncError]           = useState('');
-  const [syncExpanded, setSyncExpanded]     = useState<Record<string, boolean>>({});
-  const [syncImporting, setSyncImporting]   = useState<Record<string, boolean>>({});
-  const [syncImported, setSyncImported]     = useState<Record<string, boolean>>({});
-  const [syncImportErr, setSyncImportErr]   = useState<Record<string, string>>({});
-  const [syncForms, setSyncForms]           = useState<Record<string, {
-    leadId: string; poNumber: string; amount: string; vendorName: string;
-    vendorEmail: string; product: string; receivedDate: string; paymentTerms: string; notes: string;
-  }>>({});
+  // Detail modal
+  const [selected, setSelected] = useState<PurchaseOrder | null>(null);
+  const [expandedStep, setExpandedStep] = useState<number | null>(null);
 
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-    setToast({ message, type }); setTimeout(() => setToast(null), 3500);
-  };
-
-  // ── Create modal ─────────────────────────────────────────────────────────
+  // Create modal
   const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({ leadId: '', amount: '', product: '', vendorName: '', vendorEmail: '', receivedDate: '', notes: '' });
+  const [createForm, setCreateForm] = useState({
+    leadId: '', vendorName: '', vendorEmail: '', receivedDate: '', notes: '', paymentTerms: '',
+  });
+  const [lineItems, setLineItems] = useState<Partial<POLineItem>[]>([{ product: '', quantity: 1, unitPrice: 0, amount: 0 }]);
   const [saving, setSaving] = useState(false);
 
-  // ── Edit modal ───────────────────────────────────────────────────────────
-  const [editTarget, setEditTarget]   = useState<PurchaseOrder | null>(null);
-  const [editForm, setEditForm]       = useState({ amount: '', product: '', vendorName: '', vendorEmail: '', notes: '', receivedDate: '' });
-  const [editSaving, setEditSaving]   = useState(false);
+  // Edit modal
+  const [editTarget, setEditTarget] = useState<PurchaseOrder | null>(null);
+  const [editForm, setEditForm] = useState({ vendorName: '', vendorEmail: '', notes: '', receivedDate: '', paymentTerms: '' });
+  const [editItems, setEditItems] = useState<Partial<POLineItem>[]>([]);
+  const [editSaving, setEditSaving] = useState(false);
 
-  // ── Send to ARK modal ────────────────────────────────────────────────────
-  const [sendTarget, setSendTarget]       = useState<PurchaseOrder | null>(null);
-  const [sendVendorEmail, setSendVendorEmail] = useState('');
-  const [sendVendorCc, setSendVendorCc]   = useState('');
-  const [sendVendorFile, setSendVendorFile] = useState<File | null>(null);
-  const [sending, setSending]             = useState(false);
-
-  // ── Delete ───────────────────────────────────────────────────────────────
+  // Delete
   const [deleteTarget, setDeleteTarget] = useState<PurchaseOrder | null>(null);
-  const [deleting, setDeleting]         = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
+  // Step 2 modal
+  const [step2Target, setStep2Target] = useState<PurchaseOrder | null>(null);
+  const [step2Form, setStep2Form] = useState({ arkEmail: '', arkName: '', docName: '' });
+  const [step2File, setStep2File] = useState<File | null>(null);
 
-  // ── Step 2: Send Invoice to Customer ────────────────────────────────────
-  const [custInvTarget, setCustInvTarget] = useState<PurchaseOrder | null>(null);
-  const [custInvEmail, setCustInvEmail]   = useState('');
-  const [custInvFile, setCustInvFile]     = useState<File | null>(null);
-  const [custInvBusy, setCustInvBusy]     = useState(false);
+  // Step 3 modal
+  const [step3Target, setStep3Target] = useState<PurchaseOrder | null>(null);
+  const [step3Files, setStep3Files] = useState<File[]>([]);
+  const [step3DocNames, setStep3DocNames] = useState('');
 
-  // ── Step 4: Price Clearance (manual mark) ───────────────────────────────
-  const [clearTarget, setClearTarget] = useState<PurchaseOrder | null>(null);
-  const [clearBusy, setClearBusy]     = useState(false);
+  // Step 4 modal
+  const [step4Target, setStep4Target] = useState<PurchaseOrder | null>(null);
+  const [step4Email, setStep4Email] = useState('');
+  const [step4Files, setStep4Files] = useState<File[]>([]);
 
-  // ── Step 5: Send PO to ARK (official) ───────────────────────────────────
-  const [sendArkTarget, setSendArkTarget]   = useState<PurchaseOrder | null>(null);
-  const [sendArkEmail, setSendArkEmail]     = useState('');
-  const [sendArkFile, setSendArkFile]       = useState<File | null>(null);
-  const [sendArkBusy, setSendArkBusy]       = useState(false);
+  // Step 5 modal
+  const [step5Target, setStep5Target] = useState<PurchaseOrder | null>(null);
+  const [step5Form, setStep5Form] = useState({ arkEmail: '', docName: '' });
+  const [step5File, setStep5File] = useState<File | null>(null);
 
-  // ── Step 6: ARK Invoice Received (manual mark) ──────────────────────────
-  const [arkInvTarget, setArkInvTarget]   = useState<PurchaseOrder | null>(null);
-  const [arkInvAmount, setArkInvAmount]   = useState('');
-  const [arkInvBusy, setArkInvBusy]       = useState(false);
+  // Step 6 modal
+  const [step6Target, setStep6Target] = useState<PurchaseOrder | null>(null);
+  const [step6Email, setStep6Email] = useState('');
+  const [step6Files, setStep6Files] = useState<File[]>([]);
 
-  // ── Convert to Account ───────────────────────────────────────────────────
-  const [convertTarget, setConvertTarget] = useState<PurchaseOrder | null>(null);
-  const [convertName, setConvertName]     = useState('');
-  const [convertBusy, setConvertBusy]     = useState(false);
+  // Step 7 modal
+  const [step7Target, setStep7Target] = useState<PurchaseOrder | null>(null);
 
-  // ─── Data loaders ─────────────────────────────────────────────────────────
+  // Step 8 modal
+  const [step8Target, setStep8Target] = useState<PurchaseOrder | null>(null);
+  const [step8Form, setStep8Form] = useState({ customerEmail: '', amount: '', convertToAccount: false, accountName: '' });
+  const [step8File, setStep8File] = useState<File | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const params: Record<string, unknown> = { page, limit: 15 };
       if (search) params.search = search;
+      if (typeof activeTab === 'number') params.step = activeTab;
       const res = await purchasesApi.getAll(params);
-      setOrders(mergeFlow(res.data || []));
+      setOrders(res.data || []);
       setTotal(res.pagination?.total ?? 0);
     } catch { setOrders([]); setTotal(0); }
     finally { setLoading(false); }
-  }, [page, search]);
+  }, [page, search, activeTab]);
 
   useEffect(() => { load(); }, [load]);
 
-  const openCreate = async () => {
-    try { const res = await leadsApi.getAll({ limit: 200 }); setLeads(res.data || []); } catch { setLeads([]); }
-    setCreateForm({ leadId: '', amount: '', product: '', vendorName: '', vendorEmail: '', receivedDate: new Date().toISOString().slice(0, 10), notes: '' });
-    setShowCreate(true);
+  const refreshSelected = async (id: string) => {
+    try {
+      const fresh = await purchasesApi.getById(id);
+      if (fresh) setSelected(fresh as PurchaseOrder);
+    } catch { /* ignore */ }
+    await load();
   };
 
-  const selectedLead = leads.find(l => l._id === createForm.leadId);
+  const act = async (fn: () => Promise<unknown>, successMsg: string, closeModal?: () => void) => {
+    setBusy(true);
+    try {
+      await fn();
+      if (selected) await refreshSelected(selected._id);
+      else await load();
+      showToast(successMsg);
+      closeModal?.();
+    } catch (e: any) {
+      showToast(e?.response?.data?.message || e?.message || 'Action failed', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openCreate = async () => {
+    try { const res = await leadsApi.getAll({ limit: 200 }); setLeads(res.data || []); } catch { setLeads([]); }
+    setCreateForm({ leadId: '', vendorName: '', vendorEmail: '', receivedDate: new Date().toISOString().slice(0, 10), notes: '', paymentTerms: '' });
+    setLineItems([{ product: '', quantity: 1, unitPrice: 0, amount: 0 }]);
+    setShowCreate(true);
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createForm.leadId) { showToast('Please select a customer', 'error'); return; }
+    const validItems = lineItems.filter(i => i.product?.trim());
+    if (validItems.length === 0) { showToast('Please add at least one product', 'error'); return; }
+    const hasPrice = validItems.every(i => (Number(i.unitPrice) || 0) > 0);
+    if (!hasPrice) { showToast('All items must have a unit price', 'error'); return; }
     setSaving(true);
     try {
-      await purchasesApi.create({ ...createForm, amount: Number(createForm.amount), receivedDate: createForm.receivedDate || new Date().toISOString().slice(0, 10) });
-      setShowCreate(false); showToast('Purchase order created'); load();
-    } catch (err: any) { showToast(err?.response?.data?.message || 'Failed to create PO', 'error'); }
-    finally { setSaving(false); }
+      await purchasesApi.create({
+        ...createForm,
+        items: validItems,
+        receivedDate: createForm.receivedDate || new Date().toISOString().slice(0, 10),
+      });
+      setShowCreate(false);
+      showToast('Purchase order created');
+      load();
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Failed to create PO', 'error');
+    } finally { setSaving(false); }
   };
 
   const openEdit = (po: PurchaseOrder) => {
     setEditTarget(po);
-    setEditForm({ amount: String(po.amount), product: po.product || '', vendorName: po.vendorName || '', vendorEmail: po.vendorEmail || '', notes: po.notes || '', receivedDate: po.receivedDate ? new Date(po.receivedDate).toISOString().slice(0, 10) : '' });
+    setEditForm({
+      vendorName: po.vendorName || '',
+      vendorEmail: po.vendorEmail || '',
+      notes: po.notes || '',
+      receivedDate: po.receivedDate ? new Date(po.receivedDate).toISOString().slice(0, 10) : '',
+      paymentTerms: po.paymentTerms || '',
+    });
+    setEditItems(
+      po.items && po.items.length > 0
+        ? po.items.map(i => ({ ...i }))
+        : [{ product: po.product || '', quantity: 1, unitPrice: po.amount, amount: po.amount }]
+    );
   };
 
   const handleEdit = async (e: React.FormEvent) => {
@@ -220,301 +388,440 @@ export default function PurchasesPage() {
     if (!editTarget) return;
     setEditSaving(true);
     try {
-      await purchasesApi.update(editTarget._id, { ...editForm, amount: Number(editForm.amount), receivedDate: editForm.receivedDate || editTarget.receivedDate });
-      setEditTarget(null); showToast('Updated successfully'); load();
-    } catch (err: any) { showToast(err?.response?.data?.message || 'Failed to update', 'error'); }
-    finally { setEditSaving(false); }
+      const validItems = editItems.filter(i => i.product?.trim());
+      await purchasesApi.update(editTarget._id, {
+        ...editForm,
+        items: validItems.length > 0 ? validItems : undefined,
+      });
+      setEditTarget(null);
+      showToast('Updated successfully');
+      if (selected?._id === editTarget._id) await refreshSelected(editTarget._id);
+      else load();
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Failed to update', 'error');
+    } finally { setEditSaving(false); }
   };
-
-  const openSendModal = (po: PurchaseOrder) => { setSendTarget(po); setSendVendorEmail(po.vendorEmail || ''); setSendVendorCc(''); };
-
-  const handleSendToArk = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!sendTarget || !sendVendorEmail.trim()) { showToast('Please enter ARK email', 'error'); return; }
-    setSending(true);
-    try {
-      await purchasesApi.forwardToArk(sendTarget._id, sendVendorEmail.trim(), sendTarget.vendorName, sendVendorCc.trim() || undefined, sendVendorFile || undefined);
-      const flowData: FlowData = { poForwardedToArk: true, poForwardedToArkAt: new Date().toISOString() };
-      saveFlow(sendTarget._id, flowData);
-      setSendTarget(null); setSendVendorFile(null); showToast('PO forwarded to ARK');
-      setOrders(prev => mergeFlow(prev.map(o => o._id === sendTarget._id ? { ...o, ...flowData } : o)));
-    } catch (err: any) { showToast(err?.response?.data?.message || 'Failed to send', 'error'); }
-    finally { setSending(false); }
-  };
-
-  const downloadInvoice = (po: PurchaseOrder) => {
-    const doc = new jsPDF();
-    const lead = po.leadId as Lead;
-    const pageW = doc.internal.pageSize.getWidth();
-
-    // ── Header band ──────────────────────────────────────────────────────────
-    doc.setFillColor(109, 40, 217); // violet-700
-    doc.rect(0, 0, pageW, 38, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(22);
-    doc.setFont('helvetica', 'bold');
-    doc.text('INVOICE', 14, 18);
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text('ZIEOS', 14, 28);
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'bold');
-    doc.text(po.poInvoiceNumber || 'INV-DRAFT', pageW - 14, 18, { align: 'right' });
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.text(`Date: ${po.invoiceGeneratedAt ? new Date(po.invoiceGeneratedAt).toLocaleDateString('en-IN') : new Date().toLocaleDateString('en-IN')}`, pageW - 14, 28, { align: 'right' });
-
-    doc.setTextColor(30, 30, 30);
-
-    // ── Bill To ───────────────────────────────────────────────────────────────
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(109, 40, 217);
-    doc.text('BILL TO', 14, 52);
-    doc.setTextColor(30, 30, 30);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text(lead?.companyName || '—', 14, 60);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    if (lead?.contactPersonName) doc.text(lead.contactPersonName, 14, 67);
-    if (lead?.email) doc.text(lead.email, 14, 73);
-
-    // ── PO Reference ─────────────────────────────────────────────────────────
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(109, 40, 217);
-    doc.text('PO REFERENCE', pageW - 80, 52);
-    doc.setTextColor(30, 30, 30);
-    doc.setFont('helvetica', 'normal');
-    doc.text(po.poNumber, pageW - 80, 60);
-    doc.text(`Received: ${new Date(po.receivedDate).toLocaleDateString('en-IN')}`, pageW - 80, 67);
-    if (po.vendorName) doc.text(`ARK / Vendor: ${po.vendorName}`, pageW - 80, 74);
-
-    // ── Divider ───────────────────────────────────────────────────────────────
-    doc.setDrawColor(220, 220, 230);
-    doc.line(14, 82, pageW - 14, 82);
-
-    // ── Table header ─────────────────────────────────────────────────────────
-    doc.setFillColor(245, 243, 255); // violet-50
-    doc.rect(14, 86, pageW - 28, 10, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(109, 40, 217);
-    doc.text('DESCRIPTION', 18, 93);
-    doc.text('AMOUNT', pageW - 18, 93, { align: 'right' });
-
-    // ── Line item ─────────────────────────────────────────────────────────────
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(30, 30, 30);
-    doc.setFontSize(10);
-    doc.text(po.product || 'Product / Service', 18, 107);
-    if (po.notes) { doc.setFontSize(8); doc.setTextColor(100, 100, 100); doc.text(po.notes, 18, 114); }
-    doc.setFontSize(10);
-    doc.setTextColor(30, 30, 30);
-    doc.text(`Rs. ${(po.invoiceAmount ?? po.amount).toLocaleString('en-IN')}`, pageW - 18, 107, { align: 'right' });
-
-    // ── Divider ───────────────────────────────────────────────────────────────
-    doc.setDrawColor(220, 220, 230);
-    doc.line(14, 122, pageW - 14, 122);
-
-    // ── Total ─────────────────────────────────────────────────────────────────
-    doc.setFillColor(109, 40, 217);
-    doc.rect(pageW - 80, 126, 66, 14, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text('TOTAL', pageW - 76, 135);
-    doc.text(`Rs. ${(po.invoiceAmount ?? po.amount).toLocaleString('en-IN')}`, pageW - 18, 135, { align: 'right' });
-
-    // ── License info ─────────────────────────────────────────────────────────
-    if (po.licenseKey || po.licenseFile) {
-      doc.setTextColor(30, 30, 30);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(109, 40, 217);
-      doc.text('LICENSE DETAILS', 14, 152);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(30, 30, 30);
-      if (po.licenseKey)  doc.text(`License Key: ${po.licenseKey}`, 14, 160);
-      if (po.licenseFile) doc.text(`License File: ${po.licenseFile}`, 14, 167);
-    }
-
-    // ── Footer ────────────────────────────────────────────────────────────────
-    const footerY = doc.internal.pageSize.getHeight() - 18;
-    doc.setFillColor(245, 243, 255);
-    doc.rect(0, footerY - 8, pageW, 26, 'F');
-    doc.setTextColor(109, 40, 217);
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Thank you for your business  •  ZIEOS', pageW / 2, footerY, { align: 'center' });
-    doc.setTextColor(150, 150, 180);
-    doc.text(`Generated on ${new Date().toLocaleString('en-IN')}`, pageW / 2, footerY + 6, { align: 'center' });
-
-    doc.save(`${po.poInvoiceNumber || po.poNumber}-invoice.pdf`);
-  };
-
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setDeleting(true);
-    try { await purchasesApi.delete(deleteTarget._id); setOrders(p => p.filter(o => o._id !== deleteTarget._id)); setTotal(p => p - 1); setDeleteTarget(null); }
-    catch (err: any) { showToast(err?.response?.data?.message || 'Failed to delete', 'error'); }
+    try {
+      await purchasesApi.delete(deleteTarget._id);
+      setOrders(p => p.filter(o => o._id !== deleteTarget._id));
+      setTotal(p => p - 1);
+      setDeleteTarget(null);
+      if (selected?._id === deleteTarget._id) setSelected(null);
+    } catch (err: any) { showToast(err?.response?.data?.message || 'Failed to delete', 'error'); }
     finally { setDeleting(false); }
   };
 
-  const openSyncModal = () => {
-    setSyncResults([]); setSyncScanned(null); setSyncError('');
-    setSyncExpanded({}); setSyncImported({}); setSyncImportErr({});
-    setShowSyncModal(true);
-  };
-
-  const handleSyncEmails = async () => {
-    setSyncing(true); setSyncError(''); setSyncResults([]); setSyncScanned(null);
-    try {
-      const data = await poSyncApi.scan(syncDays);
-      setSyncResults(data.detected);
-      setSyncScanned(data.emailsScanned);
-      // Pre-fill forms
-      const forms: typeof syncForms = {};
-      data.detected.forEach((d, i) => {
-        const key = `${d.emailUid}-${i}`;
-        forms[key] = {
-          leadId:       d.suggestedLeadId || '',
-          poNumber:     d.extracted.poNumber || '',
-          amount:       d.extracted.amount?.toString() || '',
-          vendorName:   d.extracted.vendorName || d.emailFrom || '',
-          vendorEmail:  d.extracted.vendorEmail || d.emailFromEmail || '',
-          product:      d.extracted.product || '',
-          receivedDate: d.emailDate?.split('T')[0] || new Date().toISOString().split('T')[0],
-          paymentTerms: d.extracted.paymentTerms || '',
-          notes:        '',
-        };
-      });
-      setSyncForms(forms);
-      if (leads.length === 0) {
-        try { const r = await leadsApi.getAll({ limit: 500 }); setLeads(r.data || []); } catch { /* ignore */ }
-      }
-    } catch (e: any) {
-      setSyncError(e?.response?.data?.message || e?.message || 'Scan failed — check your email is configured in Profile');
-    } finally { setSyncing(false); }
-  };
-
-  const handleSyncImport = async (key: string) => {
-    const f = syncForms[key];
-    if (!f?.leadId) { setSyncImportErr(p => ({ ...p, [key]: 'Select a lead' })); return; }
-    if (!f?.amount || Number(f.amount) <= 0) { setSyncImportErr(p => ({ ...p, [key]: 'Valid amount required' })); return; }
-    setSyncImporting(p => ({ ...p, [key]: true })); setSyncImportErr(p => ({ ...p, [key]: '' }));
-    try {
-      await poSyncApi.importPO({
-        leadId: f.leadId, poNumber: f.poNumber || undefined, amount: Number(f.amount),
-        vendorName: f.vendorName || undefined, vendorEmail: f.vendorEmail || undefined,
-        product: f.product || undefined, receivedDate: f.receivedDate || undefined,
-        paymentTerms: f.paymentTerms || undefined, notes: f.notes || undefined,
-      });
-      setSyncImported(p => ({ ...p, [key]: true }));
-      showToast('PO imported successfully');
-      load();
-    } catch (e: any) {
-      setSyncImportErr(p => ({ ...p, [key]: e?.response?.data?.message || 'Import failed' }));
-    } finally { setSyncImporting(p => ({ ...p, [key]: false })); }
-  };
-
-  // ── Step 2: Send Invoice to Customer ─────────────────────────────────────
-  const handleSendCustomerInvoice = async (e: React.FormEvent) => {
+  // ── Step Action handlers ──────────────────────────────────────────────────
+  const handleStep2 = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!custInvTarget || !custInvEmail.trim()) { showToast('Customer email required', 'error'); return; }
-    setCustInvBusy(true);
-    try {
-      await purchasesApi.sendCustomerInvoice(custInvTarget._id, custInvEmail.trim(), undefined, custInvFile || undefined);
-      const flowData: FlowData = { customerInvoiceSent: true, customerInvoiceSentAt: new Date().toISOString() };
-      saveFlow(custInvTarget._id, flowData);
-      setOrders(prev => mergeFlow(prev.map(o => o._id === custInvTarget._id ? { ...o, ...flowData } : o)));
-      setCustInvTarget(null); setCustInvFile(null); showToast('Invoice sent to customer');
-    } catch (err: any) { showToast(err?.response?.data?.message || 'Failed', 'error'); }
-    finally { setCustInvBusy(false); }
+    if (!step2Target || !step2Form.arkEmail.trim()) { showToast('ARK email required', 'error'); return; }
+    await act(
+      () => purchasesApi.step2ForwardToArk(step2Target._id, step2Form.arkEmail, step2Form.arkName || undefined, step2File || undefined, undefined, step2Form.docName || undefined),
+      'PO forwarded to ARK',
+      () => { setStep2Target(null); setStep2File(null); setStep2Form({ arkEmail: '', arkName: '', docName: '' }); }
+    );
   };
 
-  // ── Step 4: Mark Price Clearance ─────────────────────────────────────────
-  const handleMarkPriceClearance = async () => {
-    if (!clearTarget) return;
-    setClearBusy(true);
-    try {
-      await purchasesApi.markPriceClearance(clearTarget._id);
-      const flowData: FlowData = { priceClearanceReceived: true, priceClearanceReceivedAt: new Date().toISOString() };
-      saveFlow(clearTarget._id, flowData);
-      setOrders(prev => mergeFlow(prev.map(o => o._id === clearTarget._id ? { ...o, ...flowData } : o)));
-      setClearTarget(null); showToast('Price clearance marked');
-    } catch { showToast('Failed', 'error'); }
-    finally { setClearBusy(false); }
+  const handleStep3 = async () => {
+    if (!step3Target) return;
+    const names = step3DocNames.split(',').map(s => s.trim()).filter(Boolean);
+    await act(
+      () => purchasesApi.step3PriceClearance(step3Target._id, step3Files.length ? step3Files : undefined, names.length ? names : undefined),
+      'Price clearance marked',
+      () => { setStep3Target(null); setStep3Files([]); setStep3DocNames(''); }
+    );
   };
 
-  // ── Step 5: Send PO to ARK ───────────────────────────────────────────────
-  const handleSendPoToArk = async (e: React.FormEvent) => {
+  const handleStep4 = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!sendArkTarget || !sendArkEmail.trim()) { showToast('ARK email required', 'error'); return; }
-    setSendArkBusy(true);
-    try {
-      await purchasesApi.sendPoToArk(sendArkTarget._id, sendArkEmail.trim(), undefined, sendArkFile || undefined);
-      const flowData: FlowData = { poSentToArk: true, poSentToArkAt: new Date().toISOString() };
-      saveFlow(sendArkTarget._id, flowData);
-      setOrders(prev => mergeFlow(prev.map(o => o._id === sendArkTarget._id ? { ...o, ...flowData } : o)));
-      setSendArkTarget(null); setSendArkFile(null); showToast('PO sent to ARK');
-    } catch (err: any) { showToast(err?.response?.data?.message || 'Failed', 'error'); }
-    finally { setSendArkBusy(false); }
+    if (!step4Target || !step4Email.trim()) { showToast('Customer email required', 'error'); return; }
+    await act(
+      () => purchasesApi.step4SendDocsToCustomer(step4Target._id, step4Email, step4Files.length ? step4Files : undefined),
+      'Documents sent to customer',
+      () => { setStep4Target(null); setStep4Files([]); setStep4Email(''); }
+    );
   };
 
-  // ── Step 6: Mark ARK Invoice Received ────────────────────────────────────
-  const handleMarkArkInvoice = async (e: React.FormEvent) => {
+  const handleStep5 = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!arkInvTarget) return;
-    setArkInvBusy(true);
-    try {
-      await purchasesApi.markArkInvoice(arkInvTarget._id, arkInvAmount ? Number(arkInvAmount) : undefined);
-      const flowData: FlowData = { arkInvoiceReceived: true, arkInvoiceReceivedAt: new Date().toISOString(), ...(arkInvAmount ? { arkInvoiceAmount: Number(arkInvAmount) } : {}) };
-      saveFlow(arkInvTarget._id, flowData);
-      setOrders(prev => mergeFlow(prev.map(o => o._id === arkInvTarget._id ? { ...o, ...flowData } : o)));
-      setArkInvTarget(null); showToast('ARK invoice marked as received');
-    } catch { showToast('Failed', 'error'); }
-    finally { setArkInvBusy(false); }
+    if (!step5Target || !step5Form.arkEmail.trim()) { showToast('ARK email required', 'error'); return; }
+    await act(
+      () => purchasesApi.step5InvoiceToArk(step5Target._id, step5Form.arkEmail, step5File || undefined, step5Form.docName || undefined),
+      'Invoice sent to ARK',
+      () => { setStep5Target(null); setStep5File(null); setStep5Form({ arkEmail: '', docName: '' }); }
+    );
   };
 
-  // ── Convert to Account handler ────────────────────────────────────────────
-  const handleConvertToAccount = async (e: React.FormEvent) => {
+  const handleStep6 = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!convertTarget) return;
-    setConvertBusy(true);
-    try {
-      const leadId = typeof convertTarget.leadId === 'string' ? convertTarget.leadId : (convertTarget.leadId as Lead)._id;
-      await accountsApi.convert({ leadId, accountName: convertName.trim() || ((convertTarget.leadId as Lead)?.companyName ?? '') });
-      setOrders(prev => prev.map(o => o._id === convertTarget._id ? { ...o, converted: true } : o));
-      setConvertTarget(null);
-      showToast('Converted to account successfully');
-    } catch (err: any) { showToast(err?.response?.data?.message || 'Failed to convert', 'error'); }
-    finally { setConvertBusy(false); }
+    if (!step6Target || !step6Email.trim()) { showToast('ARK email required', 'error'); return; }
+    await act(
+      () => purchasesApi.step6SendDocsToArk(step6Target._id, step6Email, step6Files.length ? step6Files : undefined),
+      'Documents sent to ARK',
+      () => { setStep6Target(null); setStep6Files([]); setStep6Email(''); }
+    );
   };
 
-  const phaseOrders = (phase: number) => orders.filter(o => getPoStep(o) === phase);
+  const handleStep7 = async () => {
+    if (!step7Target) return;
+    await act(
+      () => purchasesApi.step7LicenseReceived(step7Target._id),
+      'License generation mail marked as received',
+      () => setStep7Target(null)
+    );
+  };
 
-  // ─── RENDER ───────────────────────────────────────────────────────────────
+  const handleStep8 = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!step8Target || !step8Form.customerEmail.trim()) { showToast('Customer email required', 'error'); return; }
+    if (!step8Form.amount || Number(step8Form.amount) <= 0) { showToast('Invoice amount required', 'error'); return; }
+    await act(
+      () => purchasesApi.step8FinalInvoice(
+        step8Target._id,
+        step8Form.customerEmail,
+        Number(step8Form.amount),
+        step8Form.convertToAccount,
+        step8Form.accountName || undefined,
+        step8File || undefined,
+      ),
+      step8Form.convertToAccount ? 'Final invoice sent & customer converted to account!' : 'Final invoice sent to customer',
+      () => { setStep8Target(null); setStep8File(null); setStep8Form({ customerEmail: '', amount: '', convertToAccount: false, accountName: '' }); }
+    );
+  };
+
+  // ── Step action button (on list row) ─────────────────────────────────────
+  function StepActionButton({ po }: { po: PurchaseOrder }) {
+    const step = po.currentStep || 1;
+    const completed = po.workflowStatus === 'Completed';
+    if (completed || !canEdit) return null;
+
+    switch (step) {
+      case 1: return (
+        <button onClick={e => { e.stopPropagation(); setStep2Target(po); setStep2Form({ arkEmail: po.vendorEmail || '', arkName: po.vendorName || '', docName: '' }); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
+          <Send size={11} />Forward to ARK
+        </button>
+      );
+      case 2: return (
+        <button onClick={e => { e.stopPropagation(); setStep2Target(po); setStep2Form({ arkEmail: po.vendorEmail || '', arkName: po.vendorName || '', docName: '' }); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
+          <Send size={11} />Forward to ARK
+        </button>
+      );
+      case 3: return (
+        <button onClick={e => { e.stopPropagation(); setStep3Target(po); setStep3Files([]); setStep3DocNames(''); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
+          <Mail size={11} />Mark Clearance
+        </button>
+      );
+      case 4: return (
+        <button onClick={e => { e.stopPropagation(); setStep4Target(po); setStep4Email((po.leadId as Lead)?.email || ''); setStep4Files([]); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
+          <FileText size={11} />Send Docs
+        </button>
+      );
+      case 5: return (
+        <button onClick={e => { e.stopPropagation(); setStep5Target(po); setStep5Form({ arkEmail: po.vendorEmail || '', docName: '' }); setStep5File(null); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
+          <Receipt size={11} />Invoice to ARK
+        </button>
+      );
+      case 6: return (
+        <button onClick={e => { e.stopPropagation(); setStep6Target(po); setStep6Email(po.vendorEmail || ''); setStep6Files([]); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
+          <Upload size={11} />Docs to ARK
+        </button>
+      );
+      case 7: return (
+        <button onClick={e => { e.stopPropagation(); setStep7Target(po); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
+          <Key size={11} />Mark License
+        </button>
+      );
+      case 8: return po.step8FinalInvoiceSent ? (
+        !po.converted ? (
+          <button onClick={e => { e.stopPropagation(); accountsApi.convert({ leadId: typeof po.leadId === 'string' ? po.leadId : (po.leadId as Lead)._id, accountName: (po.leadId as Lead)?.companyName || '' }).then(() => { showToast('Converted to account'); load(); }).catch(() => showToast('Failed', 'error')); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
+            <Building2 size={11} />Convert to Account
+          </button>
+        ) : (
+          <span className="badge bg-emerald-100 text-emerald-700 text-xs px-2 py-1 whitespace-nowrap">✓ Completed</span>
+        )
+      ) : (
+        <button onClick={e => { e.stopPropagation(); setStep8Target(po); setStep8Form({ customerEmail: (po.leadId as Lead)?.email || '', amount: String(po.amount), convertToAccount: false, accountName: (po.leadId as Lead)?.companyName || '' }); setStep8File(null); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
+          <Receipt size={11} />Final Invoice
+        </button>
+      );
+      default: return null;
+    }
+  }
+
+  // ── Step detail panel inside modal ────────────────────────────────────────
+  function StepDetail({ po }: { po: PurchaseOrder }) {
+    const step = po.currentStep || 1;
+    const completed = po.workflowStatus === 'Completed';
+
+    function StepRow({ num, label, done, active, extra }: { num: number; label: string; done: boolean; active: boolean; extra?: React.ReactNode }) {
+      const open = expandedStep === num;
+      return (
+        <div>
+          <button
+            onClick={() => setExpandedStep(prev => prev === num ? null : num)}
+            className={cn(
+              'w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all text-left',
+              done ? 'bg-emerald-50 border-emerald-200' :
+              active ? 'bg-violet-50 border-violet-200' :
+              'bg-white border-gray-200 hover:border-gray-300'
+            )}
+          >
+            <div className="flex items-center gap-3">
+              <span className={cn('w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0',
+                done ? 'bg-emerald-500 text-white' : active ? 'bg-violet-600 text-white' : 'bg-gray-200 text-gray-500'
+              )}>
+                {done ? '✓' : num}
+              </span>
+              <span className="font-medium text-sm text-gray-800">{label}</span>
+              {done && <span className="badge bg-emerald-100 text-emerald-700 text-xs">Done</span>}
+              {active && !done && <span className="badge bg-violet-100 text-violet-700 text-xs">Active</span>}
+            </div>
+            {open ? <ChevronUp size={15} className="text-gray-400" /> : <ChevronDown size={15} className="text-gray-400" />}
+          </button>
+          {open && extra && (
+            <div className="mt-1 ml-2 p-4 bg-white border border-gray-100 rounded-xl space-y-2">
+              {extra}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-2">
+        <StepRow num={1} label="PO Added" done={step > 1 || completed} active={step === 1}
+          extra={
+            <div className="text-sm space-y-1">
+              <p className="text-gray-500 text-xs">PO received and added to the system.</p>
+              {po.items && po.items.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs border rounded-lg overflow-hidden">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-semibold text-gray-500">Product</th>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-500">Qty</th>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-500">Unit Price</th>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-500">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {po.items.map((it, i) => (
+                        <tr key={i}>
+                          <td className="px-3 py-2">{it.product}</td>
+                          <td className="px-3 py-2 text-right">{it.quantity}</td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(it.unitPrice)}</td>
+                          <td className="px-3 py-2 text-right font-medium">{formatCurrency(it.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-violet-50 border-t border-violet-200">
+                      <tr><td colSpan={3} className="px-3 py-2 font-semibold text-violet-700 text-xs">Total</td><td className="px-3 py-2 text-right font-bold text-violet-700">{formatCurrency(po.amount)}</td></tr>
+                    </tfoot>
+                  </table>
+                </div>
+              ) : (
+                <p><strong>Product:</strong> {po.product || '—'} · <strong>Amount:</strong> {formatCurrency(po.amount)}</p>
+              )}
+              {canEdit && step === 1 && (
+                <button onClick={() => { setExpandedStep(null); setStep2Target(po); setStep2Form({ arkEmail: po.vendorEmail || '', arkName: po.vendorName || '', docName: '' }); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 w-fit">
+                  <Send size={11} />Forward to ARK
+                </button>
+              )}
+            </div>
+          }
+        />
+
+        <StepRow num={2} label="Forward PO to ARK" done={po.step2ForwardedToArk || step > 2 || completed} active={step === 2}
+          extra={
+            <div className="text-sm space-y-2">
+              {po.step2ForwardedToArk ? (
+                <>
+                  <p className="text-emerald-600 text-xs flex items-center gap-1"><CheckCircle size={12} /> Forwarded on {formatDate(po.step2ForwardedAt!)}</p>
+                  {po.step2PoDocName && <p className="text-xs text-gray-500">Document: {po.step2PoDocName}</p>}
+                  <p className="text-xs text-gray-500">Sent to: {po.vendorEmail}</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-gray-500">Upload PO document and send to ARK (OEM) for price clearance.</p>
+                  {canEdit && step <= 2 && (
+                    <button onClick={() => { setExpandedStep(null); setStep2Target(po); setStep2Form({ arkEmail: po.vendorEmail || '', arkName: po.vendorName || '', docName: '' }); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 w-fit">
+                      <Send size={11} />Forward to ARK
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          }
+        />
+
+        <StepRow num={3} label="ARK Response — Price Clearance" done={po.step3PriceClearanceReceived || step > 3 || completed} active={step === 3}
+          extra={
+            <div className="text-sm space-y-2">
+              {po.step3PriceClearanceReceived ? (
+                <>
+                  <p className="text-emerald-600 text-xs flex items-center gap-1"><CheckCircle size={12} /> Price clearance received on {formatDate(po.step3ReceivedAt!)}</p>
+                  {po.step3DocNames && po.step3DocNames.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {po.step3DocNames.map(d => <span key={d} className="badge bg-blue-50 text-blue-700 text-xs">{d}</span>)}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-gray-500">Upload received ARK documents and mark price clearance as received.</p>
+                  {canEdit && step === 3 && (
+                    <button onClick={() => { setExpandedStep(null); setStep3Target(po); setStep3Files([]); setStep3DocNames(''); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 w-fit">
+                      <Mail size={11} />Mark Price Clearance
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          }
+        />
+
+        <StepRow num={4} label="Send Documents to Customer" done={po.step4DocsSentToCustomer || step > 4 || completed} active={step === 4}
+          extra={
+            <div className="text-sm space-y-2">
+              {po.step4DocsSentToCustomer ? (
+                <p className="text-emerald-600 text-xs flex items-center gap-1"><CheckCircle size={12} /> Documents sent on {formatDate(po.step4SentAt!)}</p>
+              ) : (
+                <>
+                  <p className="text-xs text-gray-500">Upload and forward all received ARK documents to the customer.</p>
+                  {canEdit && step === 4 && (
+                    <button onClick={() => { setExpandedStep(null); setStep4Target(po); setStep4Email((po.leadId as Lead)?.email || ''); setStep4Files([]); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 w-fit">
+                      <FileText size={11} />Send Docs to Customer
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          }
+        />
+
+        <StepRow num={5} label="Invoice to ARK" done={po.step5InvoiceToArk || step > 5 || completed} active={step === 5}
+          extra={
+            <div className="text-sm space-y-2">
+              {po.step5InvoiceToArk ? (
+                <>
+                  <p className="text-emerald-600 text-xs flex items-center gap-1"><CheckCircle size={12} /> Invoice sent on {formatDate(po.step5InvoiceSentAt!)}</p>
+                  {po.step5InvoiceDocName && <p className="text-xs text-gray-500">Invoice doc: {po.step5InvoiceDocName}</p>}
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-gray-500">Upload invoice and send to ARK (OEM).</p>
+                  {canEdit && step === 5 && (
+                    <button onClick={() => { setExpandedStep(null); setStep5Target(po); setStep5Form({ arkEmail: po.vendorEmail || '', docName: '' }); setStep5File(null); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 w-fit">
+                      <Receipt size={11} />Send Invoice to ARK
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          }
+        />
+
+        <StepRow num={6} label="Send Documents to ARK" done={po.step6DocsSentToArk || step > 6 || completed} active={step === 6}
+          extra={
+            <div className="text-sm space-y-2">
+              {po.step6DocsSentToArk ? (
+                <p className="text-emerald-600 text-xs flex items-center gap-1"><CheckCircle size={12} /> Customer docs sent to ARK on {formatDate(po.step6SentAt!)}</p>
+              ) : (
+                <>
+                  <p className="text-xs text-gray-500">Upload and send completed customer documents to ARK.</p>
+                  {canEdit && step === 6 && (
+                    <button onClick={() => { setExpandedStep(null); setStep6Target(po); setStep6Email(po.vendorEmail || ''); setStep6Files([]); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 w-fit">
+                      <Upload size={11} />Send Docs to ARK
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          }
+        />
+
+        <StepRow num={7} label="License Generation" done={po.step7LicenseMailReceived || step > 7 || completed} active={step === 7}
+          extra={
+            <div className="text-sm space-y-2">
+              {po.step7LicenseMailReceived ? (
+                <p className="text-emerald-600 text-xs flex items-center gap-1"><CheckCircle size={12} /> License mail received on {formatDate(po.step7LicenseMailReceivedAt!)}</p>
+              ) : (
+                <>
+                  <p className="text-xs text-gray-500">Manually mark when the license generation mail is received from ARK.</p>
+                  {canEdit && step === 7 && (
+                    <button onClick={() => { setExpandedStep(null); setStep7Target(po); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 w-fit">
+                      <Key size={11} />Mark License Mail Received
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          }
+        />
+
+        <StepRow num={8} label="Final Invoice" done={po.step8FinalInvoiceSent || completed} active={step === 8 && !po.step8FinalInvoiceSent}
+          extra={
+            <div className="text-sm space-y-2">
+              {po.step8FinalInvoiceSent ? (
+                <>
+                  <p className="text-emerald-600 text-xs flex items-center gap-1"><CheckCircle size={12} /> Final invoice sent on {formatDate(po.step8FinalInvoiceSentAt!)}</p>
+                  {po.step8FinalInvoiceNumber && <p className="text-xs text-gray-500">Invoice#: {po.step8FinalInvoiceNumber} · Amount: {formatCurrency(po.step8FinalInvoiceAmount || po.amount)}</p>}
+                  {!po.converted && canEdit && (
+                    <button
+                      onClick={() => accountsApi.convert({ leadId: typeof po.leadId === 'string' ? po.leadId : (po.leadId as Lead)._id, accountName: (po.leadId as Lead)?.companyName || '' })
+                        .then(() => { showToast('Converted to account'); refreshSelected(po._id); })
+                        .catch(() => showToast('Failed', 'error'))
+                      }
+                      className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 w-fit"
+                    >
+                      <Building2 size={11} />Convert to Account
+                    </button>
+                  )}
+                  {po.converted && <span className="badge bg-emerald-100 text-emerald-700 text-xs">✓ Customer Converted to Account</span>}
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-gray-500">Generate and send final invoice to customer. Optionally convert customer to Account.</p>
+                  {canEdit && step === 8 && (
+                    <button onClick={() => { setExpandedStep(null); setStep8Target(po); setStep8Form({ customerEmail: (po.leadId as Lead)?.email || '', amount: String(po.amount), convertToAccount: false, accountName: (po.leadId as Lead)?.companyName || '' }); setStep8File(null); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 w-fit">
+                      <Receipt size={11} />Generate Final Invoice
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          }
+        />
+      </div>
+    );
+  }
+
+  // ─── Tab counts ─────────────────────────────────────────────────────────────
+  const tabCount = (s: number) => orders.filter(o => (o.currentStep || 1) === s).length;
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6 animate-fade-in">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="page-header">Purchase Orders</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{total} total</p>
+          <p className="text-sm text-gray-500 mt-0.5">{total} total · 8-step workflow</p>
         </div>
-        <div className="flex items-center gap-2">
-          {canEdit && (
-            <button onClick={openCreate} className="btn-primary flex items-center gap-2"><Plus size={16} /> Add PO</button>
-          )}
-        </div>
+        {canEdit && (
+          <button onClick={openCreate} className="btn-primary flex items-center gap-2">
+            <Plus size={16} />Add PO
+          </button>
+        )}
       </div>
 
-      {/* ── Phase pills ──────────────────────────────────────────────────────── */}
+      {/* Step filter tabs */}
       <div className="flex items-center gap-2 flex-wrap">
         <button
           onClick={() => setActiveTab('all')}
@@ -522,147 +829,88 @@ export default function PurchasesPage() {
             activeTab === 'all' ? 'bg-violet-600 text-white border-violet-600 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-violet-300 hover:text-violet-700'
           )}
         >
-          All
-          <span className={cn('text-xs px-1.5 py-0.5 rounded-full font-bold', activeTab === 'all' ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600')}>
-            {orders.length}
-          </span>
+          All <span className={cn('text-xs px-1.5 py-0.5 rounded-full font-bold', activeTab === 'all' ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600')}>{orders.length}</span>
         </button>
-        {FLOW_STEPS.map((s, i) => {
-          const count = phaseOrders(s.num).length;
-          const active = activeTab === String(s.num);
+        {STEPS.map((s, i) => {
+          const active = activeTab === s.num;
+          const cnt = tabCount(s.num);
           return (
             <div key={s.num} className="flex items-center gap-1.5">
-              {i > 0 && <span className="text-gray-300 text-sm">→</span>}
+              {i > 0 && <span className="text-gray-300 text-sm">›</span>}
               <button
-                onClick={() => setActiveTab(String(s.num))}
-                className={cn('flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all',
+                onClick={() => setActiveTab(s.num)}
+                className={cn('flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium transition-all',
                   active ? 'bg-violet-600 text-white border-violet-600 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-violet-300 hover:text-violet-700'
                 )}
               >
-                <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0',
+                <span className={cn('w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold',
                   active ? 'bg-white/20 text-white' : 'bg-violet-100 text-violet-700'
                 )}>{s.num}</span>
-                {s.label}
-                {count > 0 && (
-                  <span className={cn('text-xs px-1.5 py-0.5 rounded-full font-bold', active ? 'bg-white/20 text-white' : 'bg-violet-100 text-violet-700')}>
-                    {count}
-                  </span>
-                )}
+                {s.short}
+                {cnt > 0 && <span className={cn('text-[10px] px-1 py-0.5 rounded-full font-bold', active ? 'bg-white/20 text-white' : 'bg-violet-100 text-violet-700')}>{cnt}</span>}
               </button>
             </div>
           );
         })}
       </div>
 
-      {/* ── Search ───────────────────────────────────────────────────────────── */}
+      {/* Search */}
       <div className="relative max-w-xs">
         <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
-        <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search PO number, product…" className="input-field pl-9" />
+        <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search PO, customer, product…" className="input-field pl-9" />
       </div>
 
-      {/* ── Table ────────────────────────────────────────────────────────────── */}
+      {/* Table */}
       <div className="glass-card !p-0 overflow-hidden">
         {loading ? <LoadingSpinner className="h-48" /> : (() => {
-          const visible = activeTab === 'all' ? orders : orders.filter(o => getPoStep(o) === Number(activeTab));
-          const filtered = search ? visible.filter(o =>
-            o.poNumber?.toLowerCase().includes(search.toLowerCase()) ||
-            (o.product || '').toLowerCase().includes(search.toLowerCase()) ||
-            ((o.leadId as Lead)?.companyName || '').toLowerCase().includes(search.toLowerCase())
-          ) : visible;
-
-          if (filtered.length === 0) return (
+          const visible = activeTab === 'all' ? orders : orders.filter(o => (o.currentStep || 1) === activeTab);
+          if (visible.length === 0) return (
             <div className="text-center text-gray-400 py-16">
-              {search ? 'No matching purchase orders' : activeTab === 'all' ? 'No purchase orders yet. Click "Add PO" to create one.' : `No POs in phase ${activeTab}`}
+              {activeTab === 'all' ? 'No purchase orders yet. Click "Add PO" to get started.' : `No POs at step ${activeTab}`}
             </div>
           );
-
           return (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
-                    {['PO Number', 'Customer', 'Product', 'ARK / Vendor', 'Amount', 'Received', 'Phase', 'Action', ''].map(h => (
+                    {['PO Number', 'Customer', 'Products', 'ARK / OEM', 'Amount', 'Received', 'Step', 'Action', ''].map(h => (
                       <th key={h} className="table-header">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {filtered.map(po => {
-                    const step = getPoStep(po);
+                  {visible.map(po => {
+                    const step = po.currentStep || 1;
+                    const completed = po.workflowStatus === 'Completed';
                     return (
-                      <tr key={po._id} className="hover:bg-violet-50/20 transition-colors">
+                      <tr key={po._id} className="hover:bg-violet-50/20 transition-colors cursor-pointer" onClick={() => { setSelected(po); setExpandedStep(step); }}>
                         <td className="table-cell font-mono font-medium text-violet-700">{po.poNumber}</td>
                         <td className="table-cell">
                           <p className="font-medium text-gray-800">{(po.leadId as Lead)?.companyName || '—'}</p>
                           {(po.leadId as Lead)?.contactPersonName && <p className="text-xs text-gray-400">{(po.leadId as Lead).contactPersonName}</p>}
                         </td>
-                        <td className="table-cell text-gray-500 text-sm">{po.product || '—'}</td>
+                        <td className="table-cell max-w-[160px]"><ProductsList po={po} /></td>
                         <td className="table-cell text-sm">
-                          {po.vendorName ? <><p>{po.vendorName}</p>{po.vendorEmail && <p className="text-xs text-gray-400">{po.vendorEmail}</p>}</> : <span className="text-gray-300 text-xs">—</span>}
+                          {po.vendorName
+                            ? <><p className="text-gray-700">{po.vendorName}</p>{po.vendorEmail && <p className="text-xs text-gray-400 truncate max-w-[120px]">{po.vendorEmail}</p>}</>
+                            : <span className="text-gray-300 text-xs">—</span>}
                         </td>
                         <td className="table-cell font-semibold text-green-700">{formatCurrency(po.amount)}</td>
                         <td className="table-cell text-gray-400 text-xs">{formatDate(po.receivedDate)}</td>
-
-                        {/* Phase badge */}
                         <td className="table-cell">
-                          <div className={cn('inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold',
-                            step === 6 ? 'bg-emerald-100 text-emerald-700' :
-                            step === 5 ? 'bg-blue-100 text-blue-700' :
-                            step === 4 ? 'bg-teal-100 text-teal-700' :
-                            step === 3 ? 'bg-amber-100 text-amber-700' :
-                            step === 2 ? 'bg-sky-100 text-sky-700' :
-                                         'bg-gray-100 text-gray-600'
-                          )}>
-                            <span className="w-4 h-4 rounded-full bg-current/20 flex items-center justify-center text-[9px] font-bold">{step}</span>
-                            {FLOW_STEPS[step - 1].short}
+                          <div className="space-y-1">
+                            <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold', completed ? 'bg-emerald-100 text-emerald-700' : STEP_COLORS[step])}>
+                              {completed ? '✓ Complete' : `Step ${step}`}
+                            </span>
+                            <div><MiniStepper step={step} completed={completed} /></div>
                           </div>
                         </td>
-
-                        {/* Action button */}
-                        <td className="table-cell">
-                          {step === 1 && canEdit && (
-                            <button onClick={() => { setCustInvTarget(po); setCustInvEmail((po.leadId as Lead)?.email || ''); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
-                              <Receipt size={11} />Send Invoice
-                            </button>
-                          )}
-                          {step === 2 && canEdit && (
-                            <button onClick={() => openSendModal(po)} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
-                              <Send size={11} />Forward to ARK
-                            </button>
-                          )}
-                          {step === 3 && canEdit && (
-                            <button onClick={() => setClearTarget(po)} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
-                              <Mail size={11} />Mark Clearance
-                            </button>
-                          )}
-                          {step === 4 && canEdit && (
-                            <button onClick={() => { setSendArkTarget(po); setSendArkEmail(po.vendorEmail || ''); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
-                              <Send size={11} />Send PO to ARK
-                            </button>
-                          )}
-                          {step === 5 && canEdit && (
-                            <button onClick={() => { setArkInvTarget(po); setArkInvAmount(''); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
-                              <Receipt size={11} />Mark ARK Invoice
-                            </button>
-                          )}
-                          {step === 6 && !po.converted && canEdit && (
-                            <button onClick={() => { setConvertTarget(po); setConvertName((po.leadId as Lead)?.companyName || ''); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
-                              <BuildingIcon size={11} />Convert to Account
-                            </button>
-                          )}
-                          {step === 6 && po.converted && (
-                            <span className="badge bg-emerald-100 text-emerald-700 text-xs px-2 py-1 whitespace-nowrap">✓ Converted</span>
-                          )}
+                        <td className="table-cell" onClick={e => e.stopPropagation()}>
+                          <StepActionButton po={po} />
                         </td>
-
-                        {/* Icons */}
-                        <td className="table-cell">
+                        <td className="table-cell" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1">
-                            {po.invoiceGenerated && (
-                              <button title="Download Invoice PDF" onClick={() => downloadInvoice(po)} className="p-1.5 rounded-lg bg-violet-50 text-violet-600 hover:bg-violet-100">
-                                <Download size={13} />
-                              </button>
-                            )}
                             {canEdit && <button title="Edit" onClick={() => openEdit(po)} className="p-1.5 rounded-lg bg-gray-50 text-gray-500 hover:bg-gray-100"><Edit size={13} /></button>}
                             {canEdit && <button title="Delete" onClick={() => setDeleteTarget(po)} className="p-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100"><Trash2 size={13} /></button>}
                           </div>
@@ -686,157 +934,44 @@ export default function PurchasesPage() {
         )}
       </div>
 
-      {/* ══ STEP 2 — Send Invoice to Customer ══════════════════════════════════ */}
-      <Modal isOpen={!!custInvTarget} onClose={() => setCustInvTarget(null)} title={`Send Invoice to Customer — ${custInvTarget?.poNumber}`}>
-        <form onSubmit={handleSendCustomerInvoice} className="space-y-4">
-          <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-sm space-y-1">
-            <p><strong>Customer:</strong> {(custInvTarget?.leadId as Lead)?.companyName}</p>
-            <p><strong>Amount:</strong> {custInvTarget ? formatCurrency(custInvTarget.amount) : '—'}</p>
-            <p><strong>Product:</strong> {custInvTarget?.product || '—'}</p>
+      {/* ─── Detail Modal ──────────────────────────────────────────────────────── */}
+      {selected && (
+        <Modal
+          title={
+            <div className="flex items-center gap-3">
+              <Package size={18} className="text-violet-600" />
+              <span>{(selected.leadId as Lead)?.companyName} — {selected.poNumber}</span>
+              <span className={cn('badge text-xs', selected.workflowStatus === 'Completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700')}>
+                {selected.workflowStatus}
+              </span>
+            </div>
+          }
+          onClose={() => setSelected(null)}
+        >
+          <div className="space-y-4">
+            {/* Info strip */}
+            <div className="flex flex-wrap gap-4 p-3 bg-gray-50 rounded-xl text-sm">
+              <div><span className="text-gray-500 text-xs">PO Number</span><p className="font-medium">{selected.poNumber}</p></div>
+              <div><span className="text-gray-500 text-xs">Customer</span><p className="font-medium">{(selected.leadId as Lead)?.companyName || '—'}</p></div>
+              <div><span className="text-gray-500 text-xs">ARK / OEM</span><p className="font-medium">{selected.vendorName || '—'}</p></div>
+              <div><span className="text-gray-500 text-xs">Total Amount</span><p className="font-medium text-green-700">{formatCurrency(selected.amount)}</p></div>
+              <div><span className="text-gray-500 text-xs">Step</span><p className="font-medium">{selected.currentStep || 1} / 8</p></div>
+              {selected.paymentTerms && <div><span className="text-gray-500 text-xs">Payment Terms</span><p className="font-medium">{selected.paymentTerms}</p></div>}
+            </div>
+            {/* Progress bar */}
+            <div className="overflow-x-auto pb-1">
+              <StepProgressBar step={selected.currentStep || 1} completed={selected.workflowStatus === 'Completed'} />
+            </div>
+            {/* Step accordion */}
+            <StepDetail po={selected} />
           </div>
-          <div>
-            <label className="label">Customer Email *</label>
-            <ContactEmailPicker required autoFocus placeholder="customer@example.com" value={custInvEmail} onChange={val => setCustInvEmail(val)} defaultContactType="TELLED" />
-          </div>
-          <div>
-            <label className="label">Attach File (optional)</label>
-            <input type="file" className="input-field py-2 text-sm" onChange={e => setCustInvFile(e.target.files?.[0] || null)} />
-            {custInvFile && <p className="text-xs text-violet-600 mt-1">{custInvFile.name}</p>}
-          </div>
-          <div className="flex gap-3 justify-end">
-            <button type="button" onClick={() => { setCustInvTarget(null); setCustInvFile(null); }} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={custInvBusy} className="btn-primary flex items-center gap-2">
-              <Receipt size={14} />{custInvBusy ? 'Sending…' : 'Send Invoice'}
-            </button>
-          </div>
-        </form>
-      </Modal>
+        </Modal>
+      )}
 
-      {/* ══ STEP 3 — Forward PO to ARK ═════════════════════════════════════════ */}
-      <Modal isOpen={!!sendTarget} onClose={() => { setSendTarget(null); setSendVendorEmail(''); }} title={`Forward PO to ARK — ${sendTarget?.poNumber}`}>
-        <form onSubmit={handleSendToArk} className="space-y-4">
-          <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-sm space-y-1">
-            <p><strong>Customer:</strong> {(sendTarget?.leadId as Lead)?.companyName}</p>
-            <p><strong>Amount:</strong> {sendTarget ? formatCurrency(sendTarget.amount) : '—'}</p>
-            <p><strong>Product:</strong> {sendTarget?.product || '—'}</p>
-          </div>
-          <p className="text-xs text-gray-500">The same PO (unchanged) will be sent to ARK with a price clearance request.</p>
-          <div>
-            <label className="label">ARK Email *</label>
-            <ContactEmailPicker required autoFocus placeholder="ark@example.com" value={sendVendorEmail} onChange={val => setSendVendorEmail(val)} defaultContactType="ARK" />
-          </div>
-          <div>
-            <label className="label">CC</label>
-            <ContactEmailPicker placeholder="CC (optional)" value={sendVendorCc} onChange={val => setSendVendorCc(val)} defaultContactType="ALL" />
-          </div>
-          <div>
-            <label className="label">Attach File (optional)</label>
-            <input type="file" className="input-field py-2 text-sm" onChange={e => setSendVendorFile(e.target.files?.[0] || null)} />
-            {sendVendorFile && <p className="text-xs text-violet-600 mt-1">{sendVendorFile.name}</p>}
-          </div>
-          <div className="flex gap-3 justify-end">
-            <button type="button" onClick={() => { setSendTarget(null); setSendVendorFile(null); }} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={sending} className="btn-primary flex items-center gap-2">
-              <Send size={14} />{sending ? 'Sending…' : 'Forward to ARK'}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* ══ STEP 4 — Mark Price Clearance Received ═════════════════════════════ */}
-      <Modal isOpen={!!clearTarget} onClose={() => setClearTarget(null)} title="Mark Price Clearance Received">
-        <div className="space-y-4">
-          <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-sm space-y-1">
-            <p><strong>PO:</strong> {clearTarget?.poNumber}</p>
-            <p><strong>ARK:</strong> {clearTarget?.vendorName || clearTarget?.vendorEmail || '—'}</p>
-          </div>
-          <p className="text-sm text-gray-600">
-            Confirm that price clearance has been received from ARK.<br/>
-            <span className="text-xs text-gray-400">(Email sync can also auto-detect this from your inbox.)</span>
-          </p>
-          <div className="flex gap-3 justify-end">
-            <button onClick={() => setClearTarget(null)} className="btn-secondary">Cancel</button>
-            <button disabled={clearBusy} onClick={handleMarkPriceClearance} className="btn-primary flex items-center gap-2">
-              <Mail size={14} />{clearBusy ? 'Marking…' : 'Mark as Received'}
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* ══ STEP 5 — Send Official PO to ARK ══════════════════════════════════ */}
-      <Modal isOpen={!!sendArkTarget} onClose={() => setSendArkTarget(null)} title={`Send Official PO to ARK — ${sendArkTarget?.poNumber}`}>
-        <form onSubmit={handleSendPoToArk} className="space-y-4">
-          <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-sm space-y-1">
-            <p><strong>Customer:</strong> {(sendArkTarget?.leadId as Lead)?.companyName}</p>
-            <p><strong>Amount:</strong> {sendArkTarget ? formatCurrency(sendArkTarget.amount) : '—'}</p>
-            <p><strong>Product:</strong> {sendArkTarget?.product || '—'}</p>
-          </div>
-          <p className="text-xs text-gray-500">Send the official PO to ARK. ARK will process and send their invoice.</p>
-          <div>
-            <label className="label">ARK Email *</label>
-            <ContactEmailPicker required autoFocus placeholder="ark@example.com" value={sendArkEmail} onChange={val => setSendArkEmail(val)} defaultContactType="ARK" />
-          </div>
-          <div>
-            <label className="label">Attach File (optional)</label>
-            <input type="file" className="input-field py-2 text-sm" onChange={e => setSendArkFile(e.target.files?.[0] || null)} />
-            {sendArkFile && <p className="text-xs text-violet-600 mt-1">{sendArkFile.name}</p>}
-          </div>
-          <div className="flex gap-3 justify-end">
-            <button type="button" onClick={() => { setSendArkTarget(null); setSendArkFile(null); }} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={sendArkBusy} className="btn-primary flex items-center gap-2">
-              <Send size={14} />{sendArkBusy ? 'Sending…' : 'Send PO to ARK'}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* ══ STEP 6 — Mark ARK Invoice Received ════════════════════════════════ */}
-      <Modal isOpen={!!arkInvTarget} onClose={() => setArkInvTarget(null)} title="Mark ARK Invoice Received">
-        <form onSubmit={handleMarkArkInvoice} className="space-y-4">
-          <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-sm space-y-1">
-            <p><strong>PO:</strong> {arkInvTarget?.poNumber}</p>
-            <p><strong>ARK:</strong> {arkInvTarget?.vendorName || arkInvTarget?.vendorEmail || '—'}</p>
-          </div>
-          <p className="text-sm text-gray-600">
-            Confirm ARK's invoice has been received.<br/>
-            <span className="text-xs text-gray-400">(Email sync can also auto-detect this from your inbox.)</span>
-          </p>
-          <div>
-            <label className="label">ARK Invoice Amount (₹)</label>
-            <input type="number" step="0.01" className="input-field" placeholder="Enter invoice amount" value={arkInvAmount} onChange={e => setArkInvAmount(e.target.value)} />
-          </div>
-          <div className="flex gap-3 justify-end">
-            <button type="button" onClick={() => setArkInvTarget(null)} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={arkInvBusy} className="btn-primary flex items-center gap-2">
-              <Receipt size={14} />{arkInvBusy ? 'Marking…' : 'Mark as Received'}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* ══ Convert to Account ════════════════════════════════════════════════ */}
-      <Modal isOpen={!!convertTarget} onClose={() => setConvertTarget(null)} title="Convert to Account">
-        <form onSubmit={handleConvertToAccount} className="space-y-4">
-          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-sm space-y-1">
-            <p><strong>PO:</strong> {convertTarget?.poNumber}</p>
-            <p><strong>Customer:</strong> {(convertTarget?.leadId as Lead)?.companyName}</p>
-          </div>
-          <div>
-            <label className="label">Account Name *</label>
-            <input required autoFocus className="input-field" value={convertName} onChange={e => setConvertName(e.target.value)} placeholder="Account name" />
-          </div>
-          <div className="flex gap-3 justify-end">
-            <button type="button" onClick={() => setConvertTarget(null)} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={convertBusy} className="btn-primary flex items-center gap-2">
-              <BuildingIcon size={14} />{convertBusy ? 'Converting…' : 'Convert to Account'}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* ── Create PO modal ──────────────────────────────────────────────────── */}
+      {/* ─── Create PO Modal ───────────────────────────────────────────────────── */}
       <Modal isOpen={showCreate} onClose={() => setShowCreate(false)} title="Add Purchase Order" size="lg">
-        <form onSubmit={handleCreate} className="space-y-4">
+        <form onSubmit={handleCreate} className="space-y-5">
+          {/* Customer */}
           <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 space-y-3">
             <p className="text-xs font-semibold text-violet-700 uppercase tracking-wide">Customer</p>
             <div>
@@ -846,54 +981,56 @@ export default function PurchasesPage() {
                 {leads.map(l => <option key={l._id} value={l._id}>{l.companyName}</option>)}
               </select>
             </div>
-            {selectedLead && (
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="label">Contact Person</label><input readOnly className="input-field bg-white text-gray-600" value={selectedLead.contactPersonName || '—'} /></div>
-                <div><label className="label">Email</label><input readOnly className="input-field bg-white text-gray-600" value={selectedLead.email || '—'} /></div>
-              </div>
-            )}
           </div>
+          {/* ARK / OEM */}
           <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 space-y-3">
-            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">ARK / Vendor</p>
+            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">ARK / OEM</p>
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="label">ARK / Vendor Name</label><input className="input-field" value={createForm.vendorName} onChange={e => setCreateForm(f => ({ ...f, vendorName: e.target.value }))} /></div>
-              <div><label className="label">ARK / Vendor Email</label><ContactEmailPicker placeholder="ark@example.com" value={createForm.vendorEmail} onChange={val => setCreateForm(f => ({ ...f, vendorEmail: val }))} defaultContactType="ARK" /></div>
+              <div><label className="label">ARK / OEM Name</label><input className="input-field" value={createForm.vendorName} onChange={e => setCreateForm(f => ({ ...f, vendorName: e.target.value }))} /></div>
+              <div>
+                <label className="label">ARK / OEM Email</label>
+                <ContactEmailPicker placeholder="ark@example.com" value={createForm.vendorEmail} onChange={val => setCreateForm(f => ({ ...f, vendorEmail: val }))} defaultContactType="ARK" />
+              </div>
             </div>
           </div>
+          {/* Line Items */}
+          <div>
+            <label className="label mb-2">Products / Services *</label>
+            <LineItemsTable items={lineItems} onChange={setLineItems} />
+          </div>
+          {/* Misc */}
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="label">Amount (₹) *</label><input required type="number" step="0.01" className="input-field" value={createForm.amount} onChange={e => setCreateForm(f => ({ ...f, amount: e.target.value }))} /></div>
             <div><label className="label">Received Date *</label><input required type="date" className="input-field" value={createForm.receivedDate} onChange={e => setCreateForm(f => ({ ...f, receivedDate: e.target.value }))} /></div>
-            <div className="col-span-2"><label className="label">Product/Service</label><input className="input-field" placeholder="e.g. Siemens PLC S7-1200" value={createForm.product} onChange={e => setCreateForm(f => ({ ...f, product: e.target.value }))} /></div>
+            <div><label className="label">Payment Terms</label><input className="input-field" placeholder="e.g. Net 30" value={createForm.paymentTerms} onChange={e => setCreateForm(f => ({ ...f, paymentTerms: e.target.value }))} /></div>
           </div>
           <div><label className="label">Notes</label><textarea rows={2} className="input-field" value={createForm.notes} onChange={e => setCreateForm(f => ({ ...f, notes: e.target.value }))} /></div>
           <div className="flex gap-3 justify-end">
             <button type="button" onClick={() => setShowCreate(false)} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving…' : 'Save PO'}</button>
+            <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving…' : 'Create PO'}</button>
           </div>
         </form>
       </Modal>
 
-      {/* ── Edit PO modal ────────────────────────────────────────────────────── */}
+      {/* ─── Edit PO Modal ─────────────────────────────────────────────────────── */}
       <Modal isOpen={!!editTarget} onClose={() => setEditTarget(null)} title={`Edit PO — ${editTarget?.poNumber}`} size="lg">
         <form onSubmit={handleEdit} className="space-y-4">
-          <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 space-y-2">
-            <p className="text-xs font-semibold text-violet-700 uppercase">Customer (read-only)</p>
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 space-y-3">
+            <p className="text-xs font-semibold text-amber-700 uppercase">ARK / OEM</p>
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="label">Company</label><input readOnly className="input-field bg-white text-gray-600" value={(editTarget?.leadId as Lead)?.companyName || '—'} /></div>
-              <div><label className="label">Contact</label><input readOnly className="input-field bg-white text-gray-600" value={(editTarget?.leadId as Lead)?.contactPersonName || '—'} /></div>
+              <div><label className="label">ARK / OEM Name</label><input className="input-field" value={editForm.vendorName} onChange={e => setEditForm(f => ({ ...f, vendorName: e.target.value }))} /></div>
+              <div>
+                <label className="label">ARK / OEM Email</label>
+                <ContactEmailPicker placeholder="ark@example.com" value={editForm.vendorEmail} onChange={val => setEditForm(f => ({ ...f, vendorEmail: val }))} defaultContactType="ARK" />
+              </div>
             </div>
           </div>
-          <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 space-y-3">
-            <p className="text-xs font-semibold text-amber-700 uppercase">ARK / Vendor</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="label">ARK / Vendor Name</label><input className="input-field" value={editForm.vendorName} onChange={e => setEditForm(f => ({ ...f, vendorName: e.target.value }))} /></div>
-              <div><label className="label">ARK / Vendor Email</label><ContactEmailPicker placeholder="ark@example.com" value={editForm.vendorEmail} onChange={val => setEditForm(f => ({ ...f, vendorEmail: val }))} defaultContactType="ARK" /></div>
-            </div>
+          <div>
+            <label className="label mb-2">Products / Services</label>
+            <LineItemsTable items={editItems} onChange={setEditItems} />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="label">Amount (₹) *</label><input required type="number" step="0.01" className="input-field" value={editForm.amount} onChange={e => setEditForm(f => ({ ...f, amount: e.target.value }))} /></div>
             <div><label className="label">Received Date</label><input type="date" className="input-field" value={editForm.receivedDate} onChange={e => setEditForm(f => ({ ...f, receivedDate: e.target.value }))} /></div>
-            <div className="col-span-2"><label className="label">Product/Service</label><input className="input-field" value={editForm.product} onChange={e => setEditForm(f => ({ ...f, product: e.target.value }))} /></div>
+            <div><label className="label">Payment Terms</label><input className="input-field" value={editForm.paymentTerms} onChange={e => setEditForm(f => ({ ...f, paymentTerms: e.target.value }))} /></div>
           </div>
           <div><label className="label">Notes</label><textarea rows={2} className="input-field" value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} /></div>
           <div className="flex gap-3 justify-end">
@@ -903,191 +1040,184 @@ export default function PurchasesPage() {
         </form>
       </Modal>
 
+      {/* ─── Step 2: Forward PO to ARK ─────────────────────────────────────────── */}
+      <Modal isOpen={!!step2Target} onClose={() => { setStep2Target(null); setStep2File(null); }} title={`Step 2 — Forward PO to ARK: ${step2Target?.poNumber}`}>
+        <form onSubmit={handleStep2} className="space-y-4">
+          <p className="text-xs text-gray-500">Upload the PO document and send to ARK (OEM) for price clearance.</p>
+          <div><label className="label">ARK / OEM Email *</label><ContactEmailPicker required autoFocus placeholder="ark@example.com" value={step2Form.arkEmail} onChange={v => setStep2Form(f => ({ ...f, arkEmail: v }))} defaultContactType="ARK" /></div>
+          <div><label className="label">ARK / OEM Name</label><input className="input-field" value={step2Form.arkName} onChange={e => setStep2Form(f => ({ ...f, arkName: e.target.value }))} /></div>
+          <div>
+            <label className="label">Attach PO Document</label>
+            <input type="file" className="input-field py-2 text-sm" onChange={e => { const f = e.target.files?.[0]; setStep2File(f || null); if (f) setStep2Form(p => ({ ...p, docName: f.name })); }} />
+            {step2File && <p className="text-xs text-violet-600 mt-1">{step2File.name}</p>}
+          </div>
+          <div className="flex gap-3 justify-end">
+            <button type="button" onClick={() => { setStep2Target(null); setStep2File(null); }} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={busy} className="btn-primary flex items-center gap-2">
+              {busy ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+              {busy ? 'Sending…' : 'Forward to ARK'}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
-
-      {/* ══ PO Intelligence — Sync Emails Modal (disabled) ════════════════════ */}
-      {false && <Modal isOpen={showSyncModal} onClose={() => setShowSyncModal(false)} title="PO Intelligence — Sync Emails" size="lg">
+      {/* ─── Step 3: ARK Response — Mark Price Clearance ───────────────────────── */}
+      <Modal isOpen={!!step3Target} onClose={() => { setStep3Target(null); setStep3Files([]); }} title={`Step 3 — ARK Response: ${step3Target?.poNumber}`}>
         <div className="space-y-4">
-          {/* Scan controls */}
-          <div className="flex items-center gap-3">
-            <div className="flex-1">
-              <label className="label">Scan emails from last</label>
-              <select className="input-field" value={syncDays} onChange={e => setSyncDays(Number(e.target.value))}>
-                <option value={7}>7 days</option>
-                <option value={30}>30 days</option>
-                <option value={60}>60 days</option>
-                <option value={90}>90 days</option>
-              </select>
-            </div>
-            <div className="flex items-end">
-              <button
-                onClick={handleSyncEmails}
-                disabled={syncing}
-                className="btn-primary flex items-center gap-2 whitespace-nowrap"
-              >
-                <RefreshCw size={15} className={syncing ? 'animate-spin' : ''} />
-                {syncing ? 'Scanning…' : 'Scan My Inbox'}
-              </button>
-            </div>
+          <p className="text-sm text-gray-600">Upload received ARK documents and mark price clearance as received.</p>
+          <div>
+            <label className="label">Upload ARK Documents (optional)</label>
+            <input type="file" multiple className="input-field py-2 text-sm" onChange={e => setStep3Files(Array.from(e.target.files || []))} />
+            {step3Files.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {step3Files.map(f => <span key={f.name} className="badge bg-blue-50 text-blue-700 text-xs">{f.name}</span>)}
+              </div>
+            )}
           </div>
-
-          {/* Error */}
-          {syncError && (
-            <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl p-3 text-sm text-red-700">
-              <AlertCircle size={15} className="mt-0.5 flex-shrink-0" />
-              <span>{syncError}</span>
-            </div>
-          )}
-
-          {/* Scanned summary */}
-          {syncScanned !== null && (
-            <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl p-3 text-sm text-blue-700">
-              <CheckCircle size={15} className="flex-shrink-0" />
-              <span>Scanned <strong>{syncScanned}</strong> emails — found <strong>{syncResults.length}</strong> potential purchase order{syncResults.length !== 1 ? 's' : ''}</span>
-            </div>
-          )}
-
-          {/* Detected PO cards */}
-          {syncResults.length === 0 && syncScanned !== null && !syncError && (
-            <p className="text-center text-gray-400 py-6 text-sm">No purchase orders detected in your inbox for this period.</p>
-          )}
-
-          <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
-            {syncResults.map((d, i) => {
-              const key = `${d.emailUid}-${i}`;
-              const form = syncForms[key] || {};
-              const expanded = syncExpanded[key];
-              const imported = syncImported[key];
-              const importing = syncImporting[key];
-              const importErr = syncImportErr[key];
-              const conf = d.extracted?.confidence ?? 0;
-              const confColor = conf >= 70 ? 'bg-emerald-100 text-emerald-700' : conf >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500';
-
-              return (
-                <div key={key} className={cn('border rounded-xl overflow-hidden transition-all', imported ? 'border-emerald-200 bg-emerald-50/30' : 'border-gray-200 bg-white')}>
-                  {/* Card header */}
-                  <div
-                    className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50"
-                    onClick={() => setSyncExpanded(p => ({ ...p, [key]: !p[key] }))}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {d.extracted.poNumber && (
-                          <span className="font-mono text-sm font-semibold text-violet-700">{d.extracted.poNumber}</span>
-                        )}
-                        {d.extracted.amount && (
-                          <span className="text-sm font-semibold text-green-700">₹{d.extracted.amount.toLocaleString('en-IN')}</span>
-                        )}
-                        <span className={cn('badge text-[10px] px-2 py-0.5', confColor)}>{conf}% match</span>
-                        {imported && <span className="badge bg-emerald-100 text-emerald-700 text-[10px] px-2 py-0.5">✓ Imported</span>}
-                      </div>
-                      <p className="text-xs text-gray-500 mt-0.5 truncate">
-                        {d.emailFrom || d.emailFromEmail} · {d.emailSubject}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className="text-xs text-gray-400">{d.emailDate ? new Date(d.emailDate).toLocaleDateString('en-IN') : ''}</span>
-                      {expanded ? <ChevronUp size={15} className="text-gray-400" /> : <ChevronDown size={15} className="text-gray-400" />}
-                    </div>
-                  </div>
-
-                  {/* Expanded import form */}
-                  {expanded && !imported && (
-                    <div className="border-t border-gray-100 px-4 py-4 space-y-4 bg-gray-50/50">
-                      {/* Detected fields summary */}
-                      <div className="grid grid-cols-3 gap-3 text-xs">
-                        {d.extracted.vendorName && (
-                          <div className="flex items-center gap-1.5 text-gray-600"><BuildingIcon size={12} /><span className="truncate">{d.extracted.vendorName}</span></div>
-                        )}
-                        {d.extracted.paymentTerms && (
-                          <div className="flex items-center gap-1.5 text-gray-600"><CreditCard size={12} /><span className="truncate">{d.extracted.paymentTerms}</span></div>
-                        )}
-                        {d.extracted.deliveryTerms && (
-                          <div className="flex items-center gap-1.5 text-gray-600"><FileText size={12} /><span className="truncate">{d.extracted.deliveryTerms}</span></div>
-                        )}
-                      </div>
-
-                      {/* Import form */}
-                      <div className="space-y-3">
-                        <div>
-                          <label className="label">Link to Lead *</label>
-                          <select
-                            className="input-field"
-                            value={form.leadId || ''}
-                            onChange={e => setSyncForms(p => ({ ...p, [key]: { ...p[key], leadId: e.target.value } }))}
-                          >
-                            <option value="">Select lead / customer</option>
-                            {leads.map(l => <option key={l._id} value={l._id}>{l.companyName}</option>)}
-                          </select>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="label">PO Number</label>
-                            <input className="input-field" value={form.poNumber || ''} onChange={e => setSyncForms(p => ({ ...p, [key]: { ...p[key], poNumber: e.target.value } }))} />
-                          </div>
-                          <div>
-                            <label className="label">Amount (₹) *</label>
-                            <input type="number" step="0.01" className="input-field" value={form.amount || ''} onChange={e => setSyncForms(p => ({ ...p, [key]: { ...p[key], amount: e.target.value } }))} />
-                          </div>
-                          <div>
-                            <label className="label">Vendor Name</label>
-                            <input className="input-field" value={form.vendorName || ''} onChange={e => setSyncForms(p => ({ ...p, [key]: { ...p[key], vendorName: e.target.value } }))} />
-                          </div>
-                          <div>
-                            <label className="label">Vendor Email</label>
-                            <input className="input-field" value={form.vendorEmail || ''} onChange={e => setSyncForms(p => ({ ...p, [key]: { ...p[key], vendorEmail: e.target.value } }))} />
-                          </div>
-                          <div>
-                            <label className="label">Product / Service</label>
-                            <input className="input-field" value={form.product || ''} onChange={e => setSyncForms(p => ({ ...p, [key]: { ...p[key], product: e.target.value } }))} />
-                          </div>
-                          <div>
-                            <label className="label">Received Date</label>
-                            <input type="date" className="input-field" value={form.receivedDate || ''} onChange={e => setSyncForms(p => ({ ...p, [key]: { ...p[key], receivedDate: e.target.value } }))} />
-                          </div>
-                          <div className="col-span-2">
-                            <label className="label">Payment Terms</label>
-                            <input className="input-field" value={form.paymentTerms || ''} onChange={e => setSyncForms(p => ({ ...p, [key]: { ...p[key], paymentTerms: e.target.value } }))} />
-                          </div>
-                          <div className="col-span-2">
-                            <label className="label">Notes</label>
-                            <textarea rows={2} className="input-field" value={form.notes || ''} onChange={e => setSyncForms(p => ({ ...p, [key]: { ...p[key], notes: e.target.value } }))} />
-                          </div>
-                        </div>
-                        {importErr && (
-                          <p className="text-xs text-red-600 flex items-center gap-1"><AlertCircle size={12} />{importErr}</p>
-                        )}
-                        <div className="flex justify-end">
-                          <button
-                            disabled={importing}
-                            onClick={() => handleSyncImport(key)}
-                            className="btn-primary flex items-center gap-2 text-sm"
-                          >
-                            <Check size={14} />{importing ? 'Importing…' : 'Import as PO'}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Already imported */}
-                  {expanded && imported && (
-                    <div className="border-t border-emerald-100 px-4 py-3 bg-emerald-50/50 text-sm text-emerald-700 flex items-center gap-2">
-                      <CheckCircle size={15} /><span>Purchase order imported successfully.</span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+          <div>
+            <label className="label">Document Names (comma separated, optional)</label>
+            <input className="input-field text-sm" placeholder="price_clearance.pdf, quotation.pdf" value={step3DocNames} onChange={e => setStep3DocNames(e.target.value)} />
           </div>
-
-          <div className="flex justify-end pt-1">
-            <button onClick={() => setShowSyncModal(false)} className="btn-secondary">Close</button>
+          <div className="flex gap-3 justify-end">
+            <button onClick={() => { setStep3Target(null); setStep3Files([]); setStep3DocNames(''); }} className="btn-secondary">Cancel</button>
+            <button disabled={busy} onClick={handleStep3} className="btn-primary flex items-center gap-2">
+              {busy ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+              {busy ? 'Saving…' : 'Mark Price Clearance Received'}
+            </button>
           </div>
         </div>
-      </Modal>}
+      </Modal>
 
-      <ConfirmDialog isOpen={!!deleteTarget} title="Delete Purchase Order" message={`Delete PO ${deleteTarget?.poNumber}? This cannot be undone.`} confirmLabel="Delete" loading={deleting} onConfirm={handleDelete} onClose={() => setDeleteTarget(null)} danger />
+      {/* ─── Step 4: Send Docs to Customer ─────────────────────────────────────── */}
+      <Modal isOpen={!!step4Target} onClose={() => { setStep4Target(null); setStep4Files([]); }} title={`Step 4 — Send Docs to Customer: ${step4Target?.poNumber}`}>
+        <form onSubmit={handleStep4} className="space-y-4">
+          <p className="text-xs text-gray-500">Upload and forward all received ARK documents to the customer.</p>
+          <div><label className="label">Customer Email *</label><ContactEmailPicker required autoFocus placeholder="customer@example.com" value={step4Email} onChange={setStep4Email} defaultContactType="CUSTOMER" /></div>
+          <div>
+            <label className="label">Attach Documents (optional)</label>
+            <input type="file" multiple className="input-field py-2 text-sm" onChange={e => setStep4Files(Array.from(e.target.files || []))} />
+            {step4Files.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {step4Files.map(f => <span key={f.name} className="badge bg-blue-50 text-blue-700 text-xs">{f.name}</span>)}
+              </div>
+            )}
+          </div>
+          <div className="flex gap-3 justify-end">
+            <button type="button" onClick={() => { setStep4Target(null); setStep4Files([]); }} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={busy} className="btn-primary flex items-center gap-2">
+              {busy ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+              {busy ? 'Sending…' : 'Send to Customer'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ─── Step 5: Invoice to ARK ─────────────────────────────────────────────── */}
+      <Modal isOpen={!!step5Target} onClose={() => { setStep5Target(null); setStep5File(null); }} title={`Step 5 — Invoice to ARK: ${step5Target?.poNumber}`}>
+        <form onSubmit={handleStep5} className="space-y-4">
+          <p className="text-xs text-gray-500">Upload the invoice document and send to ARK (OEM).</p>
+          <div><label className="label">ARK / OEM Email *</label><ContactEmailPicker required autoFocus placeholder="ark@example.com" value={step5Form.arkEmail} onChange={v => setStep5Form(f => ({ ...f, arkEmail: v }))} defaultContactType="ARK" /></div>
+          <div>
+            <label className="label">Attach Invoice Document</label>
+            <input type="file" className="input-field py-2 text-sm" onChange={e => { const f = e.target.files?.[0]; setStep5File(f || null); if (f) setStep5Form(p => ({ ...p, docName: f.name })); }} />
+            {step5File && <p className="text-xs text-violet-600 mt-1">{step5File.name}</p>}
+          </div>
+          <div className="flex gap-3 justify-end">
+            <button type="button" onClick={() => { setStep5Target(null); setStep5File(null); }} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={busy} className="btn-primary flex items-center gap-2">
+              {busy ? <RefreshCw size={14} className="animate-spin" /> : <Receipt size={14} />}
+              {busy ? 'Sending…' : 'Send Invoice to ARK'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ─── Step 6: Send Docs to ARK ───────────────────────────────────────────── */}
+      <Modal isOpen={!!step6Target} onClose={() => { setStep6Target(null); setStep6Files([]); }} title={`Step 6 — Send Docs to ARK: ${step6Target?.poNumber}`}>
+        <form onSubmit={handleStep6} className="space-y-4">
+          <p className="text-xs text-gray-500">Upload and send completed customer documents back to ARK.</p>
+          <div><label className="label">ARK / OEM Email *</label><ContactEmailPicker required autoFocus placeholder="ark@example.com" value={step6Email} onChange={setStep6Email} defaultContactType="ARK" /></div>
+          <div>
+            <label className="label">Attach Documents (optional)</label>
+            <input type="file" multiple className="input-field py-2 text-sm" onChange={e => setStep6Files(Array.from(e.target.files || []))} />
+            {step6Files.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {step6Files.map(f => <span key={f.name} className="badge bg-blue-50 text-blue-700 text-xs">{f.name}</span>)}
+              </div>
+            )}
+          </div>
+          <div className="flex gap-3 justify-end">
+            <button type="button" onClick={() => { setStep6Target(null); setStep6Files([]); }} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={busy} className="btn-primary flex items-center gap-2">
+              {busy ? <RefreshCw size={14} className="animate-spin" /> : <Upload size={14} />}
+              {busy ? 'Sending…' : 'Send Docs to ARK'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ─── Step 7: License Generation ─────────────────────────────────────────── */}
+      <Modal isOpen={!!step7Target} onClose={() => setStep7Target(null)} title={`Step 7 — License Generation: ${step7Target?.poNumber}`}>
+        <div className="space-y-4">
+          <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 text-sm space-y-1">
+            <p><strong>PO:</strong> {step7Target?.poNumber}</p>
+            <p><strong>Customer:</strong> {(step7Target?.leadId as Lead)?.companyName}</p>
+          </div>
+          <p className="text-sm text-gray-600">Confirm that the license generation mail has been received from ARK. This is a manual update.</p>
+          <div className="flex gap-3 justify-end">
+            <button onClick={() => setStep7Target(null)} className="btn-secondary">Cancel</button>
+            <button disabled={busy} onClick={handleStep7} className="btn-primary flex items-center gap-2">
+              {busy ? <RefreshCw size={14} className="animate-spin" /> : <Key size={14} />}
+              {busy ? 'Saving…' : 'Mark License Mail Received'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ─── Step 8: Final Invoice ───────────────────────────────────────────────── */}
+      <Modal isOpen={!!step8Target} onClose={() => { setStep8Target(null); setStep8File(null); }} title={`Step 8 — Final Invoice: ${step8Target?.poNumber}`}>
+        <form onSubmit={handleStep8} className="space-y-4">
+          <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-sm space-y-1">
+            <p><strong>Customer:</strong> {(step8Target?.leadId as Lead)?.companyName}</p>
+            <p><strong>PO Amount:</strong> {step8Target ? formatCurrency(step8Target.amount) : '—'}</p>
+          </div>
+          <div><label className="label">Customer Email *</label><ContactEmailPicker required autoFocus placeholder="customer@example.com" value={step8Form.customerEmail} onChange={v => setStep8Form(f => ({ ...f, customerEmail: v }))} defaultContactType="CUSTOMER" /></div>
+          <div><label className="label">Invoice Amount (₹) *</label><input required type="number" step="0.01" className="input-field" value={step8Form.amount} onChange={e => setStep8Form(f => ({ ...f, amount: e.target.value }))} /></div>
+          <div>
+            <label className="label">Attach Invoice (optional)</label>
+            <input type="file" className="input-field py-2 text-sm" onChange={e => setStep8File(e.target.files?.[0] || null)} />
+            {step8File && <p className="text-xs text-violet-600 mt-1">{step8File.name}</p>}
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer p-3 rounded-xl border border-violet-200 bg-violet-50 hover:bg-violet-100 transition-colors">
+            <input type="checkbox" className="accent-violet-600" checked={step8Form.convertToAccount} onChange={e => setStep8Form(f => ({ ...f, convertToAccount: e.target.checked }))} />
+            <div>
+              <p className="text-sm font-medium text-gray-800">Convert customer to Account</p>
+              <p className="text-xs text-gray-500">Creates a new Account record and marks the lead as Converted</p>
+            </div>
+          </label>
+          {step8Form.convertToAccount && (
+            <div><label className="label">Account Name</label><input className="input-field" value={step8Form.accountName} onChange={e => setStep8Form(f => ({ ...f, accountName: e.target.value }))} placeholder="Account name" /></div>
+          )}
+          <div className="flex gap-3 justify-end">
+            <button type="button" onClick={() => { setStep8Target(null); setStep8File(null); }} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={busy} className="btn-primary flex items-center gap-2">
+              {busy ? <RefreshCw size={14} className="animate-spin" /> : <Receipt size={14} />}
+              {busy ? 'Sending…' : 'Send Final Invoice'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        title="Delete Purchase Order"
+        message={`Delete PO ${deleteTarget?.poNumber}? This cannot be undone.`}
+        confirmLabel="Delete"
+        loading={deleting}
+        onConfirm={handleDelete}
+        onClose={() => setDeleteTarget(null)}
+        danger
+      />
     </div>
   );
 }

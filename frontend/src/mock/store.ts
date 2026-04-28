@@ -65,6 +65,20 @@ export let PO_EXECUTION_WORKFLOWS: any[] = [];
 // ─── TIMESHEETS ───────────────────────────────────────────────────────────────
 export let TIMESHEETS: any[] = [];
 
+// ─── SALES STATUS ─────────────────────────────────────────────────────────────
+const STAGE_TO_SALES_STATUS: Record<string, string> = {
+  'New':           'Uninitiated',
+  'OEM Submitted': 'Sales meeting follow-up',
+  'OEM Approved':  'Sales meeting follow-up',
+  'OEM Rejected':  'Rejected, at Sales discussion stage',
+  'OEM Expired':   'Rejected, at Sales discussion stage',
+  'Technical Done':'Under technical Demo',
+  'Quotation Sent':'Under Proposal submission Process',
+  'Negotiation':   'Under Proposal submission Process',
+  'PO Received':   'Under PO-Followup',
+  'Converted':     'Closed, and now a Customer',
+};
+
 // ─── CRUD HELPERS ────────────────────────────────────────────────────────────
 const delay = (ms = 300) => new Promise(r => setTimeout(r, ms));
 
@@ -154,7 +168,7 @@ export const mockLeads = {
       : orgUsers().find((u: any) => u.role === 'sales');
     const lead = {
       _id: 'l' + uid(), organizationId: _currentOrgId,
-      status: 'New', stage: 'New', isArchived: false,
+      status: 'New', stage: 'New', salesStatus: 'Uninitiated', isArchived: false,
       ...data,
       assignedTo: assignedUser,
       createdAt: now(), updatedAt: now(),
@@ -165,7 +179,13 @@ export const mockLeads = {
   update: async (id: string, data: Record<string, unknown>) => {
     await delay(300);
     const old = orgLeads().find((l: any) => l._id === id);
-    LEADS = LEADS.map((l: any) => l._id === id && l.organizationId === _currentOrgId ? { ...l, ...data, updatedAt: now() } : l);
+    // Auto-set salesStatus from stage if not explicitly provided
+    const updateData = { ...data };
+    if (updateData.stage && !updateData.salesStatus) {
+      const auto = STAGE_TO_SALES_STATUS[updateData.stage as string];
+      if (auto) updateData.salesStatus = auto;
+    }
+    LEADS = LEADS.map((l: any) => l._id === id && l.organizationId === _currentOrgId ? { ...l, ...updateData, updatedAt: now() } : l);
     const updated = orgLeads().find((l: any) => l._id === id)!;
     // Auto-create DRF when status changes to Qualified
     if (data.status === 'Qualified' && old?.status !== 'Qualified') {
@@ -546,30 +566,59 @@ export const mockPurchases = {
   getAll: async (params: Record<string, unknown> = {}) => {
     await delay();
     let items = [...orgPOs()];
-    if (params.leadId) items = items.filter((p: any) => p.leadId._id === params.leadId);
-    return mockPaginate(items, Number(params.page) || 1, Number(params.limit) || 15);
+    if (params.leadId) items = items.filter((p: any) => p.leadId._id === params.leadId || p.leadId === params.leadId);
+    if (params.step) items = items.filter((p: any) => (p.currentStep || 1) === Number(params.step));
+    if (params.search) {
+      const q = String(params.search).toLowerCase();
+      items = items.filter((p: any) =>
+        (p.poNumber || '').toLowerCase().includes(q) ||
+        (p.product || '').toLowerCase().includes(q) ||
+        (p.leadId?.companyName || '').toLowerCase().includes(q) ||
+        (p.vendorName || '').toLowerCase().includes(q)
+      );
+    }
+    const result = mockPaginate(items, Number(params.page) || 1, Number(params.limit) || 15);
+    return { ...result, data: result.data, pagination: { ...result.pagination, total: items.length } };
   },
   getByLead: async (leadId: string) => { await delay(); return orgPOs().filter((p: any) => p.leadId._id === leadId); },
   getById: async (id: string) => { await delay(); return orgPOs().find((p: any) => p._id === id); },
   create: async (data: Record<string, unknown>) => {
     await delay(400);
     const lead = orgLeads().find((l: any) => l._id === data.leadId);
-    const createdBy = data.createdBy
-      ? orgUsers().find((u: any) => u._id === data.createdBy) || orgUsers().find((u: any) => u.role === 'sales')
-      : orgUsers().find((u: any) => u.role === 'sales') || orgUsers()[0];
+    const uploadedBy = orgUsers().find((u: any) => u.role === 'sales') || orgUsers()[0];
+    // compute total from items array if provided
+    const items: any[] = Array.isArray(data.items) ? data.items : [];
+    const total = items.length > 0
+      ? items.reduce((s: number, i: any) => s + (Number(i.amount) || Number(i.unitPrice) * Number(i.quantity) || 0), 0)
+      : Number(data.amount) || 0;
     const po = {
       _id: 'po' + uid(), organizationId: _currentOrgId,
-      leadId: { _id: lead?._id, companyName: lead?.companyName },
+      leadId: { _id: lead?._id, companyName: lead?.companyName, contactPersonName: lead?.contactPersonName, email: lead?.email },
       poNumber: `PO-${new Date().getFullYear()}-${String(orgPOs().length + 1).padStart(3, '0')}`,
-      amount: Number(data.amount),
-      product: String(data.product || ''),
+      amount: total,
+      items: items.length > 0 ? items : [],
+      product: String(items[0]?.product || data.product || ''),
       vendorName: String(data.vendorName || ''),
       vendorEmail: String(data.vendorEmail || ''),
-      documentPath: data.documentPath || null,
       receivedDate: data.receivedDate,
       notes: String(data.notes || ''),
-      isSubmitted: false, vendorEmailSent: false,
-      createdBy, createdAt: now(),
+      paymentTerms: String(data.paymentTerms || ''),
+      converted: false,
+      isArchived: false,
+      uploadedBy: { _id: uploadedBy?._id, name: uploadedBy?.name },
+      // 8-step workflow
+      currentStep: 1,
+      workflowStatus: 'Draft',
+      step2ForwardedToArk: false,
+      step3PriceClearanceReceived: false,
+      step3DocNames: [],
+      step4DocsSentToCustomer: false,
+      step5InvoiceToArk: false,
+      step6DocsSentToArk: false,
+      step7LicenseMailReceived: false,
+      step8FinalInvoiceSent: false,
+      vendorEmailSent: false,
+      createdAt: now(), updatedAt: now(),
     };
     PURCHASE_ORDERS = [...PURCHASE_ORDERS, po];
     LEADS = LEADS.map((l: any) => l._id === data.leadId ? { ...l, stage: 'PO Received', updatedAt: now() } : l);
@@ -601,10 +650,10 @@ export const mockPurchases = {
       leadId: { _id: lead._id, companyName: lead.companyName, contactPersonName: lead.contactPersonName },
       accountName: data.accountName || lead.companyName,
       assignedEngineer: null, assignedSales: lead.assignedTo,
-      status: 'Active', notes: data.notes || '', createdAt: now(),
+      status: 'Active', salesStatus: 'Closed, and now a Customer', notes: data.notes || '', createdAt: now(),
     };
     ACCOUNTS = [...ACCOUNTS, account];
-    LEADS = LEADS.map((l: any) => l._id === lead._id ? { ...l, stage: 'Converted', updatedAt: now() } : l);
+    LEADS = LEADS.map((l: any) => l._id === lead._id ? { ...l, stage: 'Converted', salesStatus: 'Closed, and now a Customer', updatedAt: now() } : l);
     return account;
   },
   delete: async (id: string) => {
@@ -634,6 +683,154 @@ export const mockPurchases = {
     PURCHASE_ORDERS = PURCHASE_ORDERS.map((p: any) => p._id === id
       ? { ...p, customerInvoiceSent: true, customerInvoiceSentAt: now() }
       : p);
+    return orgPOs().find((p: any) => p._id === id);
+  },
+
+  // ── 8-step workflow ────────────────────────────────────────────────────────
+  step2ForwardToArk: async (id: string, arkEmail: string, arkName?: string) => {
+    await delay(500);
+    PURCHASE_ORDERS = PURCHASE_ORDERS.map((p: any) => p._id === id && p.organizationId === _currentOrgId ? {
+      ...p,
+      step2ForwardedToArk: true, step2ForwardedAt: now(),
+      currentStep: 3, workflowStatus: 'In Progress',
+      vendorEmail: arkEmail, vendorName: arkName || p.vendorName || '',
+      poForwardedToArk: true, poForwardedToArkAt: now(), vendorEmailSent: true,
+      updatedAt: now(),
+    } : p);
+    return orgPOs().find((p: any) => p._id === id);
+  },
+
+  step3PriceClearance: async (id: string, _files?: File[], docNames?: string[]) => {
+    await delay(400);
+    PURCHASE_ORDERS = PURCHASE_ORDERS.map((p: any) => p._id === id && p.organizationId === _currentOrgId ? {
+      ...p,
+      step3PriceClearanceReceived: true, step3ReceivedAt: now(),
+      step3DocNames: docNames || [],
+      currentStep: 4,
+      priceClearanceReceived: true, priceClearanceReceivedAt: now(),
+      updatedAt: now(),
+    } : p);
+    return orgPOs().find((p: any) => p._id === id);
+  },
+
+  step4SendDocsToCustomer: async (id: string, _customerEmail: string) => {
+    await delay(500);
+    PURCHASE_ORDERS = PURCHASE_ORDERS.map((p: any) => p._id === id && p.organizationId === _currentOrgId ? {
+      ...p,
+      step4DocsSentToCustomer: true, step4SentAt: now(),
+      currentStep: 5,
+      customerInvoiceSent: true, customerInvoiceSentAt: now(),
+      updatedAt: now(),
+    } : p);
+    return orgPOs().find((p: any) => p._id === id);
+  },
+
+  step5InvoiceToArk: async (id: string, _arkEmail: string, _file?: File, docName?: string) => {
+    await delay(500);
+    PURCHASE_ORDERS = PURCHASE_ORDERS.map((p: any) => p._id === id && p.organizationId === _currentOrgId ? {
+      ...p,
+      step5InvoiceToArk: true, step5InvoiceSentAt: now(), step5InvoiceDocName: docName || '',
+      currentStep: 6,
+      poSentToArk: true, poSentToArkAt: now(),
+      updatedAt: now(),
+    } : p);
+    return orgPOs().find((p: any) => p._id === id);
+  },
+
+  step6SendDocsToArk: async (id: string, _arkEmail: string) => {
+    await delay(500);
+    PURCHASE_ORDERS = PURCHASE_ORDERS.map((p: any) => p._id === id && p.organizationId === _currentOrgId ? {
+      ...p,
+      step6DocsSentToArk: true, step6SentAt: now(),
+      currentStep: 7,
+      arkInvoiceReceived: true, arkInvoiceReceivedAt: now(),
+      updatedAt: now(),
+    } : p);
+    return orgPOs().find((p: any) => p._id === id);
+  },
+
+  step7LicenseReceived: async (id: string) => {
+    await delay(400);
+    PURCHASE_ORDERS = PURCHASE_ORDERS.map((p: any) => p._id === id && p.organizationId === _currentOrgId ? {
+      ...p,
+      step7LicenseMailReceived: true, step7LicenseMailReceivedAt: now(),
+      currentStep: 8,
+      updatedAt: now(),
+    } : p);
+    return orgPOs().find((p: any) => p._id === id);
+  },
+
+  step8FinalInvoice: async (id: string, _customerEmail: string, amount: number, convertToAccount?: boolean, accountName?: string) => {
+    await delay(600);
+    const invNumber = `INV-${new Date().getFullYear()}-${String(Math.floor(1000 + Math.random() * 9000))}`;
+    PURCHASE_ORDERS = PURCHASE_ORDERS.map((p: any) => p._id === id && p.organizationId === _currentOrgId ? {
+      ...p,
+      step8FinalInvoiceSent: true, step8FinalInvoiceSentAt: now(),
+      step8FinalInvoiceAmount: amount, step8FinalInvoiceNumber: invNumber,
+      currentStep: 8, workflowStatus: 'Completed',
+      ...(convertToAccount ? { converted: true } : {}),
+      updatedAt: now(),
+    } : p);
+    let account = null;
+    if (convertToAccount) {
+      const po = PURCHASE_ORDERS.find((p: any) => p._id === id);
+      const lead = po ? orgLeads().find((l: any) => l._id === po.leadId._id || l._id === po.leadId) : null;
+      if (lead) {
+        const existing = orgAccounts().find((a: any) => a.leadId?._id === lead._id);
+        if (!existing) {
+          account = { _id: 'a' + uid(), organizationId: _currentOrgId, leadId: { _id: lead._id, companyName: lead.companyName }, accountName: accountName || lead.companyName, status: 'Active', notes: '', createdAt: now() };
+          ACCOUNTS = [...ACCOUNTS, account];
+          LEADS = LEADS.map((l: any) => l._id === lead._id ? { ...l, stage: 'Converted', updatedAt: now() } : l);
+        }
+      }
+    }
+    return { invNumber, account };
+  },
+
+  forwardToArk: async (id: string, arkEmail: string, _arkName?: string) => {
+    await delay(500);
+    PURCHASE_ORDERS = PURCHASE_ORDERS.map((p: any) => p._id === id && p.organizationId === _currentOrgId ? {
+      ...p, poForwardedToArk: true, poForwardedToArkAt: now(),
+      step2ForwardedToArk: true, step2ForwardedAt: now(),
+      currentStep: 3, workflowStatus: 'In Progress', vendorEmail: arkEmail, updatedAt: now(),
+    } : p);
+    return orgPOs().find((p: any) => p._id === id);
+  },
+
+  markPriceClearance: async (id: string) => {
+    await delay(400);
+    PURCHASE_ORDERS = PURCHASE_ORDERS.map((p: any) => p._id === id && p.organizationId === _currentOrgId ? {
+      ...p, priceClearanceReceived: true, priceClearanceReceivedAt: now(),
+      step3PriceClearanceReceived: true, step3ReceivedAt: now(), currentStep: 4, updatedAt: now(),
+    } : p);
+    return orgPOs().find((p: any) => p._id === id);
+  },
+
+  sendPoToArk: async (id: string, arkEmail: string) => {
+    await delay(500);
+    PURCHASE_ORDERS = PURCHASE_ORDERS.map((p: any) => p._id === id && p.organizationId === _currentOrgId ? {
+      ...p, poSentToArk: true, poSentToArkAt: now(),
+      step5InvoiceToArk: true, step5InvoiceSentAt: now(), currentStep: 6, updatedAt: now(),
+    } : p);
+    return orgPOs().find((p: any) => p._id === id);
+  },
+
+  markArkInvoice: async (id: string, amount?: number) => {
+    await delay(400);
+    PURCHASE_ORDERS = PURCHASE_ORDERS.map((p: any) => p._id === id && p.organizationId === _currentOrgId ? {
+      ...p, arkInvoiceReceived: true, arkInvoiceReceivedAt: now(),
+      ...(amount ? { arkInvoiceAmount: amount } : {}),
+      step6DocsSentToArk: true, step6SentAt: now(), currentStep: 7, updatedAt: now(),
+    } : p);
+    return orgPOs().find((p: any) => p._id === id);
+  },
+
+  recordPayment: async (id: string, data: Record<string, unknown>) => {
+    await delay(400);
+    PURCHASE_ORDERS = PURCHASE_ORDERS.map((p: any) => p._id === id && p.organizationId === _currentOrgId ? {
+      ...p, paymentStatus: 'Paid', paidAmount: data.paidAmount, paidDate: data.paidDate,
+      paymentMode: data.paymentMode, paymentReference: data.paymentReference, updatedAt: now(),
+    } : p);
     return orgPOs().find((p: any) => p._id === id);
   },
 };

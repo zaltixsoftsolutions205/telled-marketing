@@ -1,235 +1,61 @@
-// import { useEffect, useState } from 'react';
-// import { Link } from 'react-router-dom';
-// import { useAuthStore } from '@/store/authStore';
-// import { dashboardApi } from '@/api/dashboard';
-// import { formatCurrency, formatDate } from '@/utils/formatters';
-// import StatusBadge from '@/components/common/StatusBadge';
-// import LoadingSpinner from '@/components/common/LoadingSpinner';
-// import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-// import { Users, FileText, ShoppingCart, Building2, AlertTriangle, Activity, TrendingUp, ArrowRight } from 'lucide-react';
-
-// function StatCard({
-//   title, value, sub, icon: Icon, color, bg, border,
-// }: {
-//   title: string; value: string | number; sub?: string;
-//   icon: React.ElementType; color: string; bg: string; border: string;
-// }) {
-//   return (
-//     <div className={`card border-l-4 ${border} hover:shadow-lg transition-all duration-200 group`}>
-//       <div className="flex items-start justify-between">
-//         <div className="flex-1 min-w-0">
-//           <p className="text-[10px] sm:text-[11px] font-semibold text-gray-400 uppercase tracking-widest">{title}</p>
-//           <p className={`text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 ${color} leading-none tabular-nums`}>{value}</p>
-//           {sub && <p className="text-xs text-gray-400 mt-1.5 sm:mt-2 leading-snug">{sub}</p>}
-//         </div>
-//         <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl ${bg} flex items-center justify-center flex-shrink-0 ml-3 group-hover:scale-110 transition-transform duration-200`}>
-//           <Icon size={19} className={color} />
-//         </div>
-//       </div>
-//     </div>
-//   );
-// }
-
-// function ActionItem({
-//   label, value, to, icon: Icon, itemColor, itemBg,
-// }: {
-//   label: string; value: number | string; to: string;
-//   icon: React.ElementType; itemColor: string; itemBg: string;
-// }) {
-//   return (
-//     <Link
-//       to={to}
-//       className={`flex items-center justify-between p-3 sm:p-3.5 ${itemBg} rounded-xl hover:brightness-95 transition-all duration-150 group`}
-//     >
-//       <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-//         <Icon size={14} className={`${itemColor} flex-shrink-0`} />
-//         <span className={`text-xs sm:text-sm font-semibold ${itemColor} truncate`}>{label}</span>
-//       </div>
-//       <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
-//         <span className={`text-lg sm:text-xl font-extrabold tabular-nums ${itemColor}`}>{value}</span>
-//         <ArrowRight size={13} className={`${itemColor} opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all`} />
-//       </div>
-//     </Link>
-//   );
-// }
-
-// export default function SalesDashboard() {
-//   const user = useAuthStore((s) => s.user);
-//   const [stats, setStats] = useState<any>(null);
-//   const [loading, setLoading] = useState(true);
-
-//   useEffect(() => {
-//     if (user?._id) dashboardApi.getSalesStats(user._id).then(setStats).catch(console.error).finally(() => setLoading(false));
-//   }, [user?._id]);
-
-//   if (loading) return <LoadingSpinner className="h-64" />;
-//   if (!stats) return <div className="text-center text-gray-400 mt-20">Failed to load dashboard</div>;
-
-//   return (
-//     <div className="space-y-5 sm:space-y-7 animate-fade-in">
-//       {/* Header */}
-//       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-//         <div>
-//           <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Sales Dashboard</p>
-//           <h1 className="text-xl sm:text-2xl font-extrabold text-gray-900">Welcome back, {user?.name?.split(' ')[0]}</h1>
-//           <p className="text-sm text-gray-400 mt-0.5">Track your pipeline and close more deals</p>
-//         </div>
-//         <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 self-start sm:self-auto">
-//           <span className="w-2 h-2 rounded-full bg-blue-500" />
-//           <Activity size={13} className="text-blue-600" />
-//           <span className="text-xs sm:text-sm font-semibold text-blue-700">My Pipeline</span>
-//         </div>
-//       </div>
-
-//       {/* Stat Cards */}
-//       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
-//         <StatCard
-//           title="My Leads" value={stats.myLeads.total}
-//           sub={`${stats.myLeads.new} new · ${stats.myLeads.converted} converted`}
-//           icon={Users} color="text-violet-700" bg="bg-violet-50" border="border-violet-400"
-//         />
-//         <StatCard
-//           title="My Accounts" value={stats.accounts.total}
-//           sub={`${stats.accounts.active} active`}
-//           icon={Building2} color="text-blue-600" bg="bg-blue-50" border="border-blue-400"
-//         />
-//         <StatCard
-//           title="Quotation Value" value={formatCurrency(stats.quotations.totalValue)}
-//           sub={`${stats.quotations.total} quotations raised`}
-//           icon={FileText} color="text-emerald-700" bg="bg-emerald-50" border="border-emerald-400"
-//         />
-//         <StatCard
-//           title="PO Value" value={formatCurrency(stats.purchaseOrders.totalValue)}
-//           sub={`${stats.purchaseOrders.total} purchase orders`}
-//           icon={ShoppingCart} color="text-orange-600" bg="bg-orange-50" border="border-orange-400"
-//         />
-//       </div>
-
-//       {/* Chart + Action Required */}
-//       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-//         <div className="lg:col-span-2 card !p-4 sm:!p-6">
-//           <div className="flex items-start sm:items-center justify-between mb-4 sm:mb-5 gap-2">
-//             <div>
-//               <h2 className="text-sm sm:text-base font-bold text-gray-900">My Lead Pipeline</h2>
-//               <p className="text-xs text-gray-400 mt-0.5">Leads by stage</p>
-//             </div>
-//             <Link to="/leads" className="text-xs font-semibold text-violet-600 hover:text-violet-800 flex items-center gap-1 whitespace-nowrap">
-//               View all <ArrowRight size={13} />
-//             </Link>
-//           </div>
-//           <ResponsiveContainer width="100%" height={200}>
-//             <BarChart data={stats.pipeline} layout="vertical" barSize={16} margin={{ left: 4, right: 12 }}>
-//               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
-//               <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-//               <YAxis dataKey="stage" type="category" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} width={76} />
-//               <Tooltip
-//                 formatter={(v: number) => [v, 'Leads']}
-//                 cursor={{ fill: '#f5f3ff' }}
-//                 contentStyle={{ borderRadius: '12px', border: '1px solid #e5e7eb', boxShadow: '0 4px 16px rgba(0,0,0,0.08)', fontSize: 12 }}
-//               />
-//               <Bar dataKey="count" fill="#7c3aed" radius={[0, 5, 5, 0]} />
-//             </BarChart>
-//           </ResponsiveContainer>
-//         </div>
-
-//         <div className="card !p-4 sm:!p-6">
-//           <div className="mb-3 sm:mb-4">
-//             <h2 className="text-sm sm:text-base font-bold text-gray-900">Action Required</h2>
-//             <p className="text-xs text-gray-400 mt-0.5">Items needing follow-up</p>
-//           </div>
-//           <div className="space-y-2 sm:space-y-2.5">
-//             <ActionItem
-//               label="DRFs Pending" value={stats.drfPending}
-//               to="/leads" icon={AlertTriangle}
-//               itemColor="text-amber-700" itemBg="bg-amber-50"
-//             />
-//             <ActionItem
-//               label="In Negotiation" value={stats.leadsInNegotiation}
-//               to="/leads" icon={TrendingUp}
-//               itemColor="text-orange-700" itemBg="bg-orange-50"
-//             />
-//             <ActionItem
-//               label="Quotations Raised" value={stats.quotations.total}
-//               to="/quotations" icon={FileText}
-//               itemColor="text-violet-700" itemBg="bg-violet-50"
-//             />
-//             <div className="flex items-center justify-between p-3 sm:p-3.5 bg-rose-50 rounded-xl">
-//               <div className="flex items-center gap-2 sm:gap-2.5">
-//                 <Users size={14} className="text-rose-700 flex-shrink-0" />
-//                 <span className="text-xs sm:text-sm font-semibold text-rose-700">Lost Leads</span>
-//               </div>
-//               <span className="text-lg sm:text-xl font-extrabold tabular-nums text-rose-700">{stats.myLeads.lost}</span>
-//             </div>
-//           </div>
-//         </div>
-//       </div>
-
-//       {/* Recent Leads */}
-//       {stats.recentLeads?.length > 0 ? (
-//         <div className="card !p-0 overflow-hidden">
-//           <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-100 flex items-center justify-between">
-//             <div>
-//               <h2 className="text-sm sm:text-base font-bold text-gray-900">My Recent Leads</h2>
-//               <p className="text-xs text-gray-400 mt-0.5 hidden sm:block">Your latest pipeline activity</p>
-//             </div>
-//             <Link to="/leads" className="text-xs font-semibold text-violet-600 hover:text-violet-800 flex items-center gap-1 whitespace-nowrap">
-//               View all <ArrowRight size={13} />
-//             </Link>
-//           </div>
-//           <div className="overflow-x-auto">
-//             <table className="w-full min-w-[480px]">
-//               <thead className="bg-gray-50/60">
-//                 <tr>
-//                   <th className="table-header">Company</th>
-//                   <th className="table-header">Contact</th>
-//                   <th className="table-header">Stage</th>
-//                   <th className="table-header">Created</th>
-//                 </tr>
-//               </thead>
-//               <tbody className="divide-y divide-gray-50">
-//                 {stats.recentLeads.map((lead: any) => (
-//                   <tr key={lead._id} className="hover:bg-violet-50/30 transition-colors">
-//                     <td className="table-cell">
-//                       <Link to={`/leads/${lead._id}`} className="font-semibold text-violet-700 hover:underline">{lead.companyName}</Link>
-//                     </td>
-//                     <td className="table-cell text-gray-500">{lead.contactName}</td>
-//                     <td className="table-cell"><StatusBadge status={lead.stage} /></td>
-//                     <td className="table-cell text-gray-400 text-xs">{formatDate(lead.createdAt)}</td>
-//                   </tr>
-//                 ))}
-//               </tbody>
-//             </table>
-//           </div>
-//         </div>
-//       ) : (
-//         <div className="card text-center py-12 sm:py-14">
-//           <Users size={36} className="mx-auto text-gray-300 mb-3" />
-//           <p className="text-base font-semibold text-gray-500">No leads assigned to you yet</p>
-//           <p className="text-sm text-gray-400 mt-1">Create your first lead to get started</p>
-//           <Link to="/leads" className="btn-primary mt-5 inline-block text-sm">+ New Lead</Link>
-//         </div>
-//       )}
-//     </div>
-//   );
-// }
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
-import { dashboardApi } from '@/api/dashboard';
-import { drfApi } from '@/api/drf';
-import { formatCurrency, formatDate } from '@/utils/formatters';
-import StatusBadge from '@/components/common/StatusBadge';
+import { leadsApi } from '@/api/leads';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import {
-  Users, FileText, ShoppingCart, Building2, AlertTriangle, Activity,
-  TrendingUp, ArrowRight, FileBadge, Clock, CheckCircle2, XCircle,
-  Trophy, Zap, Target
+  Users, TrendingUp, Target, CheckCircle2, XCircle,
+  ArrowRight, Activity, BarChart2,
 } from 'lucide-react';
+import type { Lead, SalesStatus } from '@/types';
+import { SALES_STATUSES } from '@/types';
 
-function StatCard({
-  title, value, sub, icon: Icon, color, bg, border,
-}: {
+const STAGE_TO_SALES_STATUS: Record<string, SalesStatus> = {
+  'New':           'Uninitiated',
+  'OEM Submitted': 'Sales meeting follow-up',
+  'OEM Approved':  'Sales meeting follow-up',
+  'OEM Rejected':  'Rejected, at Sales discussion stage',
+  'OEM Expired':   'Rejected, at Sales discussion stage',
+  'Technical Done':'Under technical Demo',
+  'Quotation Sent':'Under Proposal submission Process',
+  'Negotiation':   'Under Proposal submission Process',
+  'PO Received':   'Under PO-Followup',
+  'Converted':     'Closed, and now a Customer',
+};
+
+const deriveSalesStatus = (lead: Lead): SalesStatus => {
+  if (lead.salesStatus?.startsWith('Rejected')) return lead.salesStatus;
+  return STAGE_TO_SALES_STATUS[lead.stage] ?? lead.salesStatus ?? 'Uninitiated';
+};
+
+// ─── Color map per salesStatus ────────────────────────────────────────────────
+const STATUS_STYLE: Record<string, { bg: string; text: string; bar: string }> = {
+  'Uninitiated':                        { bg: 'bg-gray-100',    text: 'text-gray-600',   bar: 'bg-gray-400' },
+  'Sales meeting follow-up':            { bg: 'bg-blue-100',    text: 'text-blue-700',   bar: 'bg-blue-500' },
+  'Under technical Demo':               { bg: 'bg-violet-100',  text: 'text-violet-700', bar: 'bg-violet-500' },
+  'Under Proposal submission Process':  { bg: 'bg-amber-100',   text: 'text-amber-700',  bar: 'bg-amber-500' },
+  'Under PO-Followup':                  { bg: 'bg-orange-100',  text: 'text-orange-700', bar: 'bg-orange-500' },
+  'Under payment follow-up':            { bg: 'bg-sky-100',     text: 'text-sky-700',    bar: 'bg-sky-500' },
+  'Closed, and now a Customer':         { bg: 'bg-emerald-100', text: 'text-emerald-700',bar: 'bg-emerald-500' },
+  'Rejected, at Sales discussion stage':{ bg: 'bg-red-100',     text: 'text-red-600',    bar: 'bg-red-400' },
+  'Rejected, at Tech Demo Stage':       { bg: 'bg-red-100',     text: 'text-red-600',    bar: 'bg-red-400' },
+  'Rejected, at PO follow-up stage':    { bg: 'bg-red-100',     text: 'text-red-600',    bar: 'bg-red-400' },
+  'Rejected, at Payment follow-up stage':{ bg: 'bg-red-100',    text: 'text-red-600',    bar: 'bg-red-400' },
+  'Rejected, at license generation stage':{ bg: 'bg-red-100',   text: 'text-red-600',    bar: 'bg-red-400' },
+};
+
+const ACTIVE_STATUSES: SalesStatus[] = [
+  'Uninitiated',
+  'Sales meeting follow-up',
+  'Under technical Demo',
+  'Under Proposal submission Process',
+  'Under PO-Followup',
+  'Under payment follow-up',
+];
+
+const REJECTED_STATUSES: SalesStatus[] = SALES_STATUSES.filter(s => s.startsWith('Rejected'));
+
+function StatCard({ title, value, sub, icon: Icon, color, bg, border }: {
   title: string; value: string | number; sub?: string;
   icon: React.ElementType; color: string; bg: string; border: string;
 }) {
@@ -237,55 +63,12 @@ function StatCard({
     <div className={`card border-l-4 ${border} hover:shadow-lg transition-all duration-200 group`}>
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
-          <p className="text-[10px] sm:text-[11px] font-semibold text-gray-400 uppercase tracking-widest">{title}</p>
-          <p className={`text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 ${color} leading-none tabular-nums`}>{value}</p>
-          {sub && <p className="text-xs text-gray-400 mt-1.5 sm:mt-2 leading-snug">{sub}</p>}
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">{title}</p>
+          <p className={`text-2xl font-extrabold mt-1.5 ${color} leading-none tabular-nums`}>{value}</p>
+          {sub && <p className="text-xs text-gray-400 mt-1.5 leading-snug">{sub}</p>}
         </div>
-        <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl ${bg} flex items-center justify-center flex-shrink-0 ml-3 group-hover:scale-110 transition-transform duration-200`}>
-          <Icon size={19} className={color} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ActionItem({
-  label, value, to, icon: Icon, itemColor, itemBg,
-}: {
-  label: string; value: number | string; to: string;
-  icon: React.ElementType; itemColor: string; itemBg: string;
-}) {
-  return (
-    <Link
-      to={to}
-      className={`flex items-center justify-between p-3 sm:p-3.5 ${itemBg} rounded-xl hover:brightness-95 transition-all duration-150 group`}
-    >
-      <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-        <Icon size={14} className={`${itemColor} flex-shrink-0`} />
-        <span className={`text-xs sm:text-sm font-semibold ${itemColor} truncate`}>{label}</span>
-      </div>
-      <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
-        <span className={`text-lg sm:text-xl font-extrabold tabular-nums ${itemColor}`}>{value}</span>
-        <ArrowRight size={13} className={`${itemColor} opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all`} />
-      </div>
-    </Link>
-  );
-}
-
-function DRFStatCard({ title, value, sub, icon: Icon, color, bg }: {
-  title: string; value: string | number; sub?: string;
-  icon: React.ElementType; color: string; bg: string;
-}) {
-  return (
-    <div className="card hover:shadow-md transition-all duration-200">
-      <div className="flex items-center gap-3">
-        <div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center flex-shrink-0`}>
+        <div className={`w-10 h-10 rounded-2xl ${bg} flex items-center justify-center flex-shrink-0 ml-3 group-hover:scale-110 transition-transform`}>
           <Icon size={18} className={color} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-xs text-gray-500 font-medium">{title}</p>
-          <p className={`text-lg font-extrabold mt-0.5 ${color} truncate`}>{value}</p>
-          {sub && <p className="text-[10px] text-gray-400 mt-0.5 truncate">{sub}</p>}
         </div>
       </div>
     </div>
@@ -294,416 +77,185 @@ function DRFStatCard({ title, value, sub, icon: Icon, color, bg }: {
 
 export default function SalesDashboard() {
   const user = useAuthStore((s) => s.user);
-  const [stats, setStats] = useState<any>(null);
-  const [drfAnalytics, setDrfAnalytics] = useState<any>(null);
-  const [recentDrfs, setRecentDrfs] = useState<any[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadDashboardData = async () => {
-      if (!user?._id) { setLoading(false); return; }
-      
-      setLoading(true);
-      try {
-        const [salesRes, drfStatsRes, drfListRes] = await Promise.allSettled([
-          dashboardApi.getSalesStats(user._id),
-          drfApi.getAnalytics(),
-          drfApi.getAll({ limit: 5 }),
-        ]);
-
-        if (salesRes.status === 'fulfilled') setStats(salesRes.value);
-        if (drfStatsRes.status === 'fulfilled') setDrfAnalytics(drfStatsRes.value);
-        if (drfListRes.status === 'fulfilled') setRecentDrfs((drfListRes.value as any)?.data || []);
-
-        if (salesRes.status === 'rejected') console.error('Sales stats failed:', salesRes.reason);
-      } catch (error) {
-        console.error('Failed to load dashboard data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadDashboardData();
-  }, [user?._id]);
+    leadsApi.getAll({ limit: 500 })
+      .then(res => setLeads(res.data || []))
+      .catch(() => setLeads([]))
+      .finally(() => setLoading(false));
+  }, []);
 
   if (loading) return <LoadingSpinner className="h-64" />;
-  if (!stats) return <div className="text-center text-gray-400 mt-20">Failed to load dashboard</div>;
+
+  // ── Compute funnel counts ─────────────────────────────────────────────────
+  const counts: Record<string, number> = {};
+  SALES_STATUSES.forEach(s => { counts[s] = 0; });
+  // Use derived status (from stage) so counts stay in sync without manual updates
+  leads.forEach(l => {
+    const s = deriveSalesStatus(l);
+    counts[s] = (counts[s] || 0) + 1;
+  });
+
+  const totalLeads   = leads.length;
+  const activeDeals  = ACTIVE_STATUSES.reduce((sum, s) => sum + (counts[s] || 0), 0);
+  const closedDeals  = counts['Closed, and now a Customer'] || 0;
+  const rejectedDeals= REJECTED_STATUSES.reduce((sum, s) => sum + (counts[s] || 0), 0);
+  const conversionRate = totalLeads > 0 ? Math.round((closedDeals / totalLeads) * 100) : 0;
+
+  const maxCount = Math.max(...ACTIVE_STATUSES.map(s => counts[s] || 0), 1);
+
+  // Recent 5 leads
+  const recentLeads = [...leads].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5);
 
   return (
-    <div className="space-y-5 sm:space-y-7 animate-fade-in">
+    <div className="space-y-6 animate-fade-in">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Sales Dashboard</p>
-          <h1 className="text-xl sm:text-2xl font-extrabold text-gray-900">Welcome back, {user?.name?.split(' ')[0]}</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Track your pipeline and manage DRFs</p>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Sales Dashboard</p>
+          <h1 className="text-xl font-extrabold text-gray-900">Welcome back, {user?.name?.split(' ')[0]}</h1>
+          <p className="text-sm text-gray-400 mt-0.5">Track your deal pipeline and lifecycle status</p>
         </div>
-        <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 self-start sm:self-auto">
-          <span className="w-2 h-2 rounded-full bg-blue-500" />
-          <Activity size={13} className="text-blue-600" />
-          <span className="text-xs sm:text-sm font-semibold text-blue-700">My Pipeline</span>
+        <div className="flex items-center gap-2 bg-violet-50 border border-violet-100 rounded-xl px-3 py-2 self-start">
+          <span className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
+          <Activity size={13} className="text-violet-600" />
+          <span className="text-sm font-semibold text-violet-700">My Pipeline</span>
         </div>
       </div>
 
-      {/* Main Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
-        <StatCard
-          title="My Leads" value={stats.myLeads.total}
-          sub={`${stats.myLeads.new} new · ${stats.myLeads.converted} converted`}
-          icon={Users} color="text-violet-700" bg="bg-violet-50" border="border-violet-400"
-        />
-        <StatCard
-          title="My Accounts" value={stats.accounts.total}
-          sub={`${stats.accounts.active} active`}
-          icon={Building2} color="text-blue-600" bg="bg-blue-50" border="border-blue-400"
-        />
-        <StatCard
-          title="Quotation Value" value={formatCurrency(stats.quotations.totalValue)}
-          sub={`${stats.quotations.total} quotations raised`}
-          icon={FileText} color="text-emerald-700" bg="bg-emerald-50" border="border-emerald-400"
-        />
-        <StatCard
-          title="PO Value" value={formatCurrency(stats.purchaseOrders.totalValue)}
-          sub={`${stats.purchaseOrders.total} purchase orders`}
-          icon={ShoppingCart} color="text-orange-600" bg="bg-orange-50" border="border-orange-400"
-        />
+      {/* Stat Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard title="Total Leads" value={totalLeads}
+          sub={`${activeDeals} active deals`}
+          icon={Users} color="text-violet-700" bg="bg-violet-50" border="border-violet-400" />
+        <StatCard title="Closed (Customers)" value={closedDeals}
+          sub={`${conversionRate}% conversion rate`}
+          icon={CheckCircle2} color="text-emerald-700" bg="bg-emerald-50" border="border-emerald-400" />
+        <StatCard title="Active Deals" value={activeDeals}
+          sub="In pipeline stages"
+          icon={Target} color="text-blue-700" bg="bg-blue-50" border="border-blue-400" />
+        <StatCard title="Lost / Rejected" value={rejectedDeals}
+          sub={`${totalLeads > 0 ? Math.round((rejectedDeals / totalLeads) * 100) : 0}% rejection rate`}
+          icon={XCircle} color="text-red-600" bg="bg-red-50" border="border-red-400" />
       </div>
 
-      {/* DRF Analytics Section */}
-      {drfAnalytics && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <FileBadge size={18} className="text-violet-600" />
-            <h2 className="text-base font-bold text-gray-900">DRF Overview</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* ── Sales Funnel ── */}
+        <div className="lg:col-span-2 card">
+          <div className="flex items-center gap-2 mb-5">
+            <BarChart2 size={16} className="text-violet-600" />
+            <h2 className="font-semibold text-gray-800">Sales Lifecycle Funnel</h2>
           </div>
-          
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <DRFStatCard
-              title="Total DRFs" value={drfAnalytics.total}
-              sub={`This month: ${drfAnalytics.totalThisMonth ?? 0}`}
-              icon={FileBadge} color="text-violet-700" bg="bg-violet-50"
-            />
-            <DRFStatCard
-              title="Pending" value={drfAnalytics.pending}
-              sub="Awaiting review"
-              icon={Clock} color="text-amber-700" bg="bg-amber-50"
-            />
-            <DRFStatCard
-              title="Approved" value={drfAnalytics.approved}
-              sub={`${drfAnalytics.approvalRate ?? 0}% approval rate`}
-              icon={CheckCircle2} color="text-emerald-700" bg="bg-emerald-50"
-            />
-            <DRFStatCard
-              title="Rejected" value={drfAnalytics.rejected}
-              sub={`${drfAnalytics.rejectionRate ?? 0}% rejection rate`}
-              icon={XCircle} color="text-red-600" bg="bg-red-50"
-            />
-          </div>
-
-          {/* Expiring Soon Alert */}
-          {drfAnalytics.expiringSoon > 0 && (
-            <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-              <div className="flex items-center gap-3">
-                <AlertTriangle size={18} className="text-orange-600 flex-shrink-0" />
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-orange-800">
-                    {drfAnalytics.expiringSoon} DRF{drfAnalytics.expiringSoon > 1 ? 's are' : ' is'} expiring soon
-                  </p>
-                  <p className="text-xs text-orange-600 mt-0.5">Within the next 30 days</p>
+          <div className="space-y-2.5">
+            {ACTIVE_STATUSES.map(status => {
+              const count = counts[status] || 0;
+              const pct = Math.round((count / maxCount) * 100);
+              const style = STATUS_STYLE[status] || STATUS_STYLE['Uninitiated'];
+              return (
+                <div key={status}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${style.bg} ${style.text}`}>{status}</span>
+                    <span className="text-xs font-bold text-gray-700 tabular-nums">{count}</span>
+                  </div>
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all duration-500 ${style.bar}`} style={{ width: `${pct}%` }} />
+                  </div>
                 </div>
-                <Link 
-                  to="/drf?status=expiring-soon" 
-                  className="text-xs font-semibold text-orange-700 hover:text-orange-800 bg-white px-3 py-1.5 rounded-lg shadow-sm hover:shadow transition-all"
-                >
-                  View All
-                </Link>
-              </div>
+              );
+            })}
+          </div>
+
+          {/* Conversion stats row */}
+          <div className="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between text-sm">
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block" />
+              <span className="text-gray-600">Closed: <strong className="text-emerald-700">{closedDeals}</strong></span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full bg-red-400 inline-block" />
+              <span className="text-gray-600">Rejected: <strong className="text-red-600">{rejectedDeals}</strong></span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <TrendingUp size={13} className="text-violet-600" />
+              <span className="text-gray-600">Conversion: <strong className="text-violet-700">{conversionRate}%</strong></span>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Rejected Breakdown ── */}
+        <div className="card">
+          <div className="flex items-center gap-2 mb-4">
+            <XCircle size={15} className="text-red-500" />
+            <h2 className="font-semibold text-gray-800">Rejection Breakdown</h2>
+          </div>
+          {REJECTED_STATUSES.every(s => (counts[s] || 0) === 0) ? (
+            <p className="text-sm text-gray-400 text-center py-6">No rejected deals yet</p>
+          ) : (
+            <div className="space-y-2">
+              {REJECTED_STATUSES.map(status => {
+                const count = counts[status] || 0;
+                if (count === 0) return null;
+                return (
+                  <div key={status} className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
+                    <span className="text-xs text-gray-600 flex-1 pr-2 leading-tight">{status.replace('Rejected, at ', '')}</span>
+                    <span className="badge bg-red-100 text-red-600 text-xs font-bold flex-shrink-0">{count}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
-        </div>
-      )}
 
-      {/* Chart + Action Required */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        <div className="lg:col-span-2 card !p-4 sm:!p-6">
-          <div className="flex items-start sm:items-center justify-between mb-4 sm:mb-5 gap-2">
-            <div>
-              <h2 className="text-sm sm:text-base font-bold text-gray-900">My Lead Pipeline</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Leads by stage</p>
-            </div>
-            <Link to="/leads" className="text-xs font-semibold text-violet-600 hover:text-violet-800 flex items-center gap-1 whitespace-nowrap">
-              View all <ArrowRight size={13} />
-            </Link>
-          </div>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={stats.pipeline} layout="vertical" barSize={16} margin={{ left: 4, right: 12 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
-              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-              <YAxis dataKey="stage" type="category" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} width={76} />
-              <Tooltip
-                formatter={(v: number) => [v, 'Leads']}
-                cursor={{ fill: '#f5f3ff' }}
-                contentStyle={{ borderRadius: '12px', border: '1px solid #e5e7eb', boxShadow: '0 4px 16px rgba(0,0,0,0.08)', fontSize: 12 }}
-              />
-              <Bar dataKey="count" fill="#7c3aed" radius={[0, 5, 5, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="card !p-4 sm:!p-6">
-          <div className="mb-3 sm:mb-4">
-            <h2 className="text-sm sm:text-base font-bold text-gray-900">Action Required</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Items needing follow-up</p>
-          </div>
-          <div className="space-y-2 sm:space-y-2.5">
-            <ActionItem
-              label="DRFs Pending" value={drfAnalytics?.pending || 0}
-              to="/drf?status=Pending" icon={AlertTriangle}
-              itemColor="text-amber-700" itemBg="bg-amber-50"
-            />
-            <ActionItem
-              label="In Negotiation" value={stats.leadsInNegotiation}
-              to="/leads?stage=negotiation" icon={TrendingUp}
-              itemColor="text-orange-700" itemBg="bg-orange-50"
-            />
-            <ActionItem
-              label="Quotations Raised" value={stats.quotations.total}
-              to="/quotations" icon={FileText}
-              itemColor="text-violet-700" itemBg="bg-violet-50"
-            />
-            <div className="flex items-center justify-between p-3 sm:p-3.5 bg-rose-50 rounded-xl">
-              <div className="flex items-center gap-2 sm:gap-2.5">
-                <Users size={14} className="text-rose-700 flex-shrink-0" />
-                <span className="text-xs sm:text-sm font-semibold text-rose-700">Lost Leads</span>
-              </div>
-              <span className="text-lg sm:text-xl font-extrabold tabular-nums text-rose-700">{stats.myLeads.lost}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Recent DRFs */}
-      {recentDrfs.length > 0 && (
-        <div className="card !p-0 overflow-hidden">
-          <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-100 flex items-center justify-between">
-            <div>
-              <h2 className="text-sm sm:text-base font-bold text-gray-900">Recent DRFs</h2>
-              <p className="text-xs text-gray-400 mt-0.5 hidden sm:block">Latest document request forms</p>
-            </div>
-            <Link to="/drf" className="text-xs font-semibold text-violet-600 hover:text-violet-800 flex items-center gap-1 whitespace-nowrap">
-              View all <ArrowRight size={13} />
-            </Link>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[600px]">
-              <thead className="bg-gray-50/60">
-                <tr>
-                  <th className="table-header">DRF #</th>
-                  <th className="table-header">Company</th>
-                  <th className="table-header">OEM</th>
-                  <th className="table-header">Version</th>
-                  <th className="table-header">Status</th>
-                  <th className="table-header">Created</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {recentDrfs.map((drf: any) => (
-                  <tr key={drf._id} className="hover:bg-violet-50/30 transition-colors">
-                    <td className="table-cell font-mono text-xs font-semibold text-violet-700">
-                      <Link to={`/drf/${drf._id}`} className="hover:underline">{drf.drfNumber}</Link>
-                    </td>
-                    <td className="table-cell">
-                      <Link to={`/leads/${drf.leadId?._id}`} className="text-gray-700 hover:text-violet-600 hover:underline">
-                        {drf.leadId?.companyName}
-                      </Link>
-                    </td>
-                    <td className="table-cell text-gray-500">{drf.leadId?.oemName || '—'}</td>
-                    <td className="table-cell text-center">
-                      <span className={`badge ${drf.version > 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
-                        v{drf.version}
-                      </span>
-                    </td>
-                    <td className="table-cell">
-                      <span className={`text-xs font-medium px-2 py-1 rounded-full ${
-                        drf.status === 'Pending' ? 'bg-amber-100 text-amber-700' :
-                        drf.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' :
-                        drf.status === 'Rejected' ? 'bg-red-100 text-red-700' :
-                        'bg-gray-100 text-gray-600'
-                      }`}>
-                        {drf.status}
-                      </span>
-                    </td>
-                    <td className="table-cell text-gray-400 text-xs">{formatDate(drf.createdAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Sales Intelligence: Funnel + Rates */}
-      {stats.funnel && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <Target size={18} className="text-violet-600" />
-            <h2 className="text-base font-bold text-gray-900">Sales Funnel</h2>
-            <div className="ml-auto flex gap-4 text-xs">
-              {stats.conversionRate !== undefined && (
-                <span className="flex items-center gap-1 text-emerald-700 font-semibold">
-                  <TrendingUp size={12} /> {stats.conversionRate}% conversion
-                </span>
-              )}
-              {stats.drfApprovalRate !== undefined && (
-                <span className="flex items-center gap-1 text-blue-700 font-semibold">
-                  <CheckCircle2 size={12} /> {stats.drfApprovalRate}% DRF approval
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="card !p-4">
-            <div className="flex items-stretch gap-1">
-              {(stats.funnel as Array<{ stage: string; count: number; color: string }>).map((step, i, arr) => {
-                const maxCount = Math.max(...arr.map(s => s.count), 1);
-                const pct = Math.round((step.count / maxCount) * 100);
-                const colors: Record<string, string> = {
-                  'Leads': 'bg-violet-500',
-                  'DRFs': 'bg-blue-500',
-                  'Quotations': 'bg-amber-500',
-                  'POs': 'bg-orange-500',
-                  'Converted': 'bg-emerald-500',
-                };
-                const barColor = colors[step.stage] || 'bg-gray-400';
+          {/* All-status breakdown */}
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">All Status Counts</p>
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {SALES_STATUSES.map(s => {
+                const c = counts[s] || 0;
+                const style = STATUS_STYLE[s];
                 return (
-                  <div key={step.stage} className="flex-1 flex flex-col items-center gap-2">
-                    <p className="text-lg font-extrabold text-gray-900">{step.count}</p>
-                    <div className="w-full bg-gray-100 rounded-lg overflow-hidden" style={{ height: 80 }}>
-                      <div className={`w-full ${barColor} rounded-lg transition-all duration-500`} style={{ height: `${pct}%`, marginTop: `${100 - pct}%` }} />
-                    </div>
-                    <p className="text-[10px] font-semibold text-gray-500 text-center leading-tight">{step.stage}</p>
-                    {i < arr.length - 1 && (
-                      <span className="text-[10px] text-gray-400">{arr[i + 1].count > 0 ? Math.round((arr[i + 1].count / Math.max(step.count, 1)) * 100) : 0}%→</span>
-                    )}
+                  <div key={s} className="flex items-center justify-between text-xs">
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${style?.bg} ${style?.text} truncate max-w-[140px]`}>{s}</span>
+                    <span className="font-bold text-gray-700 ml-1">{c}</span>
                   </div>
                 );
               })}
             </div>
           </div>
         </div>
-      )}
+      </div>
 
-      {/* Sales Leaderboard */}
-      {stats.salesLeaderboard?.length > 0 && (
-        <div className="card !p-0 overflow-hidden">
-          <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-100 flex items-center gap-2">
-            <Trophy size={16} className="text-amber-500" />
-            <div>
-              <h2 className="text-sm sm:text-base font-bold text-gray-900">Sales Leaderboard</h2>
-              <p className="text-xs text-gray-400 mt-0.5 hidden sm:block">Top performers by revenue this period</p>
-            </div>
-            {stats.myRank && (
-              <span className="ml-auto text-xs font-semibold text-violet-700 bg-violet-50 px-2 py-1 rounded-lg">
-                My rank: #{stats.myRank}
-              </span>
-            )}
-          </div>
-          <div className="divide-y divide-gray-50">
-            {(stats.salesLeaderboard as Array<{ userId: string; name: string; revenue: number; deals: number }>)
-              .slice(0, 8)
-              .map((entry, i) => (
-                <div key={entry.userId} className={`flex items-center gap-3 px-4 py-3 ${i === 0 ? 'bg-amber-50/60' : ''}`}>
-                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
-                    i === 0 ? 'bg-amber-400 text-white' :
-                    i === 1 ? 'bg-gray-300 text-gray-700' :
-                    i === 2 ? 'bg-orange-300 text-white' :
-                    'bg-gray-100 text-gray-500'
-                  }`}>{i + 1}</span>
-                  <span className="flex-1 text-sm font-semibold text-gray-800">{entry.name}</span>
-                  <span className="text-xs text-gray-400">{entry.deals} deals</span>
-                  <span className="text-sm font-bold text-green-700 tabular-nums">
-                    {formatCurrency(entry.revenue)}
-                  </span>
-                </div>
-              ))}
-          </div>
+      {/* ── Recent Leads ── */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-semibold text-gray-800 flex items-center gap-2">
+            <Users size={15} className="text-violet-600" /> Recent Leads
+          </h2>
+          <Link to="/zieos/leads" className="text-xs text-violet-600 hover:underline flex items-center gap-1">
+            View all <ArrowRight size={11} />
+          </Link>
         </div>
-      )}
-
-      {/* Smart Alerts */}
-      {stats.alerts?.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Zap size={16} className="text-amber-500" />
-            <h2 className="text-base font-bold text-gray-900">Smart Alerts</h2>
-          </div>
-          <div className="space-y-2">
-            {(stats.alerts as Array<{ type: string; message: string; severity: 'warning' | 'danger' | 'info' }>).map((alert, i) => {
-              const style = alert.severity === 'danger'
-                ? 'bg-red-50 border-red-200 text-red-800'
-                : alert.severity === 'warning'
-                ? 'bg-amber-50 border-amber-200 text-amber-800'
-                : 'bg-blue-50 border-blue-200 text-blue-800';
-              const icon = alert.severity === 'danger'
-                ? <XCircle size={15} className="text-red-500 flex-shrink-0" />
-                : alert.severity === 'warning'
-                ? <AlertTriangle size={15} className="text-amber-500 flex-shrink-0" />
-                : <Clock size={15} className="text-blue-500 flex-shrink-0" />;
+        {recentLeads.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-6">No leads yet</p>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {recentLeads.map(lead => {
+              const ss = deriveSalesStatus(lead);
+              const style = STATUS_STYLE[ss];
               return (
-                <div key={i} className={`flex items-center gap-3 border rounded-xl p-3 text-sm ${style}`}>
-                  {icon}
-                  <span>{alert.message}</span>
+                <div key={lead._id} className="flex items-center justify-between py-2.5 gap-3">
+                  <div className="min-w-0 flex-1">
+                    <Link to={`/zieos/leads/${lead._id}`} className="text-sm font-semibold text-gray-800 hover:text-violet-700 truncate block">{lead.companyName}</Link>
+                    <p className="text-xs text-gray-400 truncate">{lead.contactPersonName || lead.contactName || '—'}</p>
+                  </div>
+                  <span className={`badge text-[10px] font-medium flex-shrink-0 ${style?.bg} ${style?.text}`}>{ss}</span>
                 </div>
               );
             })}
           </div>
-        </div>
-      )}
-
-      {/* Recent Leads */}
-      {stats.recentLeads?.length > 0 ? (
-        <div className="card !p-0 overflow-hidden">
-          <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-100 flex items-center justify-between">
-            <div>
-              <h2 className="text-sm sm:text-base font-bold text-gray-900">My Recent Leads</h2>
-              <p className="text-xs text-gray-400 mt-0.5 hidden sm:block">Your latest pipeline activity</p>
-            </div>
-            <Link to="/leads" className="text-xs font-semibold text-violet-600 hover:text-violet-800 flex items-center gap-1 whitespace-nowrap">
-              View all <ArrowRight size={13} />
-            </Link>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[480px]">
-              <thead className="bg-gray-50/60">
-                <tr>
-                  <th className="table-header">Company</th>
-                  <th className="table-header">Contact</th>
-                  <th className="table-header">Stage</th>
-                  <th className="table-header">Created</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {stats.recentLeads.map((lead: any) => (
-                  <tr key={lead._id} className="hover:bg-violet-50/30 transition-colors">
-                    <td className="table-cell">
-                      <Link to={`/leads/${lead._id}`} className="font-semibold text-violet-700 hover:underline">{lead.companyName}</Link>
-                    </td>
-                    <td className="table-cell text-gray-500">{lead.contactName}</td>
-                    <td className="table-cell"><StatusBadge status={lead.stage} /></td>
-                    <td className="table-cell text-gray-400 text-xs">{formatDate(lead.createdAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : (
-        <div className="card text-center py-12 sm:py-14">
-          <Users size={36} className="mx-auto text-gray-300 mb-3" />
-          <p className="text-base font-semibold text-gray-500">No leads assigned to you yet</p>
-          <p className="text-sm text-gray-400 mt-1">Create your first lead to get started</p>
-          <Link to="/leads" className="btn-primary mt-5 inline-block text-sm">+ New Lead</Link>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

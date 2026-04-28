@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import Lead from '../models/Lead';
+import Lead, { STAGE_TO_SALES_STATUS } from '../models/Lead';
 import OEMApprovalAttempt from '../models/OEMApprovalAttempt';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
@@ -59,6 +59,7 @@ export const createLead = async (req: AuthRequest, res: Response): Promise<void>
     if (!data.assignedTo) data.assignedTo = req.user!.id;
     if (!data.status) data.status = 'New';
     if (!data.stage)  data.stage  = 'New';
+    if (!data.salesStatus) data.salesStatus = 'Uninitiated';
     // Strip empty optional enum fields to avoid validation errors
     if (!data.source) delete data.source;
     if (!data.oemName) delete data.oemName;
@@ -83,10 +84,17 @@ export const createLead = async (req: AuthRequest, res: Response): Promise<void>
 export const updateLead = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     // Fetch old status before update
-    const old = await Lead.findById(req.params.id).select('status drfEmailSent');
+    const old = await Lead.findById(req.params.id).select('status drfEmailSent salesStatus');
     if (!old) { sendError(res, 'Lead not found', 404); return; }
 
-    const lead = await Lead.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true })
+    const updateBody = { ...req.body };
+    // Auto-set salesStatus from stage if not manually overridden
+    if (updateBody.stage && !updateBody.salesStatus) {
+      const auto = STAGE_TO_SALES_STATUS[updateBody.stage as string];
+      if (auto) updateBody.salesStatus = auto;
+    }
+
+    const lead = await Lead.findByIdAndUpdate(req.params.id, updateBody, { new: true, runValidators: true })
       .populate('assignedTo', 'name email');
     if (!lead) { sendError(res, 'Lead not found', 404); return; }
 

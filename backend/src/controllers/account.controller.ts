@@ -64,8 +64,9 @@ export const convertLeadToAccount = async (req: AuthRequest, res: Response): Pro
       assignedSales: lead.assignedTo || req.user!.id,
       notes: req.body.notes,
       status: 'Active',
+      salesStatus: 'Closed, and now a Customer',
     }).save();
-    await Lead.findByIdAndUpdate(leadId, { stage: 'Converted' });
+    await Lead.findByIdAndUpdate(leadId, { stage: 'Converted', salesStatus: 'Closed, and now a Customer' });
     notifyRole(['admin', 'hr_finance'], {
       title: 'New Account Created',
       message: `"${account.companyName}" has been converted from a lead to an active account`,

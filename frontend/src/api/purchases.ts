@@ -21,6 +21,85 @@ export const purchasesApi = {
     const { data } = await api.put(`/purchase-orders/${id}`, body);
     return data.data;
   },
+  delete: async (id: string) => {
+    const { data } = await api.delete(`/purchase-orders/${id}`);
+    return data.data;
+  },
+  convertToAccount: async (poId: string, body: { accountName?: string; notes?: string }) => {
+    const { data } = await api.post(`/purchase-orders/${poId}/convert`, body);
+    return data.data;
+  },
+
+  // ── 8-Step Workflow ──────────────────────────────────────────────────────
+
+  step2ForwardToArk: async (id: string, arkEmail: string, arkName?: string, file?: File, cc?: string, docName?: string) => {
+    const form = new FormData();
+    form.append('arkEmail', arkEmail);
+    if (arkName) form.append('arkName', arkName);
+    if (cc) form.append('cc', cc);
+    if (docName) form.append('docName', docName);
+    if (file) form.append('attachment', file);
+    const { data } = await api.post(`/purchase-orders/${id}/step2-forward-to-ark`, form);
+    return data.data;
+  },
+
+  step3PriceClearance: async (id: string, files?: File[], docNames?: string[]) => {
+    const form = new FormData();
+    if (files?.length) files.forEach(f => form.append('attachments', f));
+    if (docNames?.length) docNames.forEach(n => form.append('docNames', n));
+    const { data } = await api.post(`/purchase-orders/${id}/step3-price-clearance`, form);
+    return data.data;
+  },
+
+  step4SendDocsToCustomer: async (id: string, customerEmail: string, files?: File[]) => {
+    const form = new FormData();
+    form.append('customerEmail', customerEmail);
+    if (files?.length) files.forEach(f => form.append('attachments', f));
+    const { data } = await api.post(`/purchase-orders/${id}/step4-send-docs-to-customer`, form);
+    return data.data;
+  },
+
+  step5InvoiceToArk: async (id: string, arkEmail: string, file?: File, docName?: string) => {
+    const form = new FormData();
+    form.append('arkEmail', arkEmail);
+    if (docName) form.append('docName', docName);
+    if (file) form.append('attachment', file);
+    const { data } = await api.post(`/purchase-orders/${id}/step5-invoice-to-ark`, form);
+    return data.data;
+  },
+
+  step6SendDocsToArk: async (id: string, arkEmail: string, files?: File[]) => {
+    const form = new FormData();
+    form.append('arkEmail', arkEmail);
+    if (files?.length) files.forEach(f => form.append('attachments', f));
+    const { data } = await api.post(`/purchase-orders/${id}/step6-send-docs-to-ark`, form);
+    return data.data;
+  },
+
+  step7LicenseReceived: async (id: string) => {
+    const { data } = await api.post(`/purchase-orders/${id}/step7-license-received`);
+    return data.data;
+  },
+
+  step8FinalInvoice: async (
+    id: string,
+    customerEmail: string,
+    amount: number,
+    convertToAccount?: boolean,
+    accountName?: string,
+    file?: File,
+  ) => {
+    const form = new FormData();
+    form.append('customerEmail', customerEmail);
+    form.append('amount', String(amount));
+    if (convertToAccount) form.append('convertToAccount', 'true');
+    if (accountName) form.append('accountName', accountName);
+    if (file) form.append('attachment', file);
+    const { data } = await api.post(`/purchase-orders/${id}/step8-final-invoice`, form);
+    return data.data;
+  },
+
+  // ── Legacy endpoints ──────────────────────────────────────────────────────
   sendToVendor: async (id: string, vendorEmail: string, cc?: string) => {
     const { data } = await api.post(`/purchase-orders/${id}/send-to-vendor`, { vendorEmail, ...(cc ? { cc } : {}) });
     return data.data;
@@ -70,10 +149,6 @@ export const purchasesApi = {
     const { data } = await api.post(`/purchase-orders/${id}/mark-ark-invoice`, { amount });
     return data.data;
   },
-  convertToAccount: async (poId: string, body: { accountName?: string; notes?: string }) => {
-    const { data } = await api.post(`/purchase-orders/${poId}/convert`, body);
-    return data.data;
-  },
   recordPayment: async (id: string, body: unknown) => {
     const { data } = await api.post(`/purchase-orders/${id}/payment`, body);
     return data.data;
@@ -81,9 +156,5 @@ export const purchasesApi = {
   getVendorPayments: async (params?: Record<string, unknown>) => {
     const { data } = await api.get('/purchase-orders/vendor-payments', { params });
     return { data: data.data, pagination: { total: data.meta?.total ?? 0 } };
-  },
-  delete: async (id: string) => {
-    const { data } = await api.delete(`/purchase-orders/${id}`);
-    return data.data;
   },
 };

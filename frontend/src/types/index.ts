@@ -2,6 +2,35 @@ export type Role = 'admin' | 'sales' | 'engineer' | 'hr_finance' | 'platform_adm
 export type LeadStatus = 'New' | 'Contacted' | 'Qualified' | 'Not Qualified';
 export type QuotationStatus = 'Draft' | 'Sent' | 'Accepted' | 'Rejected' | 'Final';
 
+export type SalesStatus =
+  | 'Uninitiated'
+  | 'Sales meeting follow-up'
+  | 'Under technical Demo'
+  | 'Under Proposal submission Process'
+  | 'Under PO-Followup'
+  | 'Under payment follow-up'
+  | 'Closed, and now a Customer'
+  | 'Rejected, at Sales discussion stage'
+  | 'Rejected, at Tech Demo Stage'
+  | 'Rejected, at PO follow-up stage'
+  | 'Rejected, at Payment follow-up stage'
+  | 'Rejected, at license generation stage';
+
+export const SALES_STATUSES: SalesStatus[] = [
+  'Uninitiated',
+  'Sales meeting follow-up',
+  'Under technical Demo',
+  'Under Proposal submission Process',
+  'Under PO-Followup',
+  'Under payment follow-up',
+  'Closed, and now a Customer',
+  'Rejected, at Sales discussion stage',
+  'Rejected, at Tech Demo Stage',
+  'Rejected, at PO follow-up stage',
+  'Rejected, at Payment follow-up stage',
+  'Rejected, at license generation stage',
+];
+
 export interface Organization {
   _id: string;
   name: string;
@@ -52,6 +81,7 @@ export interface Lead {
   source?: string;
   status: LeadStatus;
   stage: LeadStage;
+  salesStatus?: SalesStatus;
   assignedTo?: User;
   website?: string;
   annualTurnover?: string;
@@ -100,6 +130,7 @@ export interface Account {
   assignedEngineer?: User;
   assignedSales?: User;
   status: 'Active' | 'Inactive';
+  salesStatus?: SalesStatus;
   licenseVersion?: string;
   licenseDate?: string;
   licenseExpiryDate?: string;
@@ -147,27 +178,60 @@ export interface Quotation {
   createdAt: string;
 }
 
+export interface POLineItem {
+  product: string;
+  description?: string;
+  quantity: number;
+  unitPrice: number;
+  amount: number;
+}
+
 export interface PurchaseOrder {
   _id: string;
+  organizationId?: string;
   leadId: Lead | string;
   poNumber: string;
   amount: number;
+  items?: POLineItem[];
   product?: string;
   vendorName?: string;
   vendorEmail?: string;
   receivedDate: string;
   notes?: string;
+  paymentTerms?: string;
   converted: boolean;
   uploadedBy: User | string;
   isArchived: boolean;
-  paymentStatus?: 'Unpaid' | 'Paid';
-  paidAmount?: number;
-  paidDate?: string;
-  paymentMode?: string;
-  paymentReference?: string;
-  paymentNotes?: string;
-  paidBy?: User | string;
-  // 6-step PO flow
+  // 8-step workflow
+  currentStep: number;
+  workflowStatus: 'Draft' | 'In Progress' | 'Completed';
+  // Step 2: Forward PO to ARK
+  step2ForwardedToArk?: boolean;
+  step2ForwardedAt?: string;
+  step2PoDocName?: string;
+  // Step 3: ARK Response
+  step3PriceClearanceReceived?: boolean;
+  step3ReceivedAt?: string;
+  step3DocNames?: string[];
+  // Step 4: Send Docs to Customer
+  step4DocsSentToCustomer?: boolean;
+  step4SentAt?: string;
+  // Step 5: Invoice to ARK
+  step5InvoiceToArk?: boolean;
+  step5InvoiceSentAt?: string;
+  step5InvoiceDocName?: string;
+  // Step 6: Send Docs to ARK
+  step6DocsSentToArk?: boolean;
+  step6SentAt?: string;
+  // Step 7: License Mail Received
+  step7LicenseMailReceived?: boolean;
+  step7LicenseMailReceivedAt?: string;
+  // Step 8: Final Invoice
+  step8FinalInvoiceSent?: boolean;
+  step8FinalInvoiceSentAt?: string;
+  step8FinalInvoiceAmount?: number;
+  step8FinalInvoiceNumber?: string;
+  // Legacy 6-step fields (kept for backward compat)
   customerInvoiceSent?: boolean;
   customerInvoiceSentAt?: string;
   poForwardedToArk?: boolean;
@@ -179,7 +243,6 @@ export interface PurchaseOrder {
   arkInvoiceReceived?: boolean;
   arkInvoiceReceivedAt?: string;
   arkInvoiceAmount?: number;
-  // legacy flow (kept for backward compat)
   vendorEmailSent?: boolean;
   vendorEmailSentAt?: string;
   invoiceGenerated?: boolean;
@@ -190,6 +253,14 @@ export interface PurchaseOrder {
   licenseGeneratedAt?: string;
   licenseKey?: string;
   licenseFile?: string;
+  // Payment
+  paymentStatus?: 'Unpaid' | 'Paid';
+  paidAmount?: number;
+  paidDate?: string;
+  paymentMode?: string;
+  paymentReference?: string;
+  paymentNotes?: string;
+  paidBy?: User | string;
   createdAt: string;
   updatedAt: string;
 }

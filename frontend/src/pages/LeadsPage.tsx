@@ -13,7 +13,40 @@ import Modal from '@/components/common/Modal';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import ContactEmailPicker from '@/components/common/ContactEmailPicker';
 import { formatDate } from '@/utils/formatters';
-import type { Lead, User, LeadStatus } from '@/types';
+import type { Lead, User, LeadStatus, SalesStatus } from '@/types';
+import { SALES_STATUSES } from '@/types';
+
+const STAGE_TO_SALES_STATUS: Record<string, SalesStatus> = {
+  'New':           'Uninitiated',
+  'OEM Submitted': 'Sales meeting follow-up',
+  'OEM Approved':  'Sales meeting follow-up',
+  'OEM Rejected':  'Rejected, at Sales discussion stage',
+  'OEM Expired':   'Rejected, at Sales discussion stage',
+  'Technical Done':'Under technical Demo',
+  'Quotation Sent':'Under Proposal submission Process',
+  'Negotiation':   'Under Proposal submission Process',
+  'PO Received':   'Under PO-Followup',
+  'Converted':     'Closed, and now a Customer',
+};
+
+const REJECTED_STATUSES = SALES_STATUSES.filter(s => s.startsWith('Rejected'));
+
+const deriveSalesStatus = (lead: Lead): SalesStatus => {
+  // If manually set to a Rejected reason, honour it
+  if (lead.salesStatus?.startsWith('Rejected')) return lead.salesStatus;
+  // Otherwise derive from stage
+  return STAGE_TO_SALES_STATUS[lead.stage] ?? lead.salesStatus ?? 'Uninitiated';
+};
+
+const DEAL_STATUS_STYLE: Record<string, string> = {
+  'Uninitiated':                         'bg-gray-100 text-gray-500',
+  'Sales meeting follow-up':             'bg-blue-100 text-blue-700',
+  'Under technical Demo':                'bg-violet-100 text-violet-700',
+  'Under Proposal submission Process':   'bg-amber-100 text-amber-700',
+  'Under PO-Followup':                   'bg-orange-100 text-orange-700',
+  'Under payment follow-up':             'bg-sky-100 text-sky-700',
+  'Closed, and now a Customer':          'bg-emerald-100 text-emerald-700',
+};
 
 const STATUS_COLORS: Record<LeadStatus, string> = {
   'New':           'bg-gray-100 text-gray-600',
@@ -105,6 +138,7 @@ const emptyDrfForm = {
 
 export default function LeadsPage() {
   const user = useAuthStore((s) => s.user);
+  const canEdit = user?.role === 'admin' || user?.role === 'sales';
   const [leads, setLeads] = useState<Lead[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -117,6 +151,7 @@ export default function LeadsPage() {
   const [form, setForm] = useState({ ...emptyForm });
   const [saving, setSaving] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
+  const [updatingSalesStatus, setUpdatingSalesStatus] = useState<string | null>(null);
 
   // Edit modal
   const [editTarget, setEditTarget] = useState<Lead | null>(null);
@@ -221,6 +256,14 @@ export default function LeadsPage() {
       await leadsApi.update(leadId, { status: newStatus });
       setLeads(prev => prev.map(l => l._id === leadId ? { ...l, status: newStatus } : l));
     } catch { } finally { setUpdatingStatus(null); }
+  };
+
+  const handleSalesStatusChange = async (leadId: string, newSalesStatus: SalesStatus) => {
+    setUpdatingSalesStatus(leadId);
+    try {
+      await leadsApi.update(leadId, { salesStatus: newSalesStatus });
+      setLeads(prev => prev.map(l => l._id === leadId ? { ...l, salesStatus: newSalesStatus } : l));
+    } catch { } finally { setUpdatingSalesStatus(null); }
   };
 
   const openDrfModal = (lead: Lead) => {
@@ -374,6 +417,7 @@ export default function LeadsPage() {
                   <th className="table-header min-w-[150px]">Remarks</th>
                   <th className="table-header min-w-[110px]">Status</th>
                   <th className="table-header min-w-[100px]">Stage</th>
+                  <th className="table-header min-w-[200px]">Deal Status</th>
                   <th className="table-header min-w-[100px]">Assigned</th>
                   <th className="table-header min-w-[100px]">Actions</th>
                 </tr>
@@ -415,6 +459,30 @@ export default function LeadsPage() {
                       )}
                     </td>
                     <td className="table-cell"><StatusBadge status={lead.stage} /></td>
+                    <td className="table-cell">
+                      {updatingSalesStatus === lead._id ? (
+                        <span className="badge text-xs bg-violet-100 text-violet-600 animate-pulse">Updating…</span>
+                      ) : lead.stage === 'Lost' && canEdit ? (
+                        // Only Lost deals need manual rejection reason selection
+                        <select
+                          value={lead.salesStatus?.startsWith('Rejected') ? lead.salesStatus : ''}
+                          onChange={e => handleSalesStatusChange(lead._id, e.target.value as SalesStatus)}
+                          className="text-xs font-medium rounded-lg px-2 py-1 border cursor-pointer focus:ring-1 focus:ring-red-400 max-w-[190px] bg-red-50 text-red-700 border-red-200"
+                        >
+                          <option value="">— Select reason —</option>
+                          {REJECTED_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      ) : (
+                        // Auto-derived from stage — read only
+                        <span className={`badge text-xs font-medium ${
+                          deriveSalesStatus(lead).startsWith('Rejected')
+                            ? 'bg-red-100 text-red-600'
+                            : DEAL_STATUS_STYLE[deriveSalesStatus(lead)] || 'bg-gray-100 text-gray-500'
+                        }`}>
+                          {deriveSalesStatus(lead)}
+                        </span>
+                      )}
+                    </td>
                     <td className="table-cell text-gray-500 whitespace-nowrap">{(lead.assignedTo as User)?.name || '—'}</td>
                     <td className="table-cell">
                       <div className="flex items-center gap-1">

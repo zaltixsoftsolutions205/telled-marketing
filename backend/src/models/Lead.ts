@@ -1,5 +1,47 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
+export type SalesStatus =
+  | 'Uninitiated'
+  | 'Sales meeting follow-up'
+  | 'Under technical Demo'
+  | 'Under Proposal submission Process'
+  | 'Under PO-Followup'
+  | 'Under payment follow-up'
+  | 'Closed, and now a Customer'
+  | 'Rejected, at Sales discussion stage'
+  | 'Rejected, at Tech Demo Stage'
+  | 'Rejected, at PO follow-up stage'
+  | 'Rejected, at Payment follow-up stage'
+  | 'Rejected, at license generation stage';
+
+export const SALES_STATUS_VALUES: SalesStatus[] = [
+  'Uninitiated',
+  'Sales meeting follow-up',
+  'Under technical Demo',
+  'Under Proposal submission Process',
+  'Under PO-Followup',
+  'Under payment follow-up',
+  'Closed, and now a Customer',
+  'Rejected, at Sales discussion stage',
+  'Rejected, at Tech Demo Stage',
+  'Rejected, at PO follow-up stage',
+  'Rejected, at Payment follow-up stage',
+  'Rejected, at license generation stage',
+];
+
+export const STAGE_TO_SALES_STATUS: Partial<Record<string, SalesStatus>> = {
+  'New':           'Uninitiated',
+  'OEM Submitted': 'Sales meeting follow-up',
+  'OEM Approved':  'Sales meeting follow-up',
+  'OEM Rejected':  'Rejected, at Sales discussion stage',
+  'OEM Expired':   'Rejected, at Sales discussion stage',
+  'Technical Done':'Under technical Demo',
+  'Quotation Sent':'Under Proposal submission Process',
+  'Negotiation':   'Under Proposal submission Process',
+  'PO Received':   'Under PO-Followup',
+  'Converted':     'Closed, and now a Customer',
+};
+
 export interface ILead extends Document {
   companyName: string;
   contactName: string;
@@ -15,6 +57,7 @@ export interface ILead extends Document {
   assignedTo?: mongoose.Types.ObjectId;
   status: 'New' | 'Contacted' | 'Qualified' | 'Not Qualified';
   stage: string;
+  salesStatus: SalesStatus;
   website?: string;
   annualTurnover?: string;
   designation?: string;
@@ -60,6 +103,11 @@ const LeadSchema = new Schema<ILead>(
         'Technical Done', 'Quotation Sent', 'Negotiation', 'PO Received', 'Converted', 'Lost',
       ],
       default: 'New',
+    },
+    salesStatus: {
+      type: String,
+      enum: SALES_STATUS_VALUES,
+      default: 'Uninitiated',
     },
     website:         { type: String },
     annualTurnover:  { type: String },

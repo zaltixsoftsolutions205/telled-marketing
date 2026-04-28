@@ -16,6 +16,7 @@ export interface IAccount extends Document {
   assignedEngineer?: mongoose.Types.ObjectId;
   assignedSales: mongoose.Types.ObjectId;
   status: 'Active' | 'Inactive' | 'Suspended';
+  salesStatus?: string;
   isArchived: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -38,6 +39,7 @@ const AccountSchema = new Schema<IAccount>(
     assignedEngineer: { type: Schema.Types.ObjectId, ref: 'User' },
     assignedSales: { type: Schema.Types.ObjectId, ref: 'User' },
     status: { type: String, enum: ['Active', 'Inactive', 'Suspended'], default: 'Active' },
+    salesStatus: { type: String, default: 'Closed, and now a Customer' },
     isArchived: { type: Boolean, default: false },
   },
   { timestamps: true }
