@@ -173,7 +173,7 @@ export const getQuotations = async (req: AuthRequest, res: Response): Promise<vo
     const allPoLeadIds = await PurchaseOrder.find({ isArchived: { $ne: true } }).distinct('leadId');
     const poLeadIdSet = new Set(allPoLeadIds.map((id: unknown) => String(id)));
     const enriched = quotations.map((q) => {
-      const obj = q.toObject() as Record<string, unknown>;
+      const obj = q.toObject() as unknown as Record<string, unknown>;
       const qLeadId = (q.leadId as any)?._id ?? q.leadId;
       obj.poReceived = poLeadIdSet.has(String(qLeadId));
       return obj;

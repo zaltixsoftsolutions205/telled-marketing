@@ -5,6 +5,13 @@ export interface IOrganization extends Document {
   slug: string;
   ownerId: mongoose.Types.ObjectId;
   isActive: boolean;
+  attendanceSettings?: Record<string, unknown>;
+  leavePolicy?: {
+    Casual: number;
+    Sick: number;
+    Annual: number;
+    Unpaid: number;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
