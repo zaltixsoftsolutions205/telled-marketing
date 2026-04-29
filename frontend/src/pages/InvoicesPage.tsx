@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, Search, FileText, CreditCard, Download, Receipt, TrendingUp, AlertCircle } from 'lucide-react';
+import { Plus, Search, FileText, CreditCard, Download, Receipt, TrendingUp, AlertCircle, Building2, Users } from 'lucide-react';
 import ExcelImportButton from '@/components/common/ExcelImportButton';
 import { invoicesApi } from '@/api/invoices';
 import { accountsApi } from '@/api/accounts';
@@ -7,9 +7,12 @@ import StatusBadge from '@/components/common/StatusBadge';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
 import { formatDate, formatCurrency } from '@/utils/formatters';
+import { cn } from '@/utils/cn';
 import type { Invoice, Account } from '@/types';
 
 const PAYMENT_MODES = ['Bank Transfer', 'Cheque', 'Cash', 'UPI', 'Online'];
+
+type TypeTab = 'all' | 'customer' | 'vendor';
 
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -17,6 +20,7 @@ export default function InvoicesPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [typeTab, setTypeTab] = useState<TypeTab>('all');
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
@@ -33,11 +37,12 @@ export default function InvoicesPage() {
       const params: Record<string, unknown> = { page, limit: 15 };
       if (search) params.search = search;
       if (statusFilter) params.status = statusFilter;
+      if (typeTab !== 'all') params.invoiceType = typeTab;
       const res = await invoicesApi.getAll(params);
       setInvoices(res.data || []);
       setTotal(res.pagination?.total ?? 0);
     } catch (err) { console.error('InvoicesPage load:', err); setInvoices([]); setTotal(0); } finally { setLoading(false); }
-  }, [page, search, statusFilter]);
+  }, [page, search, statusFilter, typeTab]);
 
   const loadStats = useCallback(async () => {
     try {
@@ -165,6 +170,29 @@ export default function InvoicesPage() {
         </div>
       </div>
 
+      {/* Type tabs */}
+      <div className="flex gap-2 border-b border-gray-200">
+        {([
+          { key: 'all',      label: 'All Invoices',      icon: FileText },
+          { key: 'customer', label: 'Customer Invoices',  icon: Users },
+          { key: 'vendor',   label: 'Vendor / ARK Invoices', icon: Building2 },
+        ] as { key: TypeTab; label: string; icon: React.ElementType }[]).map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            onClick={() => { setTypeTab(key); setPage(1); }}
+            className={cn(
+              'flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 whitespace-nowrap transition-colors',
+              typeTab === key
+                ? 'border-violet-600 text-violet-600'
+                : 'border-transparent text-gray-500 hover:text-violet-600'
+            )}
+          >
+            <Icon size={14} />
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-48">
           <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
@@ -172,7 +200,7 @@ export default function InvoicesPage() {
         </div>
         <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className="input-field w-auto">
           <option value="">All Statuses</option>
-          {['Unpaid', 'Partially Paid', 'Paid', 'Overdue', 'Cancelled'].map(s => <option key={s} value={s}>{s}</option>)}
+          {['Draft', 'Sent', 'Unpaid', 'Partially Paid', 'Paid', 'Overdue', 'Cancelled'].map(s => <option key={s} value={s}>{s}</option>)}
         </select>
       </div>
 
@@ -185,7 +213,8 @@ export default function InvoicesPage() {
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
                   <th className="table-header">Invoice #</th>
-                  <th className="table-header">Account</th>
+                  <th className="table-header">Type</th>
+                  <th className="table-header">Party</th>
                   <th className="table-header">Amount</th>
                   <th className="table-header">Paid</th>
                   <th className="table-header">Due Date</th>
@@ -194,14 +223,24 @@ export default function InvoicesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {invoices.map((inv) => (
+                {invoices.map((inv) => {
+                  const isVendor = inv.invoiceType === 'vendor';
+                  const partyName = isVendor
+                    ? (inv.vendorName || 'ARK / Vendor')
+                    : ((inv.accountId as any)?.accountName || (inv.accountId as any)?.companyName || (inv.leadId as any)?.companyName || '—');
+                  return (
                   <tr
                     key={inv._id}
                     className={`hover:bg-violet-50/20 transition-colors ${inv.status === 'Overdue' ? 'bg-red-50/40' : ''}`}
                   >
                     <td className="table-cell font-mono font-medium text-sm">{inv.invoiceNumber}</td>
-                    <td className="table-cell">{(inv.accountId as Account)?.accountName}</td>
-                    <td className="table-cell font-semibold">{formatCurrency(inv.amount)}</td>
+                    <td className="table-cell">
+                      <span className={cn('badge text-xs', isVendor ? 'bg-amber-100 text-amber-700' : 'bg-violet-100 text-violet-700')}>
+                        {isVendor ? 'Vendor' : 'Customer'}
+                      </span>
+                    </td>
+                    <td className="table-cell text-gray-700 font-medium text-sm">{partyName}</td>
+                    <td className="table-cell font-semibold">{formatCurrency(inv.totalAmount ?? inv.amount)}</td>
                     <td className="table-cell text-green-700">{formatCurrency(inv.paidAmount)}</td>
                     <td className="table-cell text-gray-400">{formatDate(inv.dueDate)}</td>
                     <td className="table-cell"><StatusBadge status={inv.status} /></td>
@@ -227,7 +266,8 @@ export default function InvoicesPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

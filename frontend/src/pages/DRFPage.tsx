@@ -458,27 +458,53 @@ export default function DRFPage() {
         <StatCard title="Expiring Soon"  value={analytics?.expiringSoon ?? 0}  sub="Within 30 days"                                  icon={AlertTriangle} color="text-orange-600" bg="bg-orange-50"  onClick={() => handleCardClick('expiring', 'expiring', 'Expiring Soon')} />
       </div>
 
-      {/* Expiring list */}
-      {analytics?.expiringList?.length > 0 && (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <div className="px-4 py-2 bg-orange-50 border-b border-orange-100 flex items-center gap-2">
-            <AlertTriangle size={14} className="text-orange-600" />
-            <h2 className="text-sm font-semibold text-gray-900">Expiring in next 30 days</h2>
-            <span className="ml-auto text-xs text-orange-600 font-medium">{analytics.expiringList.length} DRFs</span>
+      {/* 7-day expiry alert */}
+      {(() => {
+        const expiring7 = drfs.filter((d: any) => {
+          if (d.status !== 'Pending' && d.status !== 'Approved') return false;
+          if (d.extensionRequested) return false;
+          const days = getExpiryDays(d);
+          return days !== null && days >= 0 && days <= 7;
+        });
+        if (!expiring7.length) return null;
+        return (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 overflow-hidden">
+            <div className="px-4 py-2.5 bg-amber-100 border-b border-amber-200 flex items-center gap-2">
+              <AlertTriangle size={15} className="text-amber-600 flex-shrink-0" />
+              <span className="text-sm font-semibold text-amber-800">
+                {expiring7.length} DRF{expiring7.length > 1 ? 's' : ''} expiring within 7 days — send extension before they expire
+              </span>
+            </div>
+            <div className="divide-y divide-amber-100">
+              {expiring7.map((drf: any) => {
+                const days = getExpiryDays(drf);
+                return (
+                  <div key={drf._id} className="px-4 py-2.5 flex items-center justify-between gap-3 hover:bg-amber-100/50 transition-colors">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="font-mono text-xs font-semibold text-violet-700 flex-shrink-0">{drf.drfNumber}</span>
+                      <span className="text-sm font-medium text-gray-800 truncate">{drf.leadId?.companyName}</span>
+                      <span className="text-xs text-gray-500 flex-shrink-0">{drf.leadId?.oemName || '—'}</span>
+                    </div>
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <span className={`text-xs font-semibold ${days === 0 ? 'text-red-600' : days !== null && days <= 3 ? 'text-red-500' : 'text-amber-700'}`}>
+                        {days === 0 ? 'Expires today' : `${days}d left — expires ${formatDate(drf.expiryDate)}`}
+                      </span>
+                      <button
+                        onClick={() => handleRequestExtension(drf)}
+                        disabled={extensionSending === drf._id}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white text-amber-700 border border-amber-300 rounded-lg hover:bg-amber-50 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                      >
+                        <CalendarClock size={12} />
+                        {extensionSending === drf._id ? 'Sending…' : 'Send Extension Mail'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-          <div className="divide-y divide-gray-100 max-h-32 overflow-y-auto">
-            {analytics.expiringList.slice(0, 3).map((drf: any) => (
-              <div key={drf._id} className="px-4 py-2 flex items-center justify-between hover:bg-orange-50/30 cursor-pointer text-sm">
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-xs font-semibold text-violet-700">{drf.drfNumber}</span>
-                  <span className="text-xs text-gray-600">{drf.leadId?.companyName}</span>
-                </div>
-                <span className="text-xs text-orange-600 font-medium">Expires {formatDate(drf.expiryDate)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Filters */}
       <div className="bg-white rounded-lg border border-gray-200 p-4">
@@ -565,7 +591,7 @@ export default function DRFPage() {
                         {drf.expiryDate ? (
                           (() => {
                             const days = getExpiryDays(drf);
-                            const isWarning = days !== null && days <= 5 && days >= 0;
+                            const isWarning = days !== null && days <= 7 && days >= 0;
                             const isExpired = days !== null && days < 0;
                             return (
                               <span className={isExpired ? 'text-red-500 font-medium' : isWarning ? 'text-amber-600 font-medium' : ''}>
@@ -595,12 +621,12 @@ export default function DRFPage() {
                             );
                           }
                           const days = getExpiryDays(drf);
-                          if (drf.status === 'Pending' && days !== null && days <= 5) {
+                          if (drf.status === 'Pending' && days !== null && days <= 7) {
                             return (
                               <button
                                 onClick={() => handleRequestExtension(drf)}
                                 disabled={extensionSending === drf._id}
-                                title={`Expiring in ${days} day${days !== 1 ? 's' : ''} — click to send extension request`}
+                                title={`Expiring in ${days} day${days !== 1 ? 's' : ''} — click to send DRF extension email`}
                                 className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-300 rounded-lg hover:bg-amber-100 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 <CalendarClock size={12} />

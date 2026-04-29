@@ -14,8 +14,16 @@ export const getInvoices = async (req: AuthRequest, res: Response): Promise<void
     const filter: Record<string, unknown> = { isArchived: false };
     if (req.query.status) filter.status = req.query.status;
     if (req.query.accountId) filter.accountId = req.query.accountId;
+    if (req.query.invoiceType) filter.invoiceType = req.query.invoiceType;
     const [invoices, total] = await Promise.all([
-      Invoice.find(filter).populate('accountId', 'companyName contactEmail').populate('createdBy', 'name').sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Invoice.find(filter)
+        .populate('accountId', 'companyName contactEmail')
+        .populate('leadId', 'companyName contactPersonName email')
+        .populate('purchaseOrderId', 'poNumber')
+        .populate('createdBy', 'name')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
       Invoice.countDocuments(filter),
     ]);
     sendPaginated(res, invoices, total, page, limit);
@@ -24,10 +32,18 @@ export const getInvoices = async (req: AuthRequest, res: Response): Promise<void
 
 export const createInvoice = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { amount, taxPercent = 18 } = req.body;
+    const { amount, taxPercent = 18, invoiceType = 'customer' } = req.body;
     const taxAmount = (amount * taxPercent) / 100;
     const totalAmount = amount + taxAmount;
-    let invoice = await new Invoice({ ...req.body, invoiceNumber: generateInvoiceNumber(), taxAmount, totalAmount, status: 'Sent', createdBy: req.user!.id }).save();
+    let invoice = await new Invoice({
+      ...req.body,
+      invoiceNumber: generateInvoiceNumber(),
+      taxAmount,
+      totalAmount,
+      invoiceType,
+      status: 'Sent',
+      createdBy: req.user!.id,
+    }).save();
     try {
       const account = await Account.findById(req.body.accountId);
       if (account) {

@@ -895,43 +895,156 @@ export const mockSupport = {
 };
 
 // ─── INVOICES MOCK ───────────────────────────────────────────────────────────
+
+// Derive invoice records from completed PO workflow steps
+const derivePOInvoices = (): any[] => {
+  const derived: any[] = [];
+  const pos = orgPOs();
+  const accounts = orgAccounts();
+
+  for (const po of pos) {
+    // Step 5: Invoice sent to ARK/vendor
+    if (po.step5InvoiceToArk) {
+      derived.push({
+        _id: `po-inv-ark-${po._id}`,
+        organizationId: _currentOrgId,
+        purchaseOrderId: { _id: po._id, poNumber: po.poNumber },
+        leadId: po.leadId,
+        invoiceType: 'vendor',
+        vendorName: po.vendorName || 'ARK / OEM',
+        vendorEmail: po.vendorEmail || '',
+        invoiceNumber: `ARK-${po.poNumber}`,
+        amount: po.amount,
+        totalAmount: po.amount,
+        paidAmount: 0,
+        dueDate: po.step5InvoiceSentAt || po.updatedAt || now(),
+        status: 'Sent',
+        notes: `Invoice sent to ARK for PO ${po.poNumber}`,
+        createdAt: po.step5InvoiceSentAt || po.updatedAt || now(),
+        updatedAt: po.updatedAt || now(),
+      });
+    }
+
+    // Step 8: Final invoice sent to customer
+    if (po.step8FinalInvoiceSent) {
+      const account = accounts.find((a: any) =>
+        a.leadId?._id === po.leadId?._id || a.leadId?._id === po.leadId || a.leadId === po.leadId?._id
+      );
+      derived.push({
+        _id: `po-inv-cust-${po._id}`,
+        organizationId: _currentOrgId,
+        purchaseOrderId: { _id: po._id, poNumber: po.poNumber },
+        leadId: po.leadId,
+        accountId: account ? { _id: account._id, accountName: account.accountName || account.companyName } : null,
+        invoiceType: 'customer',
+        invoiceNumber: po.step8FinalInvoiceNumber || `INV-${po.poNumber}`,
+        amount: po.step8FinalInvoiceAmount || po.amount,
+        totalAmount: po.step8FinalInvoiceAmount || po.amount,
+        paidAmount: 0,
+        dueDate: po.step8FinalInvoiceSentAt || po.updatedAt || now(),
+        status: po.converted ? 'Paid' : 'Sent',
+        notes: `Final invoice for PO ${po.poNumber}`,
+        createdAt: po.step8FinalInvoiceSentAt || po.updatedAt || now(),
+        updatedAt: po.updatedAt || now(),
+      });
+    }
+  }
+  return derived;
+};
+
 export const mockInvoices = {
   getAll: async (params: Record<string, unknown> = {}) => {
     await delay();
-    let items = [...orgInvoices()];
-    if (params.status) items = items.filter((i: any) => i.status === params.status);
+    // Combine manually created invoices + auto-derived from PO steps
+    const poInvoices = derivePOInvoices();
+    const manualInvoices = orgInvoices();
+    // Deduplicate: manual invoices take precedence (by invoiceNumber)
+    const manualNums = new Set(manualInvoices.map((i: any) => i.invoiceNumber));
+    const merged = [...manualInvoices, ...poInvoices.filter((i: any) => !manualNums.has(i.invoiceNumber))];
+
+    let items = merged;
+    if (params.status)      items = items.filter((i: any) => i.status === params.status);
+    if (params.invoiceType) items = items.filter((i: any) => i.invoiceType === params.invoiceType);
+    if (params.accountId)   items = items.filter((i: any) => i.accountId?._id === params.accountId);
+    items.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     return mockPaginate(items, Number(params.page) || 1, 15);
   },
-  getByAccount: async (accountId: string) => { await delay(); return orgInvoices().filter((i: any) => i.accountId._id === accountId); },
-  getById: async (id: string) => { await delay(); return orgInvoices().find((i: any) => i._id === id); },
+
+  getByAccount: async (accountId: string) => {
+    await delay();
+    const poInvoices = derivePOInvoices();
+    return [...orgInvoices(), ...poInvoices].filter((i: any) => i.accountId?._id === accountId);
+  },
+
+  getById: async (id: string) => {
+    await delay();
+    return orgInvoices().find((i: any) => i._id === id)
+      || derivePOInvoices().find((i: any) => i._id === id)
+      || null;
+  },
+
   getStats: async () => {
     await delay();
-    const items = orgInvoices();
+    const poInvoices = derivePOInvoices();
+    const manualNums = new Set(orgInvoices().map((i: any) => i.invoiceNumber));
+    const items = [...orgInvoices(), ...poInvoices.filter((i: any) => !manualNums.has(i.invoiceNumber))];
+    const totalAmount = items.reduce((s: number, i: any) => s + (i.totalAmount ?? i.amount), 0);
+    const collected   = items.filter((i: any) => i.status === 'Paid').reduce((s: number, i: any) => s + (i.totalAmount ?? i.amount), 0);
     return {
-      totalRevenue: items.filter((i: any) => i.status === 'Paid').reduce((s: number, i: any) => s + i.amount, 0),
-      pending:      items.filter((i: any) => i.status === 'Unpaid' || i.status === 'Partially Paid').length,
-      overdue:      items.filter((i: any) => i.status === 'Overdue').length,
+      total: items.length,
+      totalAmount,
+      collected,
+      outstanding: totalAmount - collected,
+      totalRevenue: collected,
+      pending: items.filter((i: any) => ['Sent', 'Unpaid', 'Partially Paid'].includes(i.status)).length,
+      overdue:  items.filter((i: any) => i.status === 'Overdue').length,
     };
   },
+
   create: async (data: Record<string, unknown>) => {
     await delay(400);
     const account   = orgAccounts().find((a: any) => a._id === data.accountId);
     const createdBy = orgUsers().find((u: any) => u.role === 'admin') || orgUsers()[0];
-    const inv = { _id: 'inv' + uid(), organizationId: _currentOrgId, accountId: { _id: account?._id, accountName: account?.accountName }, invoiceNumber: 'INV-2026-00' + (orgInvoices().length + 1), amount: Number(data.amount), paidAmount: 0, dueDate: data.dueDate, status: 'Unpaid', notes: String(data.notes || ''), createdBy, createdAt: now() };
+    const seq = orgInvoices().length + derivePOInvoices().length + 1;
+    const inv = {
+      _id: 'inv' + uid(), organizationId: _currentOrgId,
+      accountId: account ? { _id: account._id, accountName: account.accountName || account.companyName } : null,
+      invoiceType: data.invoiceType || 'customer',
+      invoiceNumber: `INV-${new Date().getFullYear()}-${String(seq).padStart(4, '0')}`,
+      amount: Number(data.amount), totalAmount: Number(data.amount),
+      paidAmount: 0, dueDate: data.dueDate, status: 'Sent',
+      notes: String(data.notes || ''), createdBy, createdAt: now(), updatedAt: now(),
+    };
     INVOICES = [...INVOICES, inv];
     return inv;
   },
+
   recordPayment: async (id: string, data: Record<string, unknown>) => {
     await delay(400);
-    const inv     = orgInvoices().find((i: any) => i._id === id)!;
-    const newPaid = inv.paidAmount + Number(data.amountPaid);
-    const status  = newPaid >= inv.amount ? 'Paid' : 'Partially Paid';
-    INVOICES = INVOICES.map((i: any) => i._id === id ? { ...i, paidAmount: newPaid, status } : i);
+    const inv = orgInvoices().find((i: any) => i._id === id)
+      || derivePOInvoices().find((i: any) => i._id === id);
+    if (!inv) throw new Error('Invoice not found');
+    const newPaid = (inv.paidAmount || 0) + Number(data.amountPaid);
+    const status  = newPaid >= (inv.totalAmount ?? inv.amount) ? 'Paid' : 'Partially Paid';
+    if (id.startsWith('po-inv-')) {
+      // PO-derived invoice: push to INVOICES with updated payment
+      const stored = { ...inv, _id: 'inv' + uid(), paidAmount: newPaid, status };
+      INVOICES = [...INVOICES, stored];
+    } else {
+      INVOICES = INVOICES.map((i: any) => i._id === id ? { ...i, paidAmount: newPaid, status } : i);
+    }
     const recorder = orgUsers().find((u: any) => u.role === 'hr_finance') || orgUsers().find((u: any) => u.role === 'admin') || orgUsers()[0];
     const payment = { _id: 'pay' + uid(), organizationId: _currentOrgId, invoiceId: { _id: inv._id, invoiceNumber: inv.invoiceNumber }, amountPaid: Number(data.amountPaid), paymentDate: data.paymentDate, mode: data.mode, referenceNumber: data.referenceNumber || '', notes: String(data.notes || ''), recordedBy: { _id: recorder._id, name: recorder.name }, createdAt: now() };
     PAYMENTS = [...PAYMENTS, payment];
     return payment;
   },
+
+  update: async (id: string, data: Record<string, unknown>) => {
+    await delay(300);
+    INVOICES = INVOICES.map((i: any) => i._id === id && i.organizationId === _currentOrgId ? { ...i, ...data, updatedAt: now() } : i);
+    return INVOICES.find((i: any) => i._id === id) || null;
+  },
+
   getPayments: async (id: string) => { await delay(); return orgPayments().filter((p: any) => p.invoiceId._id === id); },
 };
 

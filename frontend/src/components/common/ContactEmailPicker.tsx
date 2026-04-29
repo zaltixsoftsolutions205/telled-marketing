@@ -7,6 +7,7 @@ import type { Contact, ContactType, CustomerResponsibility, User } from '@/types
 const TYPE_COLORS: Record<ContactType, string> = {
   TELLED:   'bg-violet-100 text-violet-700',
   ARK:      'bg-blue-100 text-blue-700',
+  ANSYS:    'bg-orange-100 text-orange-700',
   CUSTOMER: 'bg-emerald-100 text-emerald-700',
 };
 
@@ -23,6 +24,7 @@ const TYPE_TABS: { key: 'ALL' | ContactType; label: string }[] = [
   { key: 'ALL',      label: 'All' },
   { key: 'TELLED',   label: 'Telled' },
   { key: 'ARK',      label: 'ARK' },
+  { key: 'ANSYS',    label: 'ANSYS' },
   { key: 'CUSTOMER', label: 'Customer' },
 ];
 
@@ -62,7 +64,7 @@ export default function ContactEmailPicker({
     setLoading(true);
     const params: Record<string, unknown> = { limit: 500 };
     if (tab !== 'ALL') params.contactType = tab;
-    if (responsibility !== 'ALL' && tab !== 'TELLED' && tab !== 'ARK') {
+    if (responsibility !== 'ALL' && tab !== 'TELLED' && tab !== 'ARK' && tab !== 'ANSYS') {
       params.customerResponsibility = responsibility;
     }
     if (search) params.search = search;

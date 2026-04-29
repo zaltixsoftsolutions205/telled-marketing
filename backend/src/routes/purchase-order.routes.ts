@@ -4,8 +4,9 @@ import { authorize } from '../middleware/role.middleware';
 import PurchaseOrder from '../models/PurchaseOrder';
 import Lead from '../models/Lead';
 import Account from '../models/Account';
+import Invoice from '../models/Invoice';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
-import { getPaginationParams, generatePONumber } from '../utils/helpers';
+import { getPaginationParams, generatePONumber, generateInvoiceNumber } from '../utils/helpers';
 import sendEmail, { sendEmailWithUserSmtp, UserSmtpConfig } from '../services/email.service';
 import User from '../models/User';
 import { decryptText } from '../utils/crypto';
@@ -373,6 +374,31 @@ router.post('/:id/step5-invoice-to-ark', authorize('admin', 'sales', 'hr_finance
       poSentToArk: true,
       poSentToArkAt: new Date(),
     });
+
+    // Auto-create vendor invoice in Finance module
+    try {
+      const leadId = typeof po.leadId === 'object' ? (po.leadId as any)._id : po.leadId;
+      const dueDate = new Date(); dueDate.setDate(dueDate.getDate() + 30);
+      await new Invoice({
+        leadId,
+        purchaseOrderId: po._id,
+        invoiceType: 'vendor',
+        vendorName: po.vendorName || req.body.arkName || arkEmail,
+        vendorEmail: arkEmail,
+        invoiceNumber: generateInvoiceNumber(),
+        amount: po.amount,
+        taxAmount: 0,
+        totalAmount: po.amount,
+        paidAmount: 0,
+        dueDate,
+        status: 'Sent',
+        notes: `Auto-created from PO ${po.poNumber} — Invoice sent to ARK`,
+        createdBy: req.user!.id,
+      }).save();
+    } catch (invErr) {
+      logger.warn('Failed to auto-create vendor invoice (step5):', invErr);
+    }
+
     sendSuccess(res, { sentTo: arkEmail }, 'Invoice sent to ARK');
   } catch (err) {
     logger.error('Step5 invoice to ARK error:', err);
@@ -535,7 +561,7 @@ router.post('/:id/step8-final-invoice', authorize('admin', 'sales', 'hr_finance'
     }
 
     // Auto-convert to account if requested
-    let account = null;
+    let account: any = null;
     if (req.body.convertToAccount === 'true' || req.body.convertToAccount === true) {
       const existing = await Account.findOne({ leadId: lead._id });
       if (!existing) {
@@ -550,13 +576,36 @@ router.post('/:id/step8-final-invoice', authorize('admin', 'sales', 'hr_finance'
           city: lead.city || '',
           state: lead.state || '',
           status: 'Active',
+          salesStatus: 'Closed, and now a Customer',
           assignedSales: req.user!.id,
         }).save();
-        await Lead.findByIdAndUpdate(lead._id, { stage: 'Converted' });
+        await Lead.findByIdAndUpdate(lead._id, { stage: 'Converted', salesStatus: 'Closed, and now a Customer' });
       } else {
         account = existing;
       }
       await PurchaseOrder.findByIdAndUpdate(req.params.id, { converted: true });
+    }
+
+    // Auto-create customer invoice in Finance module
+    try {
+      const dueDate = new Date(); dueDate.setDate(dueDate.getDate() + 30);
+      await new Invoice({
+        accountId: account?._id || undefined,
+        leadId: lead._id,
+        purchaseOrderId: po._id,
+        invoiceType: 'customer',
+        invoiceNumber: invNumber,
+        amount: invoiceAmount,
+        taxAmount: 0,
+        totalAmount: invoiceAmount,
+        paidAmount: 0,
+        dueDate,
+        status: 'Sent',
+        notes: `Auto-created from PO ${po.poNumber} — Final invoice sent to customer`,
+        createdBy: req.user!.id,
+      }).save();
+    } catch (invErr) {
+      logger.warn('Failed to auto-create customer invoice (step8):', invErr);
     }
 
     sendSuccess(res, { invNumber, sentTo: customerEmail, account }, 'Final invoice sent');

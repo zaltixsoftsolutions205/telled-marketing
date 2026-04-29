@@ -309,13 +309,21 @@ export interface SupportTicket {
 
 export interface Invoice {
   _id: string;
-  accountId: Account;
+  accountId?: Account;
+  leadId?: Lead;
+  purchaseOrderId?: string;
+  invoiceType?: 'customer' | 'vendor';
+  vendorName?: string;
+  vendorEmail?: string;
   invoiceNumber: string;
   amount: number;
+  taxAmount?: number;
+  totalAmount?: number;
   paidAmount: number;
   dueDate: string;
-  status: 'Unpaid' | 'Partially Paid' | 'Paid' | 'Overdue' | 'Cancelled';
+  status: 'Draft' | 'Sent' | 'Unpaid' | 'Partially Paid' | 'Paid' | 'Overdue' | 'Cancelled';
   pdfPath?: string;
+  pdfUrl?: string;
   notes?: string;
   createdBy: User;
   createdAt: string;
@@ -522,7 +530,7 @@ export interface ApiError {
 
 // ─── CONTACTS ────────────────────────────────────────────────────────────────
 
-export type ContactType = 'TELLED' | 'ARK' | 'CUSTOMER';
+export type ContactType = 'TELLED' | 'ARK' | 'ANSYS' | 'CUSTOMER';
 export type CustomerResponsibility = 'Technical' | 'Sales' | 'IT' | 'Procurement';
 
 export interface Contact {
