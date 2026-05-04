@@ -606,21 +606,68 @@ export default function DRFPage() {
                       <td className="px-4 py-3 text-gray-500 text-xs">{drf.createdBy?.name || drf.createdBy?.email || '—'}</td>
                       <td className="px-4 py-3">
                         {(() => {
-                          if (drf.status === 'Approved') {
+                          if (drf.status === 'Rejected') {
                             return (
-                              <span title="Extension not needed — DRF is approved" className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-100">
-                                <CheckCircle2 size={13} className="text-gray-400" />
-                              </span>
+                              <button
+                                disabled
+                                title="DRF was rejected — extension not applicable"
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-red-50 text-red-500 border border-red-200 rounded-lg cursor-not-allowed opacity-70"
+                              >
+                                <XCircle size={12} />
+                                Rejected
+                              </button>
                             );
                           }
                           if (drf.extensionRequested) {
                             return (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700" title="Extension email has been sent">
-                                <CalendarClock size={11} /> Extended
-                              </span>
+                              <button
+                                disabled
+                                title="Extension email has already been sent"
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg cursor-not-allowed opacity-80"
+                              >
+                                <CalendarClock size={12} />
+                                Extended
+                              </button>
                             );
                           }
                           const days = getExpiryDays(drf);
+                          if (drf.status === 'Approved' && days !== null && days <= 7) {
+                            return (
+                              <button
+                                onClick={() => handleRequestExtension(drf)}
+                                disabled={extensionSending === drf._id}
+                                title={`Valid until expiring in ${days} day${days !== 1 ? 's' : ''} — click to send extension email`}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-300 rounded-lg hover:bg-amber-100 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <CalendarClock size={12} />
+                                {extensionSending === drf._id ? 'Sending…' : `Extend (${days}d)`}
+                              </button>
+                            );
+                          }
+                          if (drf.status === 'Approved' && days !== null && days > 7) {
+                            return (
+                              <button
+                                disabled
+                                title={`Extension available within 7 days of expiry — ${days} days remaining`}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-gray-50 text-gray-400 border border-gray-200 rounded-lg cursor-not-allowed"
+                              >
+                                <CalendarClock size={12} />
+                                {days}d left
+                              </button>
+                            );
+                          }
+                          if (drf.status === 'Approved') {
+                            return (
+                              <button
+                                disabled
+                                title="Extension not applicable"
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-green-50 text-green-600 border border-green-200 rounded-lg cursor-not-allowed opacity-70"
+                              >
+                                <CheckCircle2 size={12} />
+                                Approved
+                              </button>
+                            );
+                          }
                           if (drf.status === 'Pending' && days !== null && days <= 7) {
                             return (
                               <button
@@ -634,7 +681,28 @@ export default function DRFPage() {
                               </button>
                             );
                           }
-                          return <span className="text-gray-300 text-xs">—</span>;
+                          if (drf.status === 'Pending') {
+                            return (
+                              <button
+                                disabled
+                                title={days !== null ? `Extension available within 7 days of expiry — ${days} days remaining` : 'No expiry date set'}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-gray-50 text-gray-400 border border-gray-200 rounded-lg cursor-not-allowed"
+                              >
+                                <CalendarClock size={12} />
+                                {days !== null ? `${days}d left` : 'Pending'}
+                              </button>
+                            );
+                          }
+                          return (
+                            <button
+                              disabled
+                              title="No extension action available"
+                              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-gray-50 text-gray-400 border border-gray-200 rounded-lg cursor-not-allowed opacity-60"
+                            >
+                              <CalendarClock size={12} />
+                              N/A
+                            </button>
+                          );
                         })()}
                       </td>
                       <td className="px-4 py-3">

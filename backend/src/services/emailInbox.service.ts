@@ -24,11 +24,121 @@ export interface EmailSyncResult {
   errors: string[];
 }
 
+const APPROVAL_KEYWORDS = new RegExp(
+  '\\b(' + [
+    'approved', 'approve', 'approving',
+    'granted', 'grant', 'granting',
+    'confirmed', 'confirm', 'confirming',
+    'accepted', 'accept', 'accepting',
+    'go\\s+ahead',
+    'proceed', 'proceeding',
+    'sanctioned', 'sanction', 'sanctioning',
+    'cleared', 'clearance',
+    'authorized', 'authorised', 'authorize', 'authorise', 'authorizing', 'authorising',
+    'validated', 'validate',
+    'good\\s+to\\s+go',
+    'endorsed', 'endorse', 'endorsing',
+    'ratified', 'ratify',
+    'permitted', 'permit', 'permitting',
+    'consented', 'consent',
+    'agreed', 'agreement\\s+given',
+    'in\\s+favour', 'in\\s+favor',
+    'no\\s+objection', 'noc\\s+(?:issued|granted|given)',
+    'duly\\s+approved', 'hereby\\s+approved',
+    'we\\s+approve', 'we\\s+confirm', 'we\\s+accept', 'we\\s+authorize', 'we\\s+authorise',
+    'glad\\s+to\\s+approve', 'happy\\s+to\\s+approve', 'pleased\\s+to\\s+approve',
+    'registration\\s+approved', 'registration\\s+accepted', 'registration\\s+confirmed',
+    'drf\\s+approved', 'oem\\s+approved', 'partnership\\s+approved',
+    'empanelled', 'empaneled', 'empanelment\\s+approved',
+    'vendor\\s+approved', 'registered\\s+(?:as\\s+)?(?:vendor|partner)',
+    'kindly\\s+proceed', 'you\\s+may\\s+proceed', 'please\\s+proceed',
+  ].join('|') + ')\\b',
+  'i'
+);
+
+const REJECTION_KEYWORDS = new RegExp(
+  '(?:' + [
+    '\\b(?:rejected|reject|rejecting)\\b',
+    '\\b(?:declined|decline|declining)\\b',
+    '\\bnot\\s+approved\\b',
+    '\\bcannot\\s+approve\\b',
+    "\\bcan't\\s+approve\\b",
+    '\\b(?:denied|deny|denying)\\b',
+    '\\bregret(?:fully|ted)?\\b',
+    '\\bregrettably\\b',
+    '\\bunable\\s+to\\s+approve\\b',
+    '\\bnot\\s+able\\s+to\\s+approve\\b',
+    '\\bcannot\\s+proceed\\b',
+    '\\bunable\\s+to\\s+proceed\\b',
+    '\\bnot\\s+able\\s+to\\s+proceed\\b',
+    '\\bnot\\s+accepted\\b',
+    '\\bcannot\\s+accept\\b',
+    '\\bunable\\s+to\\s+accept\\b',
+    '\\bnot\\s+authorized\\b',
+    '\\bnot\\s+authorised\\b',
+    '\\bnot\\s+sanctioned\\b',
+    '\\bcannot\\s+sanction\\b',
+    '\\bnot\\s+permitted\\b',
+    '\\bpermission\\s+(?:not\\s+)?denied\\b',
+    '\\bnot\\s+eligible\\b',
+    '\\b(?:ineligible|disqualified)\\b',
+    '\\b(?:blacklisted|blacklist)\\b',
+    '\\b(?:debarred|debar)\\b',
+    '\\b(?:deregistered|de-registered)\\b',
+    '\\bnot\\s+interested\\b',
+    '\\bno\\s+longer\\s+interested\\b',
+    '\\b(?:withdrawn|withdrawal)\\b',
+    '\\b(?:cancelled|canceled|cancellation)\\b',
+    '\\bon\\s+hold\\b',
+    '\\bput\\s+on\\s+hold\\b',
+    '\\bnot\\s+entertained\\b',
+    '\\bcannot\\s+entertain\\b',
+    '\\bnot\\s+moving\\s+forward\\b',
+    '\\bnot\\s+progressing\\b',
+    '\\bnot\\s+proceeding\\b',
+    '\\bregistration\\s+(?:rejected|declined)\\b',
+    '\\bdrf\\s+rejected\\b',
+    '\\boem\\s+rejected\\b',
+    '\\bvendor\\s+(?:rejected|not\\s+approved|not\\s+registered)\\b',
+    '\\bsorry\\s+(?:we\\s+)?(?:cannot|are\\s+unable)\\b',
+    '\\bunfortunately\\s+(?:we\\s+)?(?:cannot|are\\s+unable|do\\s+not)\\b',
+    '\\bregret\\s+to\\s+(?:inform|advise|notify)\\b',
+    '\\bwe\\s+regret\\s+to\\b',
+    '\\bwe\\s+are\\s+sorry\\s+to\\s+inform\\b',
+    '\\bsorry\\s+to\\s+inform\\b',
+    '\\bnot\\s+feasible\\b',
+    '\\bnot\\s+viable\\b',
+    '\\bnot\\s+possible\\b',
+    '\\bnot\\s+in\\s+a\\s+position\\s+to\\b',
+    '\\bnot\\s+shortlisted\\b',
+    '\\bnot\\s+selected\\b',
+    '\\bnot\\s+recommended\\b',
+    '\\bnot\\s+suitable\\b',
+    '\\bnot\\s+applicable\\b',
+    '\\bdoes\\s+not\\s+meet\\b',
+    '\\bfail(?:ed)?\\s+to\\s+qualif(?:y|ied)\\b',
+    '\\bcannot\\s+consider\\b',
+    '\\bnot\\s+considered\\b',
+    '\\bcannot\\s+be\\s+(?:entertained|considered|processed|accepted)\\b',
+    '\\bunable\\s+to\\s+register\\b',
+    '\\bnot\\s+registered\\b',
+    '\\bempanelment\\s+(?:rejected|not\\s+approved|declined)\\b',
+    '\\bno\\s+longer\\s+valid\\b',
+    '\\bnot\\s+valid\\b',
+    '\\binvalid\\b',
+    '\\blapsed\\b',
+    '\\bterminated\\b',
+    '\\bsuspended\\b',
+    '\\brevoked\\b',
+    '\\bnot\\s+renew(?:ed|ing|able)\\b',
+  ].join('|') + ')',
+  'i'
+);
+
 /** Detect Approved / Rejected from fresh reply text only */
 function detectDecision(text: string): 'Approved' | 'Rejected' | null {
-  const lower = text.toLowerCase();
-  const hasApproved = /\b(approved|approve|approving|granted|confirmed|accepted|go ahead|proceed)\b/.test(lower);
-  const hasRejected = /\b(rejected|reject|rejecting|declined|decline|not approved|cannot approve|denied)\b/.test(lower);
+  const hasApproved = APPROVAL_KEYWORDS.test(text);
+  const hasRejected = REJECTION_KEYWORDS.test(text);
   if (hasApproved && hasRejected) return null; // ambiguous
   if (hasApproved) return 'Approved';
   if (hasRejected) return 'Rejected';
@@ -43,10 +153,17 @@ function extractExpiryDate(text: string): Date | null {
   const patterns = [
     /valid\s+(?:till|until|upto|up\s+to|through)[:\s]+(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
     /validity[:\s]+(?:till|until|upto|up\s+to)?[:\s]*(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
-    /approved?\s+(?:till|until|upto|up\s+to)[:\s]+(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
+    /validity\s+(?:period\s+)?(?:is\s+)?(?:till|until|upto|up\s+to)?[:\s]*(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
+    /approved?\s+(?:valid\s+)?(?:till|until|upto|up\s+to|through)[:\s]+(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
     /approval\s+valid\s+(?:till|until|upto|up\s+to)[:\s]+(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
-    /expir(?:y|es?)\s+(?:date[:\s]+|on[:\s]+|by[:\s]+)?(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
+    /approval\s+(?:date\s+)?(?:till|until|upto|up\s+to)[:\s]+(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
+    /expir(?:y|es?|ation)\s+(?:date[:\s]+|on[:\s]+|by[:\s]+)?(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
+    /expir(?:y|es?|ation)[:\s]+(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
     /valid\s+(?:from\s+\S+\s+)?to[:\s]+(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
+    /(?:registration|drf|oem|authoriz(?:ation|ed)|authoris(?:ation|ed))\s+valid\s+(?:till|until|upto|up\s+to)[:\s]+(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
+    /(?:empanelment|empanelment)\s+valid\s+(?:till|until|upto|up\s+to)[:\s]+(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
+    /(?:renewal\s+)?due\s+(?:on|by|date)[:\s]+(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
+    /valid\s+for\s+(?:one|1|two|2|three|3|six|6|twelve|12)\s+(?:year|month)s?\s+(?:from|till|until)?[:\s]*(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i,
   ];
   for (const re of patterns) {
     const m = text.match(re);

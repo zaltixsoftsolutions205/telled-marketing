@@ -86,7 +86,7 @@ export default function PaymentsPage() {
         referenceNumber: recordForm.referenceNumber || undefined,
         notes: recordForm.notes || undefined,
       });
-      setPayments(prev => [newPayment, ...prev]);
+      setPayments(prev => [newPayment as any, ...prev]);
       setShowRecord(false);
       setRecordForm({ invoiceId: '', amountPaid: '', mode: 'Bank Transfer', paymentDate: new Date().toISOString().slice(0, 10), referenceNumber: '', notes: '' });
     } catch (err) {

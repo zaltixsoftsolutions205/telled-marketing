@@ -558,86 +558,20 @@ export const sendQuotationEmail = async (req: AuthRequest, res: Response): Promi
       attachmentName = `Quotation-${quotation.quotationNumber}.pdf`;
     }
 
-    // Build email HTML — table-based layout for email client compatibility
-    const totalDisplay = (quotation.total ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
-    const dateStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-    const validStr = quotation.validUntil ? new Date(quotation.validUntil).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+    const senderName = (quotation.createdBy as any)?.name || senderSmtp?.fromName || orgName;
+    const recipientName = lead.contactPersonName || lead.companyName;
 
-    const infoRows = [
-      `<tr>
-        <td style="padding:10px 16px;color:#6b7280;font-size:14px;font-weight:500;width:45%;border-bottom:1px dashed #bfdbfe">Quotation No.</td>
-        <td style="padding:10px 16px;color:#111;font-size:14px;font-weight:600;text-align:right;border-bottom:1px dashed #bfdbfe">${quotation.quotationNumber}</td>
-      </tr>`,
-      `<tr>
-        <td style="padding:10px 16px;color:#6b7280;font-size:14px;font-weight:500;border-bottom:1px dashed #bfdbfe">Date</td>
-        <td style="padding:10px 16px;color:#111;font-size:14px;font-weight:600;text-align:right;border-bottom:1px dashed #bfdbfe">${dateStr}</td>
-      </tr>`,
-      validStr ? `<tr>
-        <td style="padding:10px 16px;color:#6b7280;font-size:14px;font-weight:500;border-bottom:1px dashed #bfdbfe">Valid Until</td>
-        <td style="padding:10px 16px;color:#111;font-size:14px;font-weight:600;text-align:right;border-bottom:1px dashed #bfdbfe">${validStr}</td>
-      </tr>` : '',
-      quotation.discountApplicable && (quotation.discountAmount ?? 0) > 0 ? `<tr>
-        <td style="padding:10px 16px;color:#dc2626;font-size:14px;font-weight:500;border-bottom:1px dashed #bfdbfe">${quotation.discountType === 'percent' ? `Discount (${quotation.discountValue}%)` : 'Discount (Flat)'}</td>
-        <td style="padding:10px 16px;color:#dc2626;font-size:14px;font-weight:600;text-align:right;border-bottom:1px dashed #bfdbfe">− ₹ ${(quotation.discountAmount ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-      </tr>` : '',
-      quotation.gstApplicable && (quotation.taxAmount ?? 0) > 0 ? `<tr>
-        <td style="padding:10px 16px;color:#6b7280;font-size:14px;font-weight:500">GST (${quotation.taxRate}%)</td>
-        <td style="padding:10px 16px;color:#111;font-size:14px;font-weight:600;text-align:right">₹ ${(quotation.taxAmount ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-      </tr>` : '',
-    ].filter(Boolean).join('');
+    const html = `<p>Dear ${recipientName},</p>
 
-    const html = `<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f0f0f0;font-family:Arial,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f0f0f0;padding:24px 0">
-  <tr><td align="center">
-    <table width="560" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.08)">
+<p>Please find attached the quotation for your requirements.</p>
 
-      <!-- Top colour bar -->
-      <tr><td height="6" style="background:linear-gradient(90deg,#1d4ed8,#3b82f6);font-size:0;line-height:0">&nbsp;</td></tr>
+<p>Kindly review and let us know if you need any clarification.</p>
 
-      <!-- Header -->
-      <tr><td style="padding:28px 36px 20px;border-bottom:1px solid #f0f0f0">
-        <p style="margin:0;font-size:22px;font-weight:700;color:#1d4ed8;letter-spacing:.5px">${orgName}</p>
-        <span style="display:inline-block;margin-top:8px;background:#dbeafe;color:#1d4ed8;font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;letter-spacing:1px">QUOTATION</span>
-      </td></tr>
-
-      <!-- Body -->
-      <tr><td style="padding:28px 36px">
-        <p style="margin:0 0 16px;font-size:15px;color:#222">Dear <strong>${lead.contactPersonName || lead.companyName}</strong>,</p>
-        <p style="margin:0 0 14px;font-size:14px;color:#555;line-height:1.7">Greetings from <strong>${orgName}</strong>.</p>
-        <p style="margin:0 0 14px;font-size:14px;color:#555;line-height:1.7">Thank you for your interest in our services. Please find attached the quotation for <strong>${lead.oemName || 'the requested services'}</strong> as discussed.</p>
-        <p style="margin:0 0 24px;font-size:14px;color:#555;line-height:1.7">The quotation includes a detailed breakdown of the scope, pricing, and timelines. We have tailored this proposal to meet your requirements and ensure the best possible solution for your needs.</p>
-
-        ${quotation.notes ? `<p style="margin:0 0 10px;font-size:13px;color:#444"><strong>Notes:</strong> ${quotation.notes}</p>` : ''}
-        <p style="margin:0 0 14px;font-size:14px;color:#555;line-height:1.7">If you have any questions or would like to discuss any aspect of the quotation, please feel free to reach out. We would be happy to assist you further.</p>
-        <p style="margin:0 0 24px;font-size:14px;color:#555;line-height:1.7">We look forward to your feedback and the opportunity to work with you.</p>
-
-        <!-- Signature -->
-        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #e5e7eb;padding-top:20px;margin-top:4px">
-          <tr><td style="padding:16px 0 0">
-            <p style="margin:0 0 4px;font-size:14px;color:#374151;font-weight:600">Warm regards,</p>
-            <p style="margin:0 0 2px;font-size:15px;color:#111;font-weight:700">${(quotation.createdBy as any)?.name || senderSmtp?.fromName || orgName}</p>
-            <p style="margin:0 0 2px;font-size:13px;color:#374151;font-weight:600">${orgName}</p>
-            ${(quotation.createdBy as any)?.phone ? `<p style="margin:0 0 2px;font-size:13px;color:#555">${(quotation.createdBy as any).phone}</p>` : ''}
-            <p style="margin:0 0 2px;font-size:13px;color:#555">${senderContactEmail}</p>
-          </td></tr>
-        </table>
-      </td></tr>
-
-      <!-- Footer -->
-      <tr><td style="background:#f9fafb;padding:18px 36px;border-top:1px solid #f0f0f0;text-align:center">
-        <p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.8">&copy; ${new Date().getFullYear()} ${orgName}. All rights reserved.</p>
-      </td></tr>
-
-    </table>
-  </td></tr>
-</table>
-</body></html>`;
+<p>Regards,<br>${senderName}</p>`;
 
     await sendEmailWithUserSmtp(
       toEmail,
-      `Quotation ${quotation.quotationNumber} from ${senderSmtp?.fromName || orgName}`,
+      `Quotation ${quotation.quotationNumber}`,
       html,
       senderSmtp,
       [{ filename: attachmentName, path: attachmentPath }],
@@ -683,68 +617,20 @@ export const sendToVendor = async (req: AuthRequest, res: Response): Promise<voi
       await quotation.save();
     }
 
-    // Generate items HTML
-    const itemsHtml = quotation.items.map(item => `
-      <tr>
-        <td style="padding:8px;border:1px solid #eee">${item.description}</td>
-        <td style="padding:8px;border:1px solid #eee;text-align:center">${item.quantity}</td>
-        <td style="padding:8px;border:1px solid #eee;text-align:right">₹${item.unitPrice.toLocaleString()}</td>
-        <td style="padding:8px;border:1px solid #eee;text-align:right">₹${item.total.toLocaleString()}</td>
-      </tr>
-    `).join('');
+    const senderName = (quotation.createdBy as any)?.name || 'Sales';
 
-    const vendorHtml = `<!DOCTYPE html><html><head><style>
-      body{font-family:Arial,sans-serif;margin:0;padding:20px;background:#f9fafb}
-      .c{max-width:700px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)}
-      .h{background:linear-gradient(135deg,#6d28d9,#4c1d95);padding:24px;text-align:center}
-      .h h2{color:#fff;margin:0}
-      .b{padding:24px}
-      .total{background:#f3e8ff;padding:12px;border-radius:8px;margin:16px 0}
-      table{width:100%;border-collapse:collapse;margin:16px 0}
-      th,td{padding:10px;border:1px solid #e5e7eb;text-align:left}
-      th{background:#f9fafb}
-    </style></head><body>
-    <div class="c">
-      <div class="h"><h2>Request for Quotation</h2><p style="color:#c4b5fd;margin:8px 0 0">${quotation.quotationNumber}</p></div>
-      <div class="b">
-        <p><strong>Dear Vendor,</strong></p>
-        <p>Please provide your best quotation for the following items required by our customer:</p>
-        
-        <div style="background:#f3f4f6;padding:12px;border-radius:8px;margin:16px 0">
-          <p><strong>Customer:</strong> ${lead.companyName}</p>
-          <p><strong>Contact Person:</strong> ${lead.contactName || 'N/A'}</p>
-          <p><strong>OEM Product:</strong> ${lead.oemName || 'N/A'}</p>
-          <p><strong>Request Date:</strong> ${new Date().toLocaleDateString('en-IN')}</p>
-        </div>
-        
-        <table>
-          <thead><tr><th>Description</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead>
-          <tbody>${itemsHtml}</tbody>
-        </table>
-        
-        <div class="total">
-          <p style="margin:4px 0"><strong>Subtotal:</strong> ₹${quotation.subtotal.toLocaleString()}</p>
-          ${quotation.gstApplicable ? `<p style="margin:4px 0"><strong>GST (${quotation.taxRate}%):</strong> ₹${quotation.taxAmount.toLocaleString()}</p>` : ''}
-          <p style="margin:8px 0 0;font-size:18px;font-weight:bold;color:#6d28d9"><strong>Total Amount:</strong> ₹${quotation.total.toLocaleString()}</p>
-          ${quotation.finalAmount ? `<p style="margin:8px 0 0;color:#f59e0b"><strong>Expected Final Amount:</strong> ₹${quotation.finalAmount.toLocaleString()}</p>` : ''}
-        </div>
-        
-        ${quotation.terms ? `<div style="margin:16px 0;padding:12px;background:#fef3c7;border-radius:8px"><strong>Terms:</strong><br>${quotation.terms}</div>` : ''}
-        ${quotation.notes ? `<div style="margin:16px 0;padding:12px;background:#f3f4f6;border-radius:8px"><strong>Notes:</strong><br>${quotation.notes}</div>` : ''}
-        
-        <hr style="margin:24px 0 16px">
-        <p style="color:#6b7280;font-size:12px;text-align:center">
-          Please provide your best quote at your earliest convenience.<br>
-          For any clarifications, contact ${(quotation.createdBy as any)?.name || 'Telled Sales'} at ${(quotation.createdBy as any)?.email || 'sales@telled.com'}
-        </p>
-      </div>
-    </div>
-    </body></html>`;
+    const vendorHtml = `<p>Dear Vendor,</p>
+
+<p>Please find attached the purchase order for your reference.</p>
+
+<p>Kindly review and let us know if you need any clarification.</p>
+
+<p>Regards,<br>${senderName}</p>`;
 
     const senderSmtp = await getUserSmtp(req.user!.id);
     await sendEmailWithUserSmtp(
       vendorEmail,
-      `Quotation Request - ${quotation.quotationNumber} for ${lead.companyName}`,
+      `Purchase Order - ${quotation.quotationNumber}`,
       vendorHtml,
       senderSmtp,
     );

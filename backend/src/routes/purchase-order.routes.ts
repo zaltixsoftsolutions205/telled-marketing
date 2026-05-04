@@ -189,25 +189,13 @@ router.post('/:id/step2-forward-to-ark', authorize('admin', 'sales', 'hr_finance
     const senderEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || '';
     const docName = (req as any).file?.originalname || req.body.docName || '';
 
-    const html = `
-      <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:20px">
-        <div style="background:linear-gradient(135deg,#6d28d9,#4c1d95);color:#fff;padding:20px;border-radius:8px 8px 0 0;text-align:center">
-          <h2 style="margin:0">Purchase Order — ${po.poNumber}</h2>
-          <p style="margin:6px 0 0;opacity:0.85;font-size:14px">Price Clearance Request</p>
-        </div>
-        <div style="padding:24px;background:#f9fafb;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px">
-          <p>Dear Team,</p>
-          <p>Please find attached the Purchase Order <strong>${po.poNumber}</strong> from our customer <strong>${lead?.companyName}</strong>. Kindly share the <strong>price clearance</strong> at the earliest.</p>
-          <table style="border-collapse:collapse;width:100%;margin:16px 0;font-size:14px">
-            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">PO Number</td><td style="padding:8px;border:1px solid #ddd">${po.poNumber}</td></tr>
-            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">Customer</td><td style="padding:8px;border:1px solid #ddd">${lead?.companyName || '—'}</td></tr>
-            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">Amount</td><td style="padding:8px;border:1px solid #ddd;font-weight:bold;color:#6d28d9">₹ ${po.amount.toLocaleString('en-IN')}</td></tr>
-            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">Products</td><td style="padding:8px;border:1px solid #ddd">${po.items?.length ? po.items.map((i: any) => i.product).join(', ') : po.product || '—'}</td></tr>
-          </table>
-          <p>Please reply with price clearance so we can proceed with the official PO.</p>
-          <p>Regards,<br/><strong>${senderName}</strong><br/>${senderEmail}</p>
-        </div>
-      </div>`;
+    const html = `<p>Dear Team,</p>
+
+<p>Please find attached the Purchase Order ${po.poNumber} for your reference. Kindly share the price clearance at the earliest.</p>
+
+<p>Kindly review and let us know if you need any clarification.</p>
+
+<p>Regards,<br>${senderName}</p>`;
 
     const attachments: any[] = [];
     if ((req as any).file) attachments.push({ filename: (req as any).file.originalname, content: (req as any).file.buffer });
@@ -277,21 +265,13 @@ router.post('/:id/step4-send-docs-to-customer', authorize('admin', 'sales', 'hr_
     const senderName = senderSmtp?.fromName || 'ZIEOS';
     const senderEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || '';
 
-    const html = `
-      <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:20px">
-        <div style="background:linear-gradient(135deg,#6d28d9,#4c1d95);color:#fff;padding:20px;border-radius:8px 8px 0 0;text-align:center">
-          <h2 style="margin:0">Documents for PO ${po.poNumber}</h2>
-        </div>
-        <div style="padding:24px;background:#f9fafb;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px">
-          <p>Dear ${lead?.contactPersonName || lead?.companyName || 'Customer'},</p>
-          <p>Please find enclosed the documents related to your Purchase Order <strong>${po.poNumber}</strong>. Kindly review and revert at the earliest.</p>
-          <table style="border-collapse:collapse;width:100%;margin:16px 0;font-size:14px">
-            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">PO Number</td><td style="padding:8px;border:1px solid #ddd">${po.poNumber}</td></tr>
-            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">Amount</td><td style="padding:8px;border:1px solid #ddd;font-weight:bold;color:#6d28d9">₹ ${po.amount.toLocaleString('en-IN')}</td></tr>
-          </table>
-          <p>Regards,<br/><strong>${senderName}</strong><br/>${senderEmail}</p>
-        </div>
-      </div>`;
+    const html = `<p>Dear ${lead?.contactPersonName || lead?.companyName || 'Customer'},</p>
+
+<p>Please find attached the documents related to your Purchase Order ${po.poNumber}.</p>
+
+<p>Kindly review and let us know if you need any clarification.</p>
+
+<p>Regards,<br>${senderName}</p>`;
 
     const attachments: any[] = [];
     if ((req as any).files?.length) {
@@ -340,22 +320,13 @@ router.post('/:id/step5-invoice-to-ark', authorize('admin', 'sales', 'hr_finance
     const senderEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || '';
     const docName = (req as any).file?.originalname || req.body.docName || '';
 
-    const html = `
-      <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:20px">
-        <div style="background:linear-gradient(135deg,#6d28d9,#4c1d95);color:#fff;padding:20px;border-radius:8px 8px 0 0;text-align:center">
-          <h2 style="margin:0">Invoice for PO ${po.poNumber}</h2>
-        </div>
-        <div style="padding:24px;background:#f9fafb;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px">
-          <p>Dear Team,</p>
-          <p>Please find attached our invoice for Purchase Order <strong>${po.poNumber}</strong>. Kindly process at the earliest.</p>
-          <table style="border-collapse:collapse;width:100%;margin:16px 0;font-size:14px">
-            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">PO Number</td><td style="padding:8px;border:1px solid #ddd">${po.poNumber}</td></tr>
-            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">Customer</td><td style="padding:8px;border:1px solid #ddd">${lead?.companyName || '—'}</td></tr>
-            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">Amount</td><td style="padding:8px;border:1px solid #ddd;font-weight:bold;color:#6d28d9">₹ ${po.amount.toLocaleString('en-IN')}</td></tr>
-          </table>
-          <p>Regards,<br/><strong>${senderName}</strong><br/>${senderEmail}</p>
-        </div>
-      </div>`;
+    const html = `<p>Dear Team,</p>
+
+<p>Please find attached the invoice for Purchase Order ${po.poNumber}.</p>
+
+<p>Kindly review and let us know if you need any clarification.</p>
+
+<p>Regards,<br>${senderName}</p>`;
 
     const attachments: any[] = [];
     if ((req as any).file) attachments.push({ filename: (req as any).file.originalname, content: (req as any).file.buffer });
@@ -420,21 +391,13 @@ router.post('/:id/step6-send-docs-to-ark', authorize('admin', 'sales', 'hr_finan
     const senderName = senderSmtp?.fromName || 'ZIEOS';
     const senderEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || '';
 
-    const html = `
-      <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:20px">
-        <div style="background:linear-gradient(135deg,#6d28d9,#4c1d95);color:#fff;padding:20px;border-radius:8px 8px 0 0;text-align:center">
-          <h2 style="margin:0">Customer Documents — PO ${po.poNumber}</h2>
-        </div>
-        <div style="padding:24px;background:#f9fafb;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px">
-          <p>Dear Team,</p>
-          <p>Please find enclosed the completed customer documents for Purchase Order <strong>${po.poNumber}</strong>.</p>
-          <table style="border-collapse:collapse;width:100%;margin:16px 0;font-size:14px">
-            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">PO Number</td><td style="padding:8px;border:1px solid #ddd">${po.poNumber}</td></tr>
-            <tr><td style="padding:8px;background:#ede9fe;font-weight:bold">Customer</td><td style="padding:8px;border:1px solid #ddd">${lead?.companyName || '—'}</td></tr>
-          </table>
-          <p>Regards,<br/><strong>${senderName}</strong><br/>${senderEmail}</p>
-        </div>
-      </div>`;
+    const html = `<p>Dear Team,</p>
+
+<p>Please find attached the customer documents for Purchase Order ${po.poNumber}.</p>
+
+<p>Kindly review and let us know if you need any clarification.</p>
+
+<p>Regards,<br>${senderName}</p>`;
 
     const attachments: any[] = [];
     if ((req as any).files?.length) {
@@ -494,48 +457,13 @@ router.post('/:id/step8-final-invoice', authorize('admin', 'sales', 'hr_finance'
     const invoiceAmount = req.body.amount ? Number(req.body.amount) : po.amount;
     const invNumber = `INV-${new Date().getFullYear()}-${String(Math.floor(1000 + Math.random() * 9000))}`;
 
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head>
-<body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:32px 0">
-<tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden">
-  <tr><td style="background:linear-gradient(135deg,#6d28d9,#4c1d95);padding:36px;text-align:center">
-    <h1 style="color:#fff;margin:0;font-size:26px;font-weight:700">FINAL INVOICE</h1>
-    <p style="color:rgba(255,255,255,0.8);margin:8px 0 0;font-size:14px">${invNumber}</p>
-  </td></tr>
-  <tr><td style="background:#faf5ff;padding:24px 32px;border-bottom:2px solid #ede9fe">
-    <table width="100%" cellpadding="0" cellspacing="0">
-      <tr>
-        <td>
-          <p style="margin:0;color:#7c3aed;font-size:12px;font-weight:700;text-transform:uppercase">Total Amount Due</p>
-          <p style="margin:6px 0 0;color:#4c1d95;font-size:36px;font-weight:800">₹ ${invoiceAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-        </td>
-        <td align="right">
-          <p style="margin:0;color:#6b7280;font-size:11px;text-transform:uppercase">PO Reference</p>
-          <p style="margin:3px 0 6px;color:#111827;font-size:14px;font-weight:700">${po.poNumber}</p>
-          <p style="margin:0;color:#6b7280;font-size:11px;text-transform:uppercase">Invoice Date</p>
-          <p style="margin:3px 0 0;color:#111827;font-size:13px">${new Date().toLocaleDateString('en-IN')}</p>
-        </td>
-      </tr>
-    </table>
-  </td></tr>
-  <tr><td style="padding:32px">
-    <p style="margin:0 0 8px;color:#374151;font-size:15px">Dear <strong>${lead?.contactPersonName || lead?.companyName || 'Customer'}</strong>,</p>
-    <p style="margin:0 0 24px;color:#6b7280;font-size:14px;line-height:1.6">Please find below the final invoice for your Purchase Order <strong>${po.poNumber}</strong>.</p>
-    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;font-size:14px">
-      <tr style="background:#f9fafb"><td style="padding:12px 16px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;width:42%">Invoice No</td><td style="padding:12px 16px;color:#111827;border-bottom:1px solid #e5e7eb">${invNumber}</td></tr>
-      <tr><td style="padding:12px 16px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb">PO Number</td><td style="padding:12px 16px;color:#111827;border-bottom:1px solid #e5e7eb">${po.poNumber}</td></tr>
-      <tr style="background:#faf5ff"><td style="padding:14px 16px;color:#6d28d9;font-weight:700;font-size:15px">Total Amount</td><td style="padding:14px 16px;color:#6d28d9;font-weight:800;font-size:18px">₹ ${invoiceAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></tr>
-    </table>
-    <p style="margin:24px 0 0;color:#6b7280;font-size:13px">For any queries, please contact us at <strong>${senderEmail}</strong>.</p>
-    <p style="margin:16px 0 0;color:#374151;font-size:14px">Regards,<br/><strong>${senderName}</strong></p>
-  </td></tr>
-  <tr><td style="background:#f9fafb;padding:16px;text-align:center;border-top:1px solid #e5e7eb">
-    <p style="margin:0;color:#9ca3af;font-size:12px">&copy; ${new Date().getFullYear()} ZIEOS &bull; All rights reserved</p>
-  </td></tr>
-</table>
-</td></tr></table>
-</body></html>`;
+    const html = `<p>Dear ${lead?.contactPersonName || lead?.companyName || 'Customer'},</p>
+
+<p>Please find attached the final invoice ${invNumber} for your Purchase Order ${po.poNumber}.</p>
+
+<p>Kindly review and let us know if you need any clarification.</p>
+
+<p>Regards,<br>${senderName}</p>`;
 
     const attachments: any[] = [];
     if ((req as any).file) attachments.push({ filename: (req as any).file.originalname, content: (req as any).file.buffer });
