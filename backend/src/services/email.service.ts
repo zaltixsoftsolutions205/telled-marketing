@@ -158,10 +158,25 @@ const send = async (
   replyTo?: string,
   fromName?: string,
 ) => {
+  const senderName = fromName || process.env.EMAIL_FROM_NAME || 'ZIEOS';
+  // Prefer Hostinger (USER_EMAIL_FROM) over the generic SMTP sender — Hostinger is the
+  // proven working transporter used for OTPs and credentials.
+  const senderEmail = process.env.USER_EMAIL_FROM || process.env.EMAIL_FROM || process.env.SMTP_USER || '';
+  if (!senderEmail) {
+    throw new Error('System email (USER_EMAIL_FROM / EMAIL_FROM / SMTP_USER) is not configured');
+  }
   try {
-    const transporter = createTransporter();
-    const senderName = fromName || process.env.EMAIL_FROM_NAME || 'ZIEOS';
-    const senderEmail = process.env.EMAIL_FROM || process.env.SMTP_USER;
+    // Use Hostinger transporter if USER_SMTP credentials are present, otherwise fall back to SMTP_HOST
+    const hostingerUser = process.env.USER_SMTP_USER;
+    const hostingerPass = process.env.USER_SMTP_PASS;
+    const transporter = (hostingerUser && hostingerPass)
+      ? nodemailer.createTransport({
+          host: process.env.USER_SMTP_HOST || 'smtp.hostinger.com',
+          port: Number(process.env.USER_SMTP_PORT || 465),
+          secure: true,
+          auth: { user: hostingerUser, pass: hostingerPass },
+        })
+      : createTransporter();
     await transporter.sendMail({
       from: `"${senderName}" <${senderEmail}>`,
       to,

@@ -363,12 +363,12 @@ export default function DRFPage() {
   return (
     <div className="space-y-4 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">DRF Management</h1>
           <p className="text-sm text-gray-500">Document Request Forms — {total} records</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <ExcelImportButton
             entityName="DRFs"
             columnHint="leadName (company name to match lead), notes"
@@ -450,7 +450,7 @@ export default function DRFPage() {
       )}
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
         <StatCard title="Total Sent"     value={analytics?.total ?? 0}        sub={`This month: ${analytics?.totalThisMonth ?? 0}`} icon={FileBadge}    color="text-violet-700"  bg="bg-violet-50"  onClick={() => handleCardClick('status', '', 'All DRFs')} />
         <StatCard title="Approved"       value={analytics?.approved ?? 0}      sub={`${analytics?.approvalRate ?? 0}% rate`}         icon={CheckCircle2} color="text-emerald-700" bg="bg-emerald-50" onClick={() => handleCardClick('status', 'Approved', 'Approved DRFs')} />
         <StatCard title="Rejected"       value={analytics?.rejected ?? 0}      sub={`${analytics?.rejectionRate ?? 0}% rate`}        icon={XCircle}      color="text-red-600"     bg="bg-red-50"     onClick={() => handleCardClick('status', 'Rejected', 'Rejected DRFs')} />
@@ -513,7 +513,7 @@ export default function DRFPage() {
           <h2 className="text-sm font-semibold text-gray-700">Filter DRFs</h2>
           <button onClick={resetFilters} className="ml-auto text-xs text-violet-600 hover:underline">Reset all filters</button>
         </div>
-        <div className="grid grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
           <select className="input-field text-sm py-2" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); setActiveFilterTitle(e.target.value ? `${e.target.value} DRFs` : ''); }}>
             <option value="">Status</option>
             {(['Pending','Approved','Rejected','Expired'] as DRFStatus[]).map(s => <option key={s} value={s}>{s}</option>)}
@@ -533,7 +533,7 @@ export default function DRFPage() {
       </div>
 
       {/* DRF Table */}
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden hidden md:block">
         {loading ? (
           <LoadingSpinner className="h-48" />
         ) : drfs.length === 0 ? (
@@ -815,6 +815,95 @@ export default function DRFPage() {
           </>
         )}
       </div>
+
+      {/* Mobile Card View */}
+      {loading ? (
+        <LoadingSpinner className="h-48 md:hidden" />
+      ) : drfs.length === 0 ? (
+        <div className="md:hidden text-center text-gray-400 py-12 bg-white rounded-lg border border-gray-200">
+          <p className="text-sm">No DRFs found</p>
+        </div>
+      ) : (
+        <div className="md:hidden space-y-3">
+          {drfs.map((drf: any) => (
+            <div key={drf._id} className="glass-card !p-4 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <Link to={`/drf/${drf._id}`} className="font-mono font-semibold text-violet-700 hover:underline text-sm">{drf.drfNumber}</Link>
+                  <p className="text-sm font-medium text-gray-800 mt-0.5">
+                    <Link to={`/leads/${drf.leadId?._id}`} className="hover:text-violet-600">{drf.leadId?.companyName}</Link>
+                  </p>
+                  {drf.leadId?.oemName && <p className="text-xs text-gray-500">{drf.leadId.oemName}</p>}
+                </div>
+                <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLE[drf.status as DRFStatus] ?? 'bg-gray-100 text-gray-600'}`}>{drf.status}</span>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${drf.version > 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>v{drf.version}</span>
+                </div>
+              </div>
+              <div className="text-xs text-gray-500 space-y-0.5">
+                {drf.createdBy?.name && <p><span className="text-gray-400">Owner:</span> {drf.createdBy.name}</p>}
+                {drf.sentDate && <p><span className="text-gray-400">Sent:</span> {formatDate(drf.sentDate)}</p>}
+                {drf.expiryDate && (() => {
+                  const days = getExpiryDays(drf);
+                  const isWarning = days !== null && days <= 7 && days >= 0;
+                  const isExpired = days !== null && days < 0;
+                  return <p><span className="text-gray-400">Expires:</span> <span className={isExpired ? 'text-red-500 font-medium' : isWarning ? 'text-amber-600 font-medium' : ''}>{formatDate(drf.expiryDate)}{isWarning && ` (${days}d left)`}{isExpired && ' (expired)'}</span></p>;
+                })()}
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-gray-100">
+                {drf.status === 'Approved' && isSales && !drf.quotationSent && (
+                  <button onClick={() => !drf.poReceived && openQuotationModal(drf)} disabled={drf.poReceived}
+                    className={`inline-flex items-center gap-1 px-2 py-1 text-xs border rounded-md transition-colors ${drf.poReceived ? 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}>
+                    <FileText size={12} /> Send Quotation
+                  </button>
+                )}
+                {drf.status === 'Approved' && isSales && drf.quotationSent && !drf.poReceived && (
+                  <button onClick={() => { setResendTarget(drf); setResendError(''); }}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-md hover:bg-blue-100">
+                    <RefreshCw size={12} /> Resend DRF
+                  </button>
+                )}
+                {drf.status === 'Rejected' && (
+                  <button onClick={() => { setResendTarget(drf); setResendError(''); }}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-md hover:bg-blue-100">
+                    <RefreshCw size={12} /> Resend
+                  </button>
+                )}
+                {isAdmin && drf.status === 'Pending' && (
+                  <>
+                    <button onClick={() => { setQuickAction({ drf, type: 'approve' }); setQuickReason(''); setQuickError(''); }}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md hover:bg-emerald-100">
+                      <CheckCircle2 size={12} /> Approve
+                    </button>
+                    <button onClick={() => { setQuickAction({ drf, type: 'reject' }); setQuickReason(''); setQuickError(''); }}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-red-50 text-red-700 border border-red-200 rounded-md hover:bg-red-100">
+                      <XCircle size={12} /> Reject
+                    </button>
+                  </>
+                )}
+                {isAdmin && (
+                  <button onClick={() => { setReassignTarget(drf); setNewOwnerId(''); setReassignError(''); }}
+                    className="p-1 text-gray-400 hover:text-violet-600 transition-colors">
+                    <UserCheck size={16} />
+                  </button>
+                )}
+                <button onClick={() => setDeleteTarget(drf._id)} className="p-1 text-gray-400 hover:text-red-600 transition-colors ml-auto">
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          ))}
+          {total > 15 && (
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-xs text-gray-500">Showing {((page - 1) * 15) + 1}–{Math.min(page * 15, total)} of {total}</p>
+              <div className="flex gap-2">
+                <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 text-xs border border-gray-300 rounded-md bg-white hover:bg-gray-50 disabled:opacity-50">Previous</button>
+                <button disabled={page >= Math.ceil(total / 15)} onClick={() => setPage(p => p + 1)} className="px-3 py-1 text-xs border border-gray-300 rounded-md bg-white hover:bg-gray-50 disabled:opacity-50">Next</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Resend DRF Confirmation Modal */}
       <Modal

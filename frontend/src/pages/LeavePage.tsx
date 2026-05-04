@@ -326,7 +326,7 @@ export default function LeavePage() {
 
       {/* HR Stats Row */}
       {isHR && (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <div className="card flex items-center gap-4 !p-4">
             <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
               <Clock size={18} className="text-amber-600" />
@@ -381,114 +381,171 @@ export default function LeavePage() {
 
       {/* Leave Table */}
       {activeTab === 'requests' && (
-        <div className="card !p-0 overflow-hidden">
-          {loading ? <LoadingSpinner className="h-48" /> : leaves.length === 0 ? (
-            <div className="text-center text-gray-400 py-16 flex flex-col items-center gap-2">
+        <>
+          <div className="card !p-0 overflow-hidden hidden md:block">
+            {loading ? <LoadingSpinner className="h-48" /> : leaves.length === 0 ? (
+              <div className="text-center text-gray-400 py-16 flex flex-col items-center gap-2">
+                <Calendar size={36} className="opacity-30" />
+                <p className="text-sm">No leave records found</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                      {isHR && <th className="table-header">Employee</th>}
+                      <th className="table-header">Type</th>
+                      <th className="table-header">Start</th>
+                      <th className="table-header">End</th>
+                      <th className="table-header">Days</th>
+                      <th className="table-header">Reason</th>
+                      <th className="table-header">Status</th>
+                      {isHR && <th className="table-header">Rejection Reason</th>}
+                      <th className="table-header">Applied</th>
+                      {isHR && <th className="table-header">Actions</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {leaves.map(leave => {
+                      const emp = leave.employeeId as User;
+                      return (
+                        <tr key={leave._id} className="hover:bg-violet-50/20 transition-colors">
+                          {isHR && (
+                            <td className="table-cell">
+                              <div>
+                                <p className="font-medium text-gray-900 text-sm">{emp?.name || '—'}</p>
+                                <p className="text-xs text-gray-400">{emp?.email}</p>
+                              </div>
+                            </td>
+                          )}
+                          <td className="table-cell">
+                            <span className={`badge ${typeColors[leave.type] || 'bg-gray-100 text-gray-700'}`}>
+                              {TYPE_META[leave.type as LeaveType]?.icon} {leave.type}
+                            </span>
+                          </td>
+                          <td className="table-cell text-gray-500">{formatDate(leave.startDate)}</td>
+                          <td className="table-cell text-gray-500">{formatDate(leave.endDate)}</td>
+                          <td className="table-cell text-center">
+                            <span className="font-bold text-gray-800">{leave.days}</span>
+                          </td>
+                          <td className="table-cell text-gray-400 text-xs max-w-[180px] truncate" title={leave.reason}>
+                            {leave.reason}
+                          </td>
+                          <td className="table-cell">
+                            <span className={`badge ${statusColors[leave.status] || 'bg-gray-100'}`}>
+                              {leave.status === 'Pending' && <Clock size={10} className="inline mr-1" />}
+                              {leave.status === 'Approved' && <CheckCircle size={10} className="inline mr-1" />}
+                              {leave.status === 'Rejected' && <XCircle size={10} className="inline mr-1" />}
+                              {leave.status}
+                            </span>
+                          </td>
+                          {isHR && (
+                            <td className="table-cell text-xs text-gray-400">
+                              {leave.rejectionReason ? (
+                                <span className="flex items-start gap-1 text-red-600">
+                                  <AlertTriangle size={11} className="flex-shrink-0 mt-0.5" />
+                                  {leave.rejectionReason}
+                                </span>
+                              ) : '—'}
+                            </td>
+                          )}
+                          <td className="table-cell text-gray-400 text-xs">{formatDate(leave.createdAt)}</td>
+                          {isHR && (
+                            <td className="table-cell">
+                              {leave.status === 'Pending' ? (
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    onClick={() => handleApprove(leave)}
+                                    className="flex items-center gap-1 text-xs bg-emerald-100 hover:bg-emerald-200 text-emerald-800 px-2.5 py-1.5 rounded-lg font-medium transition-colors"
+                                  >
+                                    <CheckCircle size={11} /> Approve
+                                  </button>
+                                  <button
+                                    onClick={() => openReject(leave)}
+                                    className="flex items-center gap-1 text-xs bg-red-100 hover:bg-red-200 text-red-800 px-2.5 py-1.5 rounded-lg font-medium transition-colors"
+                                  >
+                                    <XCircle size={11} /> Reject
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-gray-300 text-xs">—</span>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {total > 20 && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
+                <p className="text-sm text-gray-500">Page {page} of {Math.ceil(total / 20)}</p>
+                <div className="flex gap-2">
+                  <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="btn-secondary py-1 px-3 text-sm">Prev</button>
+                  <button disabled={page >= Math.ceil(total / 20)} onClick={() => setPage(p => p + 1)} className="btn-secondary py-1 px-3 text-sm">Next</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Mobile Card View */}
+          {loading ? (
+            <LoadingSpinner className="h-48 md:hidden" />
+          ) : leaves.length === 0 ? (
+            <div className="md:hidden text-center text-gray-400 py-16 card flex flex-col items-center gap-2">
               <Calendar size={36} className="opacity-30" />
               <p className="text-sm">No leave records found</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-100">
-                  <tr>
-                    {isHR && <th className="table-header">Employee</th>}
-                    <th className="table-header">Type</th>
-                    <th className="table-header">Start</th>
-                    <th className="table-header">End</th>
-                    <th className="table-header">Days</th>
-                    <th className="table-header">Reason</th>
-                    <th className="table-header">Status</th>
-                    {isHR && <th className="table-header">Rejection Reason</th>}
-                    <th className="table-header">Applied</th>
-                    {isHR && <th className="table-header">Actions</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {leaves.map(leave => {
-                    const emp = leave.employeeId as User;
-                    return (
-                      <tr key={leave._id} className="hover:bg-violet-50/20 transition-colors">
-                        {isHR && (
-                          <td className="table-cell">
-                            <div>
-                              <p className="font-medium text-gray-900 text-sm">{emp?.name || '—'}</p>
-                              <p className="text-xs text-gray-400">{emp?.email}</p>
-                            </div>
-                          </td>
-                        )}
-                        <td className="table-cell">
-                          <span className={`badge ${typeColors[leave.type] || 'bg-gray-100 text-gray-700'}`}>
-                            {TYPE_META[leave.type as LeaveType]?.icon} {leave.type}
-                          </span>
-                        </td>
-                        <td className="table-cell text-gray-500">{formatDate(leave.startDate)}</td>
-                        <td className="table-cell text-gray-500">{formatDate(leave.endDate)}</td>
-                        <td className="table-cell text-center">
-                          <span className="font-bold text-gray-800">{leave.days}</span>
-                        </td>
-                        <td className="table-cell text-gray-400 text-xs max-w-[180px] truncate" title={leave.reason}>
-                          {leave.reason}
-                        </td>
-                        <td className="table-cell">
-                          <span className={`badge ${statusColors[leave.status] || 'bg-gray-100'}`}>
-                            {leave.status === 'Pending' && <Clock size={10} className="inline mr-1" />}
-                            {leave.status === 'Approved' && <CheckCircle size={10} className="inline mr-1" />}
-                            {leave.status === 'Rejected' && <XCircle size={10} className="inline mr-1" />}
-                            {leave.status}
-                          </span>
-                        </td>
-                        {isHR && (
-                          <td className="table-cell text-xs text-gray-400">
-                            {leave.rejectionReason ? (
-                              <span className="flex items-start gap-1 text-red-600">
-                                <AlertTriangle size={11} className="flex-shrink-0 mt-0.5" />
-                                {leave.rejectionReason}
-                              </span>
-                            ) : '—'}
-                          </td>
-                        )}
-                        <td className="table-cell text-gray-400 text-xs">{formatDate(leave.createdAt)}</td>
-                        {isHR && (
-                          <td className="table-cell">
-                            {leave.status === 'Pending' ? (
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  onClick={() => handleApprove(leave)}
-                                  className="flex items-center gap-1 text-xs bg-emerald-100 hover:bg-emerald-200 text-emerald-800 px-2.5 py-1.5 rounded-lg font-medium transition-colors"
-                                >
-                                  <CheckCircle size={11} /> Approve
-                                </button>
-                                <button
-                                  onClick={() => openReject(leave)}
-                                  className="flex items-center gap-1 text-xs bg-red-100 hover:bg-red-200 text-red-800 px-2.5 py-1.5 rounded-lg font-medium transition-colors"
-                                >
-                                  <XCircle size={11} /> Reject
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-gray-300 text-xs">—</span>
-                            )}
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="md:hidden space-y-3">
+              {leaves.map(leave => {
+                const emp = leave.employeeId as User;
+                return (
+                  <div key={leave._id} className="glass-card !p-4 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        {isHR && <p className="font-medium text-gray-900 text-sm">{emp?.name || '—'}</p>}
+                        <span className={`badge ${typeColors[leave.type] || 'bg-gray-100 text-gray-700'} text-xs`}>
+                          {TYPE_META[leave.type as LeaveType]?.icon} {leave.type}
+                        </span>
+                      </div>
+                      <span className={`badge ${statusColors[leave.status] || 'bg-gray-100'} text-xs flex-shrink-0`}>{leave.status}</span>
+                    </div>
+                    <div className="text-xs text-gray-500 space-y-0.5">
+                      <p><span className="text-gray-400">Period:</span> {formatDate(leave.startDate)} — {formatDate(leave.endDate)} ({leave.days} day{leave.days !== 1 ? 's' : ''})</p>
+                      {leave.reason && <p className="truncate"><span className="text-gray-400">Reason:</span> {leave.reason}</p>}
+                      {leave.rejectionReason && <p className="text-red-500"><span className="text-gray-400">Rejection:</span> {leave.rejectionReason}</p>}
+                    </div>
+                    {isHR && leave.status === 'Pending' && (
+                      <div className="flex items-center gap-1.5 pt-1 border-t border-gray-100">
+                        <button onClick={() => handleApprove(leave)}
+                          className="flex items-center gap-1 text-xs bg-emerald-100 hover:bg-emerald-200 text-emerald-800 px-2.5 py-1.5 rounded-lg font-medium">
+                          <CheckCircle size={11} /> Approve
+                        </button>
+                        <button onClick={() => openReject(leave)}
+                          className="flex items-center gap-1 text-xs bg-red-100 hover:bg-red-200 text-red-800 px-2.5 py-1.5 rounded-lg font-medium">
+                          <XCircle size={11} /> Reject
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {total > 20 && (
+                <div className="flex items-center justify-between pt-2">
+                  <p className="text-sm text-gray-500">Page {page} of {Math.ceil(total / 20)}</p>
+                  <div className="flex gap-2">
+                    <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="btn-secondary py-1 px-3 text-sm">Prev</button>
+                    <button disabled={page >= Math.ceil(total / 20)} onClick={() => setPage(p => p + 1)} className="btn-secondary py-1 px-3 text-sm">Next</button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
-
-          {total > 20 && (
-            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-              <p className="text-sm text-gray-500">Page {page} of {Math.ceil(total / 20)}</p>
-              <div className="flex gap-2">
-                <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="btn-secondary py-1 px-3 text-sm">Prev</button>
-                <button disabled={page >= Math.ceil(total / 20)} onClick={() => setPage(p => p + 1)} className="btn-secondary py-1 px-3 text-sm">Next</button>
-              </div>
-            </div>
-          )}
-        </div>
+        </>
       )}
 
       {/* Apply Leave Modal */}

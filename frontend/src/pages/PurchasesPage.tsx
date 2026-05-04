@@ -643,6 +643,11 @@ export default function PurchasesPage() {
                   <p className="text-emerald-600 text-xs flex items-center gap-1"><CheckCircle size={12} /> Forwarded on {formatDate(po.step2ForwardedAt!)}</p>
                   {po.step2PoDocName && <p className="text-xs text-gray-500">Document: {po.step2PoDocName}</p>}
                   <p className="text-xs text-gray-500">Sent to: {po.vendorEmail}</p>
+                  {canEdit && (
+                    <button onClick={() => { setExpandedStep(null); setStep2Target(po); setStep2Form({ arkEmail: po.vendorEmail || '', arkName: po.vendorName || '', docName: '' }); setStep2File(null); }} className="flex items-center gap-1.5 text-xs text-violet-600 hover:text-violet-800 font-medium w-fit">
+                      <RefreshCw size={11} />Resend
+                    </button>
+                  )}
                 </>
               ) : (
                 <>
@@ -688,7 +693,14 @@ export default function PurchasesPage() {
           extra={
             <div className="text-sm space-y-2">
               {po.step4DocsSentToCustomer ? (
-                <p className="text-emerald-600 text-xs flex items-center gap-1"><CheckCircle size={12} /> Documents sent on {formatDate(po.step4SentAt!)}</p>
+                <>
+                  <p className="text-emerald-600 text-xs flex items-center gap-1"><CheckCircle size={12} /> Documents sent on {formatDate(po.step4SentAt!)}</p>
+                  {canEdit && (
+                    <button onClick={() => { setExpandedStep(null); setStep4Target(po); setStep4Email((po.leadId as Lead)?.email || ''); setStep4Files([]); }} className="flex items-center gap-1.5 text-xs text-violet-600 hover:text-violet-800 font-medium w-fit">
+                      <RefreshCw size={11} />Resend
+                    </button>
+                  )}
+                </>
               ) : (
                 <>
                   <p className="text-xs text-gray-500">Upload and forward all received ARK documents to the customer.</p>
@@ -710,6 +722,11 @@ export default function PurchasesPage() {
                 <>
                   <p className="text-emerald-600 text-xs flex items-center gap-1"><CheckCircle size={12} /> Invoice sent on {formatDate(po.step5InvoiceSentAt!)}</p>
                   {po.step5InvoiceDocName && <p className="text-xs text-gray-500">Invoice doc: {po.step5InvoiceDocName}</p>}
+                  {canEdit && (
+                    <button onClick={() => { setExpandedStep(null); setStep5Target(po); setStep5Form({ arkEmail: po.vendorEmail || '', docName: '' }); setStep5File(null); }} className="flex items-center gap-1.5 text-xs text-violet-600 hover:text-violet-800 font-medium w-fit">
+                      <RefreshCw size={11} />Resend
+                    </button>
+                  )}
                 </>
               ) : (
                 <>
@@ -729,7 +746,14 @@ export default function PurchasesPage() {
           extra={
             <div className="text-sm space-y-2">
               {po.step6DocsSentToArk ? (
-                <p className="text-emerald-600 text-xs flex items-center gap-1"><CheckCircle size={12} /> Customer docs sent to ARK on {formatDate(po.step6SentAt!)}</p>
+                <>
+                  <p className="text-emerald-600 text-xs flex items-center gap-1"><CheckCircle size={12} /> Customer docs sent to ARK on {formatDate(po.step6SentAt!)}</p>
+                  {canEdit && (
+                    <button onClick={() => { setExpandedStep(null); setStep6Target(po); setStep6Email(po.vendorEmail || ''); setStep6Files([]); }} className="flex items-center gap-1.5 text-xs text-violet-600 hover:text-violet-800 font-medium w-fit">
+                      <RefreshCw size={11} />Resend
+                    </button>
+                  )}
+                </>
               ) : (
                 <>
                   <p className="text-xs text-gray-500">Upload and send completed customer documents to ARK.</p>
@@ -770,6 +794,11 @@ export default function PurchasesPage() {
                 <>
                   <p className="text-emerald-600 text-xs flex items-center gap-1"><CheckCircle size={12} /> Final invoice sent on {formatDate(po.step8FinalInvoiceSentAt!)}</p>
                   {po.step8FinalInvoiceNumber && <p className="text-xs text-gray-500">Invoice#: {po.step8FinalInvoiceNumber} · Amount: {formatCurrency(po.step8FinalInvoiceAmount || po.amount)}</p>}
+                  {canEdit && (
+                    <button onClick={() => { setExpandedStep(null); setStep8Target(po); setStep8Form({ customerEmail: (po.leadId as Lead)?.email || '', amount: String(po.step8FinalInvoiceAmount || po.amount), convertToAccount: false, accountName: (po.leadId as Lead)?.companyName || '' }); setStep8File(null); }} className="flex items-center gap-1.5 text-xs text-violet-600 hover:text-violet-800 font-medium w-fit">
+                      <RefreshCw size={11} />Resend
+                    </button>
+                  )}
                   {!po.converted && canEdit && (
                     <button
                       onClick={() => accountsApi.convert({ leadId: typeof po.leadId === 'string' ? po.leadId : (po.leadId as Lead)._id, accountName: (po.leadId as Lead)?.companyName || '' })
@@ -855,13 +884,13 @@ export default function PurchasesPage() {
       </div>
 
       {/* Search */}
-      <div className="relative max-w-xs">
+      <div className="relative w-full sm:max-w-xs">
         <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
         <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search PO, customer, product…" className="input-field pl-9" />
       </div>
 
       {/* Table */}
-      <div className="glass-card !p-0 overflow-hidden">
+      <div className="glass-card !p-0 overflow-hidden hidden md:block">
         {loading ? <LoadingSpinner className="h-48" /> : (() => {
           const visible = activeTab === 'all' ? orders : orders.filter(o => (o.currentStep || 1) === activeTab);
           if (visible.length === 0) return (
@@ -933,6 +962,63 @@ export default function PurchasesPage() {
           </div>
         )}
       </div>
+
+      {/* Mobile Card View */}
+      {loading ? (
+        <LoadingSpinner className="h-48 md:hidden" />
+      ) : (() => {
+        const visible = activeTab === 'all' ? orders : orders.filter(o => (o.currentStep || 1) === activeTab);
+        if (visible.length === 0) return (
+          <div className="md:hidden text-center text-gray-400 py-16 glass-card">
+            {activeTab === 'all' ? 'No purchase orders yet.' : `No POs at step ${activeTab}`}
+          </div>
+        );
+        return (
+          <div className="md:hidden space-y-3">
+            {visible.map(po => {
+              const step = po.currentStep || 1;
+              const completed = po.workflowStatus === 'Completed';
+              return (
+                <div key={po._id} className="glass-card !p-4 space-y-3" onClick={() => { setSelected(po); setExpandedStep(step); }}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-mono font-semibold text-violet-700 text-sm">{po.poNumber}</p>
+                      <p className="text-sm font-medium text-gray-800 mt-0.5">{(po.leadId as Lead)?.companyName || '—'}</p>
+                    </div>
+                    <span className={cn('badge text-xs', completed ? 'bg-emerald-100 text-emerald-700' : STEP_COLORS[step])}>
+                      {completed ? '✓ Complete' : `Step ${step}`}
+                    </span>
+                  </div>
+                  <div className="text-xs space-y-0.5">
+                    <ProductsList po={po} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                    <div><span className="text-gray-400">Amount:</span> <span className="font-semibold text-green-700">{formatCurrency(po.amount)}</span></div>
+                    {po.vendorName && <div><span className="text-gray-400">ARK:</span> <span className="text-gray-600 truncate">{po.vendorName}</span></div>}
+                    <div><span className="text-gray-400">Received:</span> <span className="text-gray-600">{formatDate(po.receivedDate)}</span></div>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1 border-t border-gray-100" onClick={e => e.stopPropagation()}>
+                    <StepActionButton po={po} />
+                    <div className="flex items-center gap-1 ml-auto">
+                      {canEdit && <button title="Edit" onClick={() => openEdit(po)} className="p-1.5 rounded-lg bg-gray-50 text-gray-500 hover:bg-gray-100"><Edit size={13} /></button>}
+                      {canEdit && <button title="Delete" onClick={() => setDeleteTarget(po)} className="p-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100"><Trash2 size={13} /></button>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {total > 15 && (
+              <div className="flex items-center justify-between pt-2">
+                <p className="text-sm text-gray-500">Page {page} of {Math.ceil(total / 15)}</p>
+                <div className="flex gap-2">
+                  <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="btn-secondary py-1 px-3 text-sm">Prev</button>
+                  <button disabled={page >= Math.ceil(total / 15)} onClick={() => setPage(p => p + 1)} className="btn-secondary py-1 px-3 text-sm">Next</button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ─── Detail Modal ──────────────────────────────────────────────────────── */}
       {selected && (

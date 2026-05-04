@@ -257,12 +257,12 @@ export default function SalaryPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="page-header">Salary Management</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} records</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {isHR && (
             <ExcelImportButton
               entityName="Salaries"
@@ -326,7 +326,7 @@ export default function SalaryPage() {
         )}
       </div>
 
-      <div className="glass-card !p-0 overflow-hidden">
+      <div className="glass-card !p-0 overflow-hidden hidden md:block">
         {loading ? <LoadingSpinner className="h-48" /> : salaries.length === 0 ? (
           <div className="text-center text-gray-400 py-16">No salary records found</div>
         ) : (
@@ -392,6 +392,63 @@ export default function SalaryPage() {
           </div>
         )}
       </div>
+
+      {/* Mobile Card View */}
+      {loading ? (
+        <LoadingSpinner className="h-48 md:hidden" />
+      ) : salaries.length === 0 ? (
+        <div className="md:hidden text-center text-gray-400 py-16 glass-card">No salary records found</div>
+      ) : (
+        <div className="md:hidden space-y-3">
+          {salaries.map((sal) => (
+            <div key={sal._id} className="glass-card !p-4 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-gray-900 text-sm">{(sal.employeeId as User)?.name}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{MONTHS[sal.month - 1]} {sal.year}</p>
+                </div>
+                <StatusBadge status={sal.status} />
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                <div><span className="text-gray-400">Base:</span> <span className="text-gray-700">{formatCurrency(sal.baseSalary)}</span></div>
+                <div><span className="text-gray-400">Visits:</span> <span className="text-blue-600">{formatCurrency(sal.visitChargesTotal)}</span></div>
+                <div><span className="text-gray-400">Claims:</span> <span className="text-amber-600">{formatCurrency((sal as any).claimsTotal || 0)}</span></div>
+                <div><span className="text-gray-400">Travel:</span> <span className="text-blue-500">{formatCurrency(sal.travelAllowance || 0)}</span></div>
+                <div><span className="text-gray-400">Incentives:</span> <span className="text-green-600">{formatCurrency(sal.incentives)}</span></div>
+                <div><span className="text-gray-400">Deductions:</span> <span className="text-red-600">-{formatCurrency(sal.deductions)}</span></div>
+              </div>
+              <div className="flex items-center justify-between pt-1 border-t border-gray-100">
+                <div>
+                  <span className="text-xs text-gray-400">Final Salary</span>
+                  <p className="font-bold text-violet-700 text-base">{formatCurrency(sal.finalSalary)}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {sal.status === 'Calculated' && isHR && (
+                    <button onClick={() => setPayTarget(sal)} className="flex items-center gap-1 text-xs bg-green-100 hover:bg-green-200 text-green-800 px-2.5 py-1 rounded-lg font-medium">
+                      <DollarSign size={12} /> Mark Paid
+                    </button>
+                  )}
+                  <button
+                    onClick={() => generatePayslip(sal)}
+                    className="flex items-center gap-1 text-xs bg-violet-100 hover:bg-violet-200 text-violet-800 px-2.5 py-1 rounded-lg font-medium"
+                  >
+                    <FileDown size={12} /> Payslip
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {total > 15 && (
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-sm text-gray-500">Page {page} of {Math.ceil(total / 15)}</p>
+              <div className="flex gap-2">
+                <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="btn-secondary py-1 px-3 text-sm">Prev</button>
+                <button disabled={page >= Math.ceil(total / 15)} onClick={() => setPage(p => p + 1)} className="btn-secondary py-1 px-3 text-sm">Next</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <Modal isOpen={showCalc} onClose={() => setShowCalc(false)} title="Calculate Salary">
         <form onSubmit={handleCalculate} className="space-y-4">

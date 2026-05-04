@@ -117,12 +117,12 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="page-header">User Management</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} users in your organization</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <ExcelImportButton
             entityName="Users"
             columnHint="name, email, role (admin/sales/engineer/hr_finance), department, phone, baseSalary"
@@ -161,8 +161,8 @@ export default function UsersPage() {
         </select>
       </div>
 
-      {/* Table */}
-      <div className="glass-card !p-0 overflow-hidden">
+      {/* Desktop Table */}
+      <div className="glass-card !p-0 overflow-hidden hidden md:block">
         {loading ? <LoadingSpinner className="h-48" /> : users.length === 0 ? (
           <div className="text-center text-gray-400 py-16">No users found</div>
         ) : (
@@ -229,6 +229,60 @@ export default function UsersPage() {
           </div>
         )}
       </div>
+
+      {/* Mobile Card View */}
+      {loading ? (
+        <LoadingSpinner className="h-48 md:hidden" />
+      ) : users.length === 0 ? (
+        <div className="md:hidden text-center text-gray-400 py-16 glass-card">No users found</div>
+      ) : (
+        <div className="md:hidden space-y-3">
+          {users.map((u) => (
+            <div key={u._id} className="glass-card !p-4 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-gray-800 text-sm">{u.name}</p>
+                  <p className="text-xs text-gray-500 mt-0.5 truncate">{u.email}</p>
+                </div>
+                <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                  <span className={`badge text-xs capitalize ${ROLE_COLOR[u.role as Role] || 'bg-gray-100 text-gray-600'}`}>
+                    {ROLE_LABEL[u.role as Role] || u.role}
+                  </span>
+                  <StatusBadge status={u.isActive ? 'Active' : 'Inactive'} />
+                </div>
+              </div>
+              <div className="text-xs text-gray-500 space-y-0.5">
+                {u.department && <p><span className="text-gray-400">Dept:</span> {u.department}</p>}
+                {u.phone && <p><span className="text-gray-400">Phone:</span> {u.phone}</p>}
+                <p><span className="text-gray-400">Created:</span> {formatDate(u.createdAt)}</p>
+              </div>
+              <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
+                <button onClick={() => setToggleTarget(u)} title={u.isActive ? 'Deactivate' : 'Activate'}
+                  className="p-1.5 text-gray-400 hover:text-violet-600">
+                  {u.isActive ? <ToggleRight size={18} className="text-green-500" /> : <ToggleLeft size={18} />}
+                </button>
+                <button onClick={() => { setSelected(u); setShowReset(true); }} title="Reset Password"
+                  className="p-1.5 text-gray-400 hover:text-violet-600">
+                  <KeyRound size={15} />
+                </button>
+                <button onClick={() => setDeleteTarget(u)} title="Delete User"
+                  className="p-1.5 text-gray-400 hover:text-red-600">
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </div>
+          ))}
+          {total > 15 && (
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-sm text-gray-500">Page {page} of {Math.ceil(total / 15)}</p>
+              <div className="flex gap-2">
+                <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="btn-secondary py-1 px-3 text-sm">Prev</button>
+                <button disabled={page >= Math.ceil(total / 15)} onClick={() => setPage(p => p + 1)} className="btn-secondary py-1 px-3 text-sm">Next</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Create User Modal */}
       <Modal isOpen={showCreate} onClose={() => setShowCreate(false)} title="Add New User">

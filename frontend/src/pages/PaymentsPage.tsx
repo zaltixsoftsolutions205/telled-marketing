@@ -115,7 +115,7 @@ export default function PaymentsPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="page-header">Payments</h1>
           <p className="text-sm text-gray-500 mt-0.5">{payments.length} incoming · {vendorPos.length} vendor paid</p>
@@ -187,89 +187,145 @@ export default function PaymentsPage() {
         )}
       </div>
 
-      <div className="relative max-w-xs">
+      <div className="relative w-full sm:max-w-xs">
         <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={tab === 'incoming' ? 'Search by invoice, mode…' : 'Search by PO, vendor…'} className="input-field pl-9" />
       </div>
 
       {tab === 'incoming' ? (
-        <div className="glass-card !p-0 overflow-hidden">
-          {loading ? <LoadingSpinner className="h-48" /> : filteredIncoming.length === 0 ? (
-            <div className="text-center text-gray-400 py-16">No payments found</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-100">
-                  <tr>
-                    <th className="table-header">Invoice</th>
-                    <th className="table-header">Amount</th>
-                    <th className="table-header">Mode</th>
-                    <th className="table-header">Date</th>
-                    <th className="table-header">Reference</th>
-                    <th className="table-header">Recorded By</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {filteredIncoming.map((pmt) => (
-                    <tr key={pmt._id} className="hover:bg-green-50/20 transition-colors">
-                      <td className="table-cell font-mono text-sm">
-                        {(pmt.invoiceId as Invoice)?.invoiceNumber
-                          || allInvoices.find(i => i._id === (pmt.invoiceId as any)?._id || i._id === pmt.invoiceId as any)?.invoiceNumber
-                          || <span className="text-gray-300">—</span>}
-                      </td>
-                      <td className="table-cell font-semibold text-green-700">{formatCurrency(pmt.amountPaid)}</td>
-                      <td className="table-cell">
-                        <span className="badge bg-blue-100 text-blue-800">{pmt.mode}</span>
-                      </td>
-                      <td className="table-cell text-gray-400">{formatDate(pmt.paymentDate)}</td>
-                      <td className="table-cell text-gray-400">{pmt.referenceNumber || '—'}</td>
-                      <td className="table-cell">{(pmt.recordedBy as User)?.name}</td>
+        <>
+          {/* Desktop Table */}
+          <div className="glass-card !p-0 overflow-hidden hidden md:block">
+            {loading ? <LoadingSpinner className="h-48" /> : filteredIncoming.length === 0 ? (
+              <div className="text-center text-gray-400 py-16">No payments found</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                      <th className="table-header">Invoice</th>
+                      <th className="table-header">Amount</th>
+                      <th className="table-header">Mode</th>
+                      <th className="table-header">Date</th>
+                      <th className="table-header">Reference</th>
+                      <th className="table-header">Recorded By</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {filteredIncoming.map((pmt) => (
+                      <tr key={pmt._id} className="hover:bg-green-50/20 transition-colors">
+                        <td className="table-cell font-mono text-sm">
+                          {(pmt.invoiceId as Invoice)?.invoiceNumber
+                            || allInvoices.find(i => i._id === (pmt.invoiceId as any)?._id || i._id === pmt.invoiceId as any)?.invoiceNumber
+                            || <span className="text-gray-300">—</span>}
+                        </td>
+                        <td className="table-cell font-semibold text-green-700">{formatCurrency(pmt.amountPaid)}</td>
+                        <td className="table-cell">
+                          <span className="badge bg-blue-100 text-blue-800">{pmt.mode}</span>
+                        </td>
+                        <td className="table-cell text-gray-400">{formatDate(pmt.paymentDate)}</td>
+                        <td className="table-cell text-gray-400">{pmt.referenceNumber || '—'}</td>
+                        <td className="table-cell">{(pmt.recordedBy as User)?.name}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          {/* Mobile Cards */}
+          {loading ? <LoadingSpinner className="h-48 md:hidden" /> : filteredIncoming.length === 0 ? (
+            <div className="md:hidden text-center text-gray-400 py-16 glass-card">No payments found</div>
+          ) : (
+            <div className="md:hidden space-y-3">
+              {filteredIncoming.map((pmt) => (
+                <div key={pmt._id} className="glass-card !p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-mono font-semibold text-gray-800 text-sm">
+                      {(pmt.invoiceId as Invoice)?.invoiceNumber || allInvoices.find(i => i._id === (pmt.invoiceId as any)?._id || i._id === pmt.invoiceId as any)?.invoiceNumber || '—'}
+                    </p>
+                    <span className="font-semibold text-green-700">{formatCurrency(pmt.amountPaid)}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+                    <span className="badge bg-blue-100 text-blue-800">{pmt.mode}</span>
+                    <span>{formatDate(pmt.paymentDate)}</span>
+                    {pmt.referenceNumber && <span className="text-gray-400">Ref: {pmt.referenceNumber}</span>}
+                    {(pmt.recordedBy as User)?.name && <span className="text-gray-400">By: {(pmt.recordedBy as User).name}</span>}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
-        </div>
+        </>
       ) : (
-        <div className="glass-card !p-0 overflow-hidden">
-          {loading ? <LoadingSpinner className="h-48" /> : filteredVendor.length === 0 ? (
-            <div className="text-center text-gray-400 py-16">No vendor payments recorded yet</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-orange-50 border-b border-orange-100">
-                  <tr>
-                    <th className="table-header">PO Number</th>
-                    <th className="table-header">Customer</th>
-                    <th className="table-header">Vendor</th>
-                    <th className="table-header">Product</th>
-                    <th className="table-header">Amount Paid</th>
-                    <th className="table-header">Mode</th>
-                    <th className="table-header">Date</th>
-                    <th className="table-header">Reference</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {filteredVendor.map((po) => (
-                    <tr key={po._id} className="hover:bg-orange-50/20 transition-colors">
-                      <td className="table-cell font-mono font-medium text-amber-700">{po.poNumber}</td>
-                      <td className="table-cell font-medium">{(po.leadId as Lead)?.companyName || '—'}</td>
-                      <td className="table-cell text-gray-700">{po.vendorName || '—'}</td>
-                      <td className="table-cell text-gray-500">{po.product || '—'}</td>
-                      <td className="table-cell font-semibold text-orange-700">{formatCurrency(po.paidAmount ?? po.amount)}</td>
-                      <td className="table-cell">
-                        <span className="badge bg-amber-100 text-amber-800">{po.paymentMode || '—'}</span>
-                      </td>
-                      <td className="table-cell text-gray-400">{po.paidDate ? formatDate(po.paidDate) : '—'}</td>
-                      <td className="table-cell text-gray-400">{po.paymentReference || '—'}</td>
+        <>
+          {/* Desktop Table */}
+          <div className="glass-card !p-0 overflow-hidden hidden md:block">
+            {loading ? <LoadingSpinner className="h-48" /> : filteredVendor.length === 0 ? (
+              <div className="text-center text-gray-400 py-16">No vendor payments recorded yet</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-orange-50 border-b border-orange-100">
+                    <tr>
+                      <th className="table-header">PO Number</th>
+                      <th className="table-header">Customer</th>
+                      <th className="table-header">Vendor</th>
+                      <th className="table-header">Product</th>
+                      <th className="table-header">Amount Paid</th>
+                      <th className="table-header">Mode</th>
+                      <th className="table-header">Date</th>
+                      <th className="table-header">Reference</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {filteredVendor.map((po) => (
+                      <tr key={po._id} className="hover:bg-orange-50/20 transition-colors">
+                        <td className="table-cell font-mono font-medium text-amber-700">{po.poNumber}</td>
+                        <td className="table-cell font-medium">{(po.leadId as Lead)?.companyName || '—'}</td>
+                        <td className="table-cell text-gray-700">{po.vendorName || '—'}</td>
+                        <td className="table-cell text-gray-500">{po.product || '—'}</td>
+                        <td className="table-cell font-semibold text-orange-700">{formatCurrency(po.paidAmount ?? po.amount)}</td>
+                        <td className="table-cell">
+                          <span className="badge bg-amber-100 text-amber-800">{po.paymentMode || '—'}</span>
+                        </td>
+                        <td className="table-cell text-gray-400">{po.paidDate ? formatDate(po.paidDate) : '—'}</td>
+                        <td className="table-cell text-gray-400">{po.paymentReference || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          {/* Mobile Cards */}
+          {loading ? <LoadingSpinner className="h-48 md:hidden" /> : filteredVendor.length === 0 ? (
+            <div className="md:hidden text-center text-gray-400 py-16 glass-card">No vendor payments recorded yet</div>
+          ) : (
+            <div className="md:hidden space-y-3">
+              {filteredVendor.map((po) => (
+                <div key={po._id} className="glass-card !p-4 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-mono font-semibold text-amber-700 text-sm">{po.poNumber}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{(po.leadId as Lead)?.companyName || '—'}</p>
+                    </div>
+                    <span className="font-semibold text-orange-700">{formatCurrency(po.paidAmount ?? po.amount)}</span>
+                  </div>
+                  <div className="text-xs text-gray-500 space-y-0.5">
+                    {po.vendorName && <p><span className="text-gray-400">Vendor:</span> {po.vendorName}</p>}
+                    {po.product && <p><span className="text-gray-400">Product:</span> {po.product}</p>}
+                    <div className="flex flex-wrap gap-2 pt-0.5">
+                      {po.paymentMode && <span className="badge bg-amber-100 text-amber-800">{po.paymentMode}</span>}
+                      {po.paidDate && <span>{formatDate(po.paidDate)}</span>}
+                      {po.paymentReference && <span className="text-gray-400">Ref: {po.paymentReference}</span>}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
-        </div>
+        </>
       )}
       <Modal isOpen={showRecord} onClose={() => setShowRecord(false)} title="Record Incoming Payment">
         <form onSubmit={handleRecord} className="space-y-4">

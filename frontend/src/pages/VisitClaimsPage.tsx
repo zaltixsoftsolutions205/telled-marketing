@@ -258,7 +258,7 @@ export default function VisitClaimsPage() {
   return (
     <div className="space-y-5 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Visit Claims</h1>
           <p className="text-sm text-gray-500 mt-0.5">
@@ -274,7 +274,7 @@ export default function VisitClaimsPage() {
       
       {/* Stats Cards (HR only) */}
       {isHR && stats && (
-        <div className="grid grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
           {Object.entries(STATUS_CONFIG).map(([status, config]) => {
             const stat = stats[status] || { count: 0, amount: 0 };
             return (
@@ -322,8 +322,8 @@ export default function VisitClaimsPage() {
         </select>
       </div>
       
-      {/* Claims Table */}
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      {/* Claims Table — desktop */}
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden hidden md:block">
         {loading ? (
           <LoadingSpinner className="h-64" />
         ) : claims.length === 0 ? (
@@ -471,7 +471,74 @@ export default function VisitClaimsPage() {
           </>
         )}
       </div>
-      
+
+      {/* Mobile cards */}
+      {loading ? (
+        <LoadingSpinner className="h-64 md:hidden" />
+      ) : claims.length === 0 ? (
+        <div className="md:hidden text-center text-gray-400 py-12 bg-white rounded-lg border border-gray-200">
+          <Receipt size={48} className="mx-auto mb-3 opacity-30" />
+          <p className="text-sm">No claims found</p>
+          {isEngineer && (
+            <button onClick={openCreateModal} className="mt-3 text-sm text-violet-600 hover:text-violet-700">Create your first claim</button>
+          )}
+        </div>
+      ) : (
+        <div className="md:hidden space-y-3">
+          {claims.map((claim) => {
+            const statusConfig = STATUS_CONFIG[claim.status];
+            const StatusIcon = statusConfig.icon;
+            const visit = typeof claim.visitId !== 'string' ? claim.visitId : null;
+            const account = typeof claim.accountId !== 'string' ? claim.accountId : null;
+            const engineer = typeof claim.engineerId !== 'string' ? claim.engineerId : null;
+            const canSubmit = claim.status === 'draft' && (isEngineer || user?._id === engineer?._id);
+            const canReview = isHR && (claim.status === 'submitted' || claim.status === 'under_review');
+            const canPay = isHR && claim.status === 'approved';
+            return (
+              <div key={claim._id} className="glass-card !p-4 space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-mono font-medium text-gray-900 text-sm">{claim.claimNumber}</p>
+                    <p className="text-xs text-gray-500 mt-0.5 truncate">{account?.companyName || visit ? `${visit?.visitType}` : '—'}</p>
+                  </div>
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${statusConfig.bg} ${statusConfig.color}`}>
+                    <StatusIcon size={11} /> {statusConfig.label}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                  <div><span className="text-gray-400">Amount</span><p className="font-semibold text-gray-900">{formatCurrency(claim.totalAmount)}</p></div>
+                  <div><span className="text-gray-400">Submitted</span><p className="font-medium text-gray-700">{claim.submittedAt ? formatDate(claim.submittedAt) : formatDate(claim.createdAt)}</p></div>
+                </div>
+                <div className="flex flex-wrap gap-2 pt-1 border-t border-gray-100">
+                  <button onClick={() => { setSelectedClaim(claim); setShowViewModal(true); }} className="p-1.5 text-gray-500 hover:text-violet-600 hover:bg-violet-50 rounded" title="View"><Eye size={14} /></button>
+                  {canSubmit && (
+                    <button onClick={() => openSubmitModal(claim)} className="p-1.5 text-blue-500 hover:text-blue-600 hover:bg-blue-50 rounded" title="Submit to HR"><Send size={14} /></button>
+                  )}
+                  {canReview && (
+                    <button onClick={() => { setReviewClaim(claim); setShowReviewModal(true); setReviewNotes(''); }} className="p-1.5 text-amber-500 hover:text-amber-600 hover:bg-amber-50 rounded" title="Review"><Eye size={14} /></button>
+                  )}
+                  {canPay && (
+                    <button onClick={() => { setPayClaim(claim); setShowPayModal(true); setPaymentRef(''); }} className="p-1.5 text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50 rounded" title="Mark as Paid"><DollarSign size={14} /></button>
+                  )}
+                  {claim.status === 'draft' && (isEngineer || user?._id === engineer?._id) && (
+                    <button onClick={() => handleDeleteClaim(claim._id)} className="p-1.5 text-red-500 hover:text-red-600 hover:bg-red-50 rounded" title="Delete"><Trash2 size={14} /></button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-xs text-gray-500">Showing {((page-1)*limit)+1}–{Math.min(page*limit, total)} of {total}</p>
+              <div className="flex gap-2">
+                <button disabled={page === 1} onClick={() => setPage(p => p-1)} className="px-3 py-1 text-xs border border-gray-300 rounded bg-white hover:bg-gray-50 disabled:opacity-50"><ChevronLeft size={14} /></button>
+                <button disabled={page >= totalPages} onClick={() => setPage(p => p+1)} className="px-3 py-1 text-xs border border-gray-300 rounded bg-white hover:bg-gray-50 disabled:opacity-50"><ChevronRight size={14} /></button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Create Claim Modal */}
       <Modal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} title="Create Expense Claim" size="lg">
         <form onSubmit={handleCreateClaim} className="space-y-5">

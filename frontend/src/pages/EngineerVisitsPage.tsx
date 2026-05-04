@@ -208,7 +208,7 @@ export default function EngineerVisitsPage() {
   return (
     <div className="space-y-4 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Engineer Visits</h1>
           <p className="text-sm text-gray-500">{total} records</p>
@@ -221,7 +221,7 @@ export default function EngineerVisitsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+      <div className="flex flex-wrap gap-1 bg-gray-100 rounded-xl p-1">
         {TABS.map(t => (
           <button
             key={t.key}
@@ -268,8 +268,8 @@ export default function EngineerVisitsPage() {
         </div>
       )}
 
-      {/* Table */}
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      {/* Table — desktop */}
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden hidden md:block">
         {loading ? (
           <LoadingSpinner className="h-48" />
         ) : visits.length === 0 ? (
@@ -333,40 +333,20 @@ export default function EngineerVisitsPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5">
-                            {/* Status progression (for scheduled/active) */}
                             {isEngineer && visit.status === 'Scheduled' && (
-                              <button
-                                onClick={() => handleStatusChange(visit, 'In Progress')}
-                                className="px-2 py-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded hover:bg-amber-100"
-                                title="Start visit"
-                              >
-                                Start
-                              </button>
+                              <button onClick={() => handleStatusChange(visit, 'In Progress')} className="px-2 py-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded hover:bg-amber-100" title="Start visit">Start</button>
                             )}
-                            {/* Complete */}
                             {canComplete && (
-                              <button
-                                onClick={() => openComplete(visit)}
-                                className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-100 flex items-center gap-1"
-                              >
+                              <button onClick={() => openComplete(visit)} className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-100 flex items-center gap-1">
                                 <CheckCircle2 size={11} /> Complete
                               </button>
                             )}
-                            {/* HR actions */}
                             {canApproveHR && (
                               <>
-                                <button
-                                  onClick={() => handleApprove(visit)}
-                                  className="px-2.5 py-1 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-700 flex items-center gap-1 font-medium"
-                                  title="Approve claim"
-                                >
+                                <button onClick={() => handleApprove(visit)} className="px-2.5 py-1 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-700 flex items-center gap-1 font-medium" title="Approve claim">
                                   <CheckCircle size={11} /> Approve
                                 </button>
-                                <button
-                                  onClick={() => { setRejectTarget(visit); setRejectReason(''); }}
-                                  className="px-2.5 py-1 text-xs bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100 flex items-center gap-1 font-medium"
-                                  title="Reject claim"
-                                >
+                                <button onClick={() => { setRejectTarget(visit); setRejectReason(''); }} className="px-2.5 py-1 text-xs bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100 flex items-center gap-1 font-medium" title="Reject claim">
                                   <XCircle size={11} /> Reject
                                 </button>
                               </>
@@ -392,6 +372,76 @@ export default function EngineerVisitsPage() {
           </>
         )}
       </div>
+
+      {/* Mobile cards */}
+      {loading ? (
+        <LoadingSpinner className="h-48 md:hidden" />
+      ) : visits.length === 0 ? (
+        <div className="md:hidden text-center text-gray-400 py-12 bg-white rounded-lg border border-gray-200">
+          <CalendarCheck size={32} className="mx-auto mb-2 opacity-30" />
+          <p className="text-sm">{tab === 'hr' ? 'No pending claims' : 'No visits found'}</p>
+        </div>
+      ) : (
+        <div className="md:hidden space-y-3">
+          {visits.map((visit: any) => {
+            const vt = (visit.visitType || 'Support') as VisitType;
+            const typeInfo = VISIT_TYPE_STYLE[vt] ?? VISIT_TYPE_STYLE.Support;
+            const TypeIcon = typeInfo.icon;
+            const canComplete = isEngineer && (visit.status === 'Scheduled' || visit.status === 'In Progress');
+            const canApproveHR = isHR && visit.hrStatus === 'Pending' && (visit.status === 'Completed' || visit.totalAmount > 0);
+            return (
+              <div key={visit._id} className="glass-card !p-4 space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-gray-900 text-sm truncate">{visit.accountId?.companyName || visit.accountId?.accountName || '—'}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{visit.engineerId?.name || '—'}</p>
+                  </div>
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium flex-shrink-0 ${typeInfo.bg} ${typeInfo.color}`}>
+                    <TypeIcon size={11} /> {vt}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                  <div><span className="text-gray-400">Date</span><p className="font-medium text-gray-700">{visit.scheduledDate ? formatDateTime(visit.scheduledDate) : formatDate(visit.visitDate)}</p></div>
+                  <div><span className="text-gray-400">Charges</span><p className="font-medium text-gray-700">{visit.totalAmount ? formatCurrency(visit.totalAmount) : '—'}</p></div>
+                  <div><span className="text-gray-400">Status</span><p><span className={`inline-flex px-1.5 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLE[visit.status as VisitStatus] ?? 'bg-gray-100 text-gray-500'}`}>{visit.status || '—'}</span></p></div>
+                  <div><span className="text-gray-400">HR</span><p><span className={`inline-flex px-1.5 py-0.5 rounded-full text-xs font-medium ${HR_STYLE[visit.hrStatus as HRStatus] ?? ''}`}>{visit.hrStatus}</span></p></div>
+                </div>
+                {(canComplete || canApproveHR) && (
+                  <div className="flex flex-wrap gap-2 pt-1 border-t border-gray-100">
+                    {isEngineer && visit.status === 'Scheduled' && (
+                      <button onClick={() => handleStatusChange(visit, 'In Progress')} className="px-2.5 py-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded hover:bg-amber-100">Start</button>
+                    )}
+                    {canComplete && (
+                      <button onClick={() => openComplete(visit)} className="px-2.5 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-100 flex items-center gap-1">
+                        <CheckCircle2 size={11} /> Complete
+                      </button>
+                    )}
+                    {canApproveHR && (
+                      <>
+                        <button onClick={() => handleApprove(visit)} className="px-2.5 py-1 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-700 flex items-center gap-1 font-medium">
+                          <CheckCircle size={11} /> Approve
+                        </button>
+                        <button onClick={() => { setRejectTarget(visit); setRejectReason(''); }} className="px-2.5 py-1 text-xs bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100 flex items-center gap-1 font-medium">
+                          <XCircle size={11} /> Reject
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {total > 15 && (
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-xs text-gray-500">Showing {((page-1)*15)+1}–{Math.min(page*15,total)} of {total}</p>
+              <div className="flex gap-2">
+                <button disabled={page===1} onClick={() => setPage(p=>p-1)} className="px-3 py-1 text-xs border border-gray-300 rounded bg-white hover:bg-gray-50 disabled:opacity-50">Prev</button>
+                <button disabled={page>=Math.ceil(total/15)} onClick={() => setPage(p=>p+1)} className="px-3 py-1 text-xs border border-gray-300 rounded bg-white hover:bg-gray-50 disabled:opacity-50">Next</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Schedule Visit Modal */}
       <Modal isOpen={showSchedule} onClose={() => setShowSchedule(false)} title="Schedule Visit">

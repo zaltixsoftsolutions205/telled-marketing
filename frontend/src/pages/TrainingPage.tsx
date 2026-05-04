@@ -83,12 +83,12 @@ export default function TrainingPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="page-header">Training</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} training records</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <ExcelImportButton
             entityName="Trainings"
             columnHint="accountName, customerName, trainingDate (YYYY-MM-DD), mode (Online/Offline/Hybrid), notes"
@@ -145,8 +145,8 @@ export default function TrainingPage() {
         </select>
       </div>
 
-      {/* Table */}
-      <div className="glass-card !p-0 overflow-hidden">
+      {/* Desktop Table */}
+      <div className="glass-card !p-0 overflow-hidden hidden md:block">
         {loading ? (
           <LoadingSpinner className="h-48" />
         ) : trainings.length === 0 ? (
@@ -167,9 +167,7 @@ export default function TrainingPage() {
               <tbody className="divide-y divide-gray-50">
                 {trainings.map((tr) => (
                   <tr key={tr._id} className="hover:bg-violet-50/20 transition-colors">
-                    <td className="table-cell font-medium text-gray-900">
-                      {tr.customerName}
-                    </td>
+                    <td className="table-cell font-medium text-gray-900">{tr.customerName}</td>
                     <td className="table-cell">
                       <span className={`text-xs font-medium px-2 py-1 rounded-full ${MODE_STYLE[tr.mode] ?? ''}`}>{tr.mode}</span>
                     </td>
@@ -185,7 +183,6 @@ export default function TrainingPage() {
             </table>
           </div>
         )}
-
         {total > 15 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
             <p className="text-sm text-gray-500">Page {page} of {Math.ceil(total / 15)}</p>
@@ -196,6 +193,41 @@ export default function TrainingPage() {
           </div>
         )}
       </div>
+
+      {/* Mobile Card View */}
+      {loading ? (
+        <LoadingSpinner className="h-48 md:hidden" />
+      ) : trainings.length === 0 ? (
+        <div className="md:hidden text-center text-gray-400 py-16 glass-card">No training records found</div>
+      ) : (
+        <div className="md:hidden space-y-3">
+          {trainings.map((tr) => (
+            <div key={tr._id} className="glass-card !p-4 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <p className="font-medium text-gray-800 text-sm">{tr.customerName}</p>
+                <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_STYLE[tr.status] ?? ''}`}>{tr.status}</span>
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${MODE_STYLE[tr.mode] ?? ''}`}>{tr.mode}</span>
+                </div>
+              </div>
+              <div className="text-xs text-gray-500 space-y-0.5">
+                <p><span className="text-gray-400">Date:</span> {formatDate(tr.trainingDate)}</p>
+                {(tr.trainedBy as any)?.name && <p><span className="text-gray-400">Trained by:</span> {(tr.trainedBy as any).name}</p>}
+                {tr.notes && <p className="truncate"><span className="text-gray-400">Notes:</span> {tr.notes}</p>}
+              </div>
+            </div>
+          ))}
+          {total > 15 && (
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-sm text-gray-500">Page {page} of {Math.ceil(total / 15)}</p>
+              <div className="flex gap-2">
+                <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="btn-secondary py-1 px-3 text-sm">Prev</button>
+                <button disabled={page >= Math.ceil(total / 15)} onClick={() => setPage(p => p + 1)} className="btn-secondary py-1 px-3 text-sm">Next</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Create Modal */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Record Training">

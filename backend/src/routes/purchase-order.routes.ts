@@ -202,7 +202,7 @@ router.post('/:id/step2-forward-to-ark', authorize('admin', 'sales', 'hr_finance
 
     try {
       await sendEmailWithUserSmtp(arkEmail, `PO ${po.poNumber} — Price Clearance Request`, html, senderSmtp, attachments.length ? attachments : undefined, req.body.cc);
-    } catch (emailErr) {
+    } catch (emailErr: any) {
       logger.warn('Email send failed (step2), continuing:', emailErr);
     }
 
@@ -283,9 +283,7 @@ router.post('/:id/step4-send-docs-to-customer', authorize('admin', 'sales', 'hr_
     try {
       await sendEmailWithUserSmtp(customerEmail, `Documents for PO ${po.poNumber}`, html, senderSmtp, attachments.length ? attachments : undefined);
     } catch (emailErr: any) {
-      logger.error('Email send failed (step4):', emailErr);
-      sendError(res, `Failed to send email to customer: ${emailErr?.message || 'SMTP error'}`, 500);
-      return;
+      logger.warn('Email send failed (step4), continuing:', emailErr);
     }
 
     await PurchaseOrder.findByIdAndUpdate(req.params.id, {
@@ -335,7 +333,7 @@ router.post('/:id/step5-invoice-to-ark', authorize('admin', 'sales', 'hr_finance
 
     try {
       await sendEmailWithUserSmtp(arkEmail, `Invoice for PO ${po.poNumber}`, html, senderSmtp, attachments.length ? attachments : undefined);
-    } catch (emailErr) {
+    } catch (emailErr: any) {
       logger.warn('Email send failed (step5), continuing:', emailErr);
     }
 
@@ -410,7 +408,7 @@ router.post('/:id/step6-send-docs-to-ark', authorize('admin', 'sales', 'hr_finan
 
     try {
       await sendEmailWithUserSmtp(arkEmail, `Customer Documents for PO ${po.poNumber}`, html, senderSmtp, attachments.length ? attachments : undefined);
-    } catch (emailErr) {
+    } catch (emailErr: any) {
       logger.warn('Email send failed (step6), continuing:', emailErr);
     }
 
@@ -473,9 +471,7 @@ router.post('/:id/step8-final-invoice', authorize('admin', 'sales', 'hr_finance'
     try {
       await sendEmailWithUserSmtp(customerEmail, `Final Invoice ${invNumber} — PO ${po.poNumber}`, html, senderSmtp, attachments.length ? attachments : undefined);
     } catch (emailErr: any) {
-      logger.error('Email send failed (step8):', emailErr);
-      sendError(res, `Failed to send invoice email to customer: ${emailErr?.message || 'SMTP error'}`, 500);
-      return;
+      logger.warn('Email send failed (step8), continuing:', emailErr);
     }
 
     await PurchaseOrder.findByIdAndUpdate(req.params.id, {

@@ -742,12 +742,12 @@ export default function AttendancePage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="page-header">Attendance</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} records</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {isHR && (
             <ExcelImportButton
               entityName="Attendance"
@@ -913,8 +913,8 @@ export default function AttendancePage() {
         </div>
       )}
 
-      {/* Records table */}
-      <div className="glass-card !p-0 overflow-hidden">
+      {/* Records table — desktop */}
+      <div className="glass-card !p-0 overflow-hidden hidden md:block">
         {loading ? <LoadingSpinner className="h-48" /> : records.length === 0 ? (
           <div className="text-center text-gray-400 py-16 flex flex-col items-center gap-2">
             <CalendarCheck size={36} className="opacity-30" /><p>No attendance records for this period</p>
@@ -959,6 +959,51 @@ export default function AttendancePage() {
           </div>
         )}
       </div>
+
+      {/* Records — mobile cards */}
+      {loading ? (
+        <LoadingSpinner className="h-48 md:hidden" />
+      ) : records.length === 0 ? (
+        <div className="md:hidden text-center text-gray-400 py-16 glass-card flex flex-col items-center gap-2">
+          <CalendarCheck size={36} className="opacity-30" /><p>No attendance records for this period</p>
+        </div>
+      ) : (
+        <div className="md:hidden space-y-3">
+          {records.map(rec => {
+            const emp = rec.employeeId as User;
+            return (
+              <div key={rec._id} className="glass-card !p-4 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    {isHR && <p className="font-semibold text-gray-900 text-sm">{emp?.name || '—'}</p>}
+                    <p className={`text-xs text-gray-500 ${isHR ? 'mt-0.5' : 'font-semibold text-gray-900'}`}>{formatDate(rec.date)}</p>
+                  </div>
+                  <span className={`badge flex-shrink-0 ${statusColors[rec.status] || 'bg-gray-100 text-gray-700'}`}>{rec.status}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500">
+                  <div><span className="text-gray-400">Check In</span><p className="font-medium text-gray-700">{formatTime(rec.checkIn) || '—'}</p></div>
+                  <div><span className="text-gray-400">Check Out</span><p className="font-medium text-gray-700">{formatTime(rec.checkOut) || '—'}</p></div>
+                </div>
+                {rec.notes && <p className="text-xs text-gray-400 truncate">{rec.notes}</p>}
+                {isHR && (
+                  <div className="pt-1 border-t border-gray-100">
+                    <button onClick={() => openEdit(rec)} className="text-xs bg-violet-50 hover:bg-violet-100 text-violet-700 px-2.5 py-1 rounded-lg font-medium">Edit</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {total > 20 && (
+            <div className="flex items-center justify-between py-2">
+              <p className="text-sm text-gray-500">Page {page} of {Math.ceil(total / 20)}</p>
+              <div className="flex gap-2">
+                <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="btn-secondary py-1 px-3 text-sm">Prev</button>
+                <button disabled={page >= Math.ceil(total / 20)} onClick={() => setPage(p => p + 1)} className="btn-secondary py-1 px-3 text-sm">Next</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Geo verify modal */}
       <GeoVerifyModal

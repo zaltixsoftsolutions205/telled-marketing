@@ -172,14 +172,14 @@ export default function EngineerPerformancePage() {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Engineer Performance</h1>
           <p className="text-sm text-gray-500">Visit completion, ticket resolution & training metrics</p>
         </div>
         {isAdmin && engineers.length > 0 && (
           <select
-            className="input-field w-auto text-sm"
+            className="input-field w-full sm:w-auto text-sm"
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
           >
@@ -215,7 +215,7 @@ export default function EngineerPerformancePage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
               <div>
                 <div className="flex justify-between text-sm mb-1">
                   <span className="text-gray-600">Visit Completion</span>
@@ -292,7 +292,7 @@ export default function EngineerPerformancePage() {
               <TrendingUp size={15} className="text-gray-400" />
               Visit Claims
             </h2>
-            <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="grid grid-cols-3 gap-2 text-center">
               <div>
                 <p className="text-2xl font-bold text-gray-900">{perf.completedVisits}</p>
                 <p className="text-xs text-gray-500 mt-0.5">Completed</p>

@@ -137,7 +137,7 @@ export default function TimesheetPage() {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="page-header">Timesheet</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} entries · {MONTHS_SHORT[filterMonth - 1]} {filterYear}</p>
@@ -187,7 +187,7 @@ export default function TimesheetPage() {
       </div>
 
       {/* Table */}
-      <div className="glass-card !p-0 overflow-hidden">
+      <div className="glass-card !p-0 overflow-hidden hidden md:block">
         {loading ? <LoadingSpinner className="h-48" /> : entries.length === 0 ? (
           <div className="text-center text-gray-400 py-16 flex flex-col items-center gap-2">
             <Clock size={36} className="opacity-30" />
@@ -296,6 +296,75 @@ export default function TimesheetPage() {
           </div>
         )}
       </div>
+
+      {/* Mobile Card View */}
+      {loading ? (
+        <LoadingSpinner className="h-48 md:hidden" />
+      ) : entries.length === 0 ? (
+        <div className="md:hidden text-center text-gray-400 py-16 glass-card flex flex-col items-center gap-2">
+          <Clock size={36} className="opacity-30" />
+          <p>No timesheet entries for this period</p>
+          <button onClick={openAdd} className="btn-primary mt-2 flex items-center gap-2">
+            <Plus size={14} /> Log your first entry
+          </button>
+        </div>
+      ) : (
+        <div className="md:hidden space-y-3">
+          {entries.map((entry: any) => (
+            <div key={entry._id} className="glass-card !p-4 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  {isManager && <p className="font-medium text-gray-900 text-sm">{entry.userName || '—'}</p>}
+                  <p className="text-xs text-gray-500">{formatDate(entry.date)}</p>
+                  <span className="badge bg-gray-100 text-gray-700 text-xs mt-0.5 inline-block">{entry.taskType}</span>
+                </div>
+                <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                  <span className={`badge ${statusColors[entry.status] || 'bg-gray-100 text-gray-700'} text-xs`}>{entry.status}</span>
+                  <span className="font-bold text-gray-900 text-sm">{entry.hoursWorked}h</span>
+                </div>
+              </div>
+              <p className="text-sm text-gray-700 truncate">{entry.description}</p>
+              {entry.project && <p className="text-xs text-gray-500"><span className="text-gray-400">Project:</span> {entry.project}</p>}
+              {entry.notes && <p className="text-xs text-gray-500 italic truncate"><span className="text-gray-400">Notes:</span> {entry.notes}</p>}
+              <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
+                {isManager && entry.status === 'Submitted' && (
+                  <>
+                    <button onClick={() => handleApprove(entry._id)}
+                      className="flex items-center gap-1 text-xs bg-green-100 hover:bg-green-200 text-green-800 px-2.5 py-1.5 rounded-lg font-medium">
+                      <CheckCircle size={11} /> Approve
+                    </button>
+                    <button onClick={() => { setRejectModal({ id: entry._id }); setRejectReason(''); }}
+                      className="flex items-center gap-1 text-xs bg-red-100 hover:bg-red-200 text-red-800 px-2.5 py-1.5 rounded-lg font-medium">
+                      <XCircle size={11} /> Reject
+                    </button>
+                  </>
+                )}
+                {!isManager && entry.status === 'Submitted' && (
+                  <>
+                    <button onClick={() => openEdit(entry)}
+                      className="text-xs bg-violet-50 hover:bg-violet-100 text-violet-700 px-2.5 py-1.5 rounded-lg font-medium">
+                      Edit
+                    </button>
+                    <button onClick={() => handleDelete(entry._id)}
+                      className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 transition-colors">
+                      <Trash2 size={14} />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+          {total > 20 && (
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-sm text-gray-500">Page {page} of {Math.ceil(total / 20)}</p>
+              <div className="flex gap-2">
+                <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="btn-secondary py-1 px-3 text-sm">Prev</button>
+                <button disabled={page >= Math.ceil(total / 20)} onClick={() => setPage(p => p + 1)} className="btn-secondary py-1 px-3 text-sm">Next</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Add / Edit Modal */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editEntry ? 'Edit Time Entry' : 'Log Time'}>

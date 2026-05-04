@@ -700,12 +700,12 @@ This offer may be subject to errors and changes.`;
     <div className="space-y-6 animate-fade-in">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="page-header">Quotations</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} total quotations</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <ExcelImportButton
             entityName="Quotations"
             columnHint="leadName (company to match), subtotal, taxRate (%), delivery, terms, notes"
@@ -735,8 +735,8 @@ This offer may be subject to errors and changes.`;
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 items-center">
-        <div className="relative flex-1 max-w-xs">
+      <div className="flex flex-wrap gap-3 items-center">
+        <div className="relative flex-1 min-w-48">
           <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
           <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             placeholder="Search by company..." className="input-field pl-9" />
@@ -750,7 +750,7 @@ This offer may be subject to errors and changes.`;
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden hidden md:block">
         {loading ? (
           <LoadingSpinner className="h-48" />
         ) : displayed.length === 0 ? (
@@ -823,6 +823,54 @@ This offer may be subject to errors and changes.`;
           </div>
         )}
       </div>
+
+      {/* Mobile Card View */}
+      {loading ? (
+        <LoadingSpinner className="h-48 md:hidden" />
+      ) : displayed.length === 0 ? (
+        <div className="md:hidden text-center text-gray-400 py-16 glass-card">No quotations found</div>
+      ) : (
+        <div className="md:hidden space-y-3">
+          {displayed.map((q) => (
+            <div key={q._id} className="glass-card !p-4 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <p className="font-mono font-semibold text-violet-700 text-sm">{q.quotationNumber}</p>
+                    {q.uploadedFileName && <span className="text-violet-400"><Upload size={11} /></span>}
+                    <span className={`badge text-xs ${q.version > 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>v{q.version}</span>
+                  </div>
+                  <p className="text-sm font-medium text-gray-800 mt-0.5">{(q.leadId as Lead)?.companyName || '—'}</p>
+                </div>
+                <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                  <span className={`badge text-xs ${STATUS_COLORS[q.status] || 'bg-gray-100 text-gray-600'}`}>{q.status}</span>
+                  {q.poReceived
+                    ? <span className="badge text-xs bg-emerald-100 text-emerald-700">PO Received</span>
+                    : <span className="badge text-xs bg-amber-100 text-amber-700">PO Not Received</span>}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                <div><span className="text-gray-400">Total:</span> <span className="font-semibold text-violet-700">{formatCurrency(q.total)}</span></div>
+                <div><span className="text-gray-400">Subtotal:</span> <span className="text-gray-600">{formatCurrency(q.subtotal)}</span></div>
+                {q.validUntil && <div><span className="text-gray-400">Valid Until:</span> <span className="text-gray-600">{formatDate(q.validUntil)}</span></div>}
+                {q.emailSentAt && <div><span className="text-gray-400">Sent:</span> <span className="text-gray-600">{formatDate(q.emailSentAt)}</span></div>}
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-gray-100">
+                {getActionButtons(q)}
+              </div>
+            </div>
+          ))}
+          {total > 15 && (
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-sm text-gray-500">Page {page} of {Math.ceil(total / 15)}</p>
+              <div className="flex gap-2">
+                <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="btn-secondary py-1 px-3 text-sm">Prev</button>
+                <button disabled={page >= Math.ceil(total / 15)} onClick={() => setPage(p => p + 1)} className="btn-secondary py-1 px-3 text-sm">Next</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Create Quotation Modal — upload-first flow */}
       <Modal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} title="New Quotation" size="md">

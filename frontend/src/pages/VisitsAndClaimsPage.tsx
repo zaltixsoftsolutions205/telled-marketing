@@ -298,14 +298,14 @@ export default function VisitsAndClaimsPage() {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Visit Management</h1>
           <p className="text-sm text-gray-500 mt-0.5">
             {activeTab === 'visits' ? 'Schedule and track engineer visits' : 'Submit and manage expense claims'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {activeTab === 'visits' && (
             <ExcelImportButton
               entityName="Visits"
@@ -380,7 +380,7 @@ export default function VisitsAndClaimsPage() {
 
       {/* Stats for HR on Claims Tab */}
       {activeTab === 'claims' && isHR && stats && (
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
           {Object.entries(stats).map(([status, data]: [string, any]) => (
             data.count > 0 && (
               <div key={status} className="bg-white rounded-lg border border-gray-200 p-3">
@@ -395,169 +395,212 @@ export default function VisitsAndClaimsPage() {
 
       {/* VISITS TAB */}
       {activeTab === 'visits' && (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          {visitsLoading ? (
-            <LoadingSpinner className="h-64" />
-          ) : visits.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">
-              <CalendarCheck size={48} className="mx-auto mb-3 opacity-30" />
-              <p>No visits found</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Engineer</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Account</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Scheduled</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {visits.map((visit) => (
-                    <tr key={visit._id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3">
-                        <span className="text-sm font-medium text-gray-700">{visit.visitType}</span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{visit.engineerId?.name || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{visit.accountId?.companyName || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-500">
-                        {formatDateTime(visit.scheduledDate || visit.visitDate)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
-                          visit.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
-                          visit.status === 'In Progress' ? 'bg-amber-100 text-amber-700' :
-                          visit.status === 'Scheduled' ? 'bg-blue-100 text-blue-700' :
-                          'bg-gray-100 text-gray-500'
-                        }`}>
-                          {visit.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm font-medium text-gray-700">
-                        {visit.totalAmount ? formatCurrency(visit.totalAmount) : '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-2">
-                          {visit.status === 'Scheduled' && isEngineer && (
-                            <button
-                              onClick={() => updateStatus(visit._id, 'In Progress')}
-                              className="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded hover:bg-amber-100"
-                            >
-                              Start
-                            </button>
-                          )}
-                          {(visit.status === 'Scheduled' || visit.status === 'In Progress') && isEngineer && (
-                            <button
-                              onClick={() => openCompleteModal(visit)}
-                              className="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded hover:bg-emerald-100"
-                            >
-                              Complete
-                            </button>
-                          )}
-                        </div>
-                      </td>
+        <>
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden hidden md:block">
+            {visitsLoading ? (
+              <LoadingSpinner className="h-64" />
+            ) : visits.length === 0 ? (
+              <div className="text-center py-12 text-gray-400">
+                <CalendarCheck size={48} className="mx-auto mb-3 opacity-30" />
+                <p>No visits found</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Engineer</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Account</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Scheduled</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* CLAIMS TAB */}
-      {activeTab === 'claims' && (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          {claimsLoading ? (
-            <LoadingSpinner className="h-64" />
-          ) : claims.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">
-              <Receipt size={48} className="mx-auto mb-3 opacity-30" />
-              <p>No claims found</p>
-              {isEngineer && (
-                <button onClick={openClaimModal} className="mt-3 text-sm text-violet-600 hover:text-violet-700">
-                  Create your first claim
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Claim #</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Visit</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Account</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {claims.map((claim) => {
-                    const visit = claim.visitId;
-                    const canSubmit = claim.status === 'draft' && isEngineer;
-                    const canReview = isHR && (claim.status === 'submitted' || claim.status === 'under_review');
-                    
-                    return (
-                      <tr key={claim._id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3">
-                          <span className="font-mono text-sm font-medium text-gray-900">{claim.claimNumber}</span>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-600">
-                          {visit ? `${visit.visitType} - ${formatDate(visit.scheduledDate)}` : '-'}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-600">
-                          {claim.accountId?.companyName || '-'}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="font-semibold text-gray-900">{formatCurrency(claim.totalAmount)}</span>
-                        </td>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {visits.map((visit) => (
+                      <tr key={visit._id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3"><span className="text-sm font-medium text-gray-700">{visit.visitType}</span></td>
+                        <td className="px-4 py-3 text-sm text-gray-600">{visit.engineerId?.name || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600">{visit.accountId?.companyName || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500">{formatDateTime(visit.scheduledDate || visit.visitDate)}</td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
-                            claim.status === 'approved' ? 'bg-emerald-100 text-emerald-700' :
-                            claim.status === 'submitted' ? 'bg-blue-100 text-blue-700' :
-                            claim.status === 'under_review' ? 'bg-amber-100 text-amber-700' :
-                            claim.status === 'rejected' ? 'bg-red-100 text-red-700' :
-                            claim.status === 'paid' ? 'bg-violet-100 text-violet-700' :
-                            'bg-gray-100 text-gray-600'
-                          }`}>
-                            {claim.status.replace('_', ' ')}
-                          </span>
+                            visit.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
+                            visit.status === 'In Progress' ? 'bg-amber-100 text-amber-700' :
+                            visit.status === 'Scheduled' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                          }`}>{visit.status}</span>
                         </td>
+                        <td className="px-4 py-3 text-sm font-medium text-gray-700">{visit.totalAmount ? formatCurrency(visit.totalAmount) : '—'}</td>
                         <td className="px-4 py-3">
                           <div className="flex gap-2">
-                            {canSubmit && (
-                              <button
-                                onClick={() => openSubmitModal(claim)}
-                                className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded hover:bg-blue-100 flex items-center gap-1"
-                              >
-                                <Send size={12} /> Submit to HR
-                              </button>
+                            {visit.status === 'Scheduled' && isEngineer && (
+                              <button onClick={() => updateStatus(visit._id, 'In Progress')} className="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded hover:bg-amber-100">Start</button>
                             )}
-                            {canReview && (
-                              <button
-                                onClick={() => openReviewModal(claim)}
-                                className="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded hover:bg-amber-100 flex items-center gap-1"
-                              >
-                                <Eye size={12} /> Review
-                              </button>
+                            {(visit.status === 'Scheduled' || visit.status === 'In Progress') && isEngineer && (
+                              <button onClick={() => openCompleteModal(visit)} className="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded hover:bg-emerald-100">Complete</button>
                             )}
                           </div>
                         </td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Mobile Visit Cards */}
+          {visitsLoading ? (
+            <LoadingSpinner className="h-48 md:hidden" />
+          ) : visits.length === 0 ? (
+            <div className="md:hidden text-center py-12 text-gray-400 bg-white rounded-lg border border-gray-200">
+              <CalendarCheck size={48} className="mx-auto mb-3 opacity-30" />
+              <p>No visits found</p>
+            </div>
+          ) : (
+            <div className="md:hidden space-y-3">
+              {visits.map((visit) => (
+                <div key={visit._id} className="glass-card !p-4 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-gray-800 text-sm">{visit.visitType}</p>
+                      {visit.engineerId?.name && <p className="text-xs text-gray-500">{visit.engineerId.name}</p>}
+                      {visit.accountId?.companyName && <p className="text-xs text-gray-500">{visit.accountId.companyName}</p>}
+                    </div>
+                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${
+                      visit.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
+                      visit.status === 'In Progress' ? 'bg-amber-100 text-amber-700' :
+                      visit.status === 'Scheduled' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                    }`}>{visit.status}</span>
+                  </div>
+                  <div className="text-xs text-gray-500 space-y-0.5">
+                    <p><span className="text-gray-400">Scheduled:</span> {formatDateTime(visit.scheduledDate || visit.visitDate)}</p>
+                    {visit.totalAmount && <p><span className="text-gray-400">Amount:</span> {formatCurrency(visit.totalAmount)}</p>}
+                  </div>
+                  {isEngineer && visit.status !== 'Completed' && (
+                    <div className="flex gap-2 pt-1 border-t border-gray-100">
+                      {visit.status === 'Scheduled' && (
+                        <button onClick={() => updateStatus(visit._id, 'In Progress')} className="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded hover:bg-amber-100">Start</button>
+                      )}
+                      <button onClick={() => openCompleteModal(visit)} className="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded hover:bg-emerald-100">Complete</button>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
-        </div>
+        </>
+      )}
+
+      {/* CLAIMS TAB */}
+      {activeTab === 'claims' && (
+        <>
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden hidden md:block">
+            {claimsLoading ? (
+              <LoadingSpinner className="h-64" />
+            ) : claims.length === 0 ? (
+              <div className="text-center py-12 text-gray-400">
+                <Receipt size={48} className="mx-auto mb-3 opacity-30" />
+                <p>No claims found</p>
+                {isEngineer && (
+                  <button onClick={openClaimModal} className="mt-3 text-sm text-violet-600 hover:text-violet-700">Create your first claim</button>
+                )}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Claim #</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Visit</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Account</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {claims.map((claim) => {
+                      const visit = claim.visitId;
+                      const canSubmit = claim.status === 'draft' && isEngineer;
+                      const canReview = isHR && (claim.status === 'submitted' || claim.status === 'under_review');
+                      return (
+                        <tr key={claim._id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3"><span className="font-mono text-sm font-medium text-gray-900">{claim.claimNumber}</span></td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{visit ? `${visit.visitType} - ${formatDate(visit.scheduledDate)}` : '-'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{claim.accountId?.companyName || '-'}</td>
+                          <td className="px-4 py-3"><span className="font-semibold text-gray-900">{formatCurrency(claim.totalAmount)}</span></td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
+                              claim.status === 'approved' ? 'bg-emerald-100 text-emerald-700' :
+                              claim.status === 'submitted' ? 'bg-blue-100 text-blue-700' :
+                              claim.status === 'under_review' ? 'bg-amber-100 text-amber-700' :
+                              claim.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                              claim.status === 'paid' ? 'bg-violet-100 text-violet-700' : 'bg-gray-100 text-gray-600'
+                            }`}>{claim.status.replace('_', ' ')}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-2">
+                              {canSubmit && <button onClick={() => openSubmitModal(claim)} className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded hover:bg-blue-100 flex items-center gap-1"><Send size={12} /> Submit to HR</button>}
+                              {canReview && <button onClick={() => openReviewModal(claim)} className="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded hover:bg-amber-100 flex items-center gap-1"><Eye size={12} /> Review</button>}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Mobile Claims Cards */}
+          {claimsLoading ? (
+            <LoadingSpinner className="h-48 md:hidden" />
+          ) : claims.length === 0 ? (
+            <div className="md:hidden text-center py-12 text-gray-400 bg-white rounded-lg border border-gray-200">
+              <Receipt size={48} className="mx-auto mb-3 opacity-30" />
+              <p>No claims found</p>
+            </div>
+          ) : (
+            <div className="md:hidden space-y-3">
+              {claims.map((claim) => {
+                const visit = claim.visitId;
+                const canSubmit = claim.status === 'draft' && isEngineer;
+                const canReview = isHR && (claim.status === 'submitted' || claim.status === 'under_review');
+                return (
+                  <div key={claim._id} className="glass-card !p-4 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-mono font-semibold text-gray-900 text-sm">{claim.claimNumber}</p>
+                        {visit && <p className="text-xs text-gray-500">{visit.visitType} — {formatDate(visit.scheduledDate)}</p>}
+                        {claim.accountId?.companyName && <p className="text-xs text-gray-500">{claim.accountId.companyName}</p>}
+                      </div>
+                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                          claim.status === 'approved' ? 'bg-emerald-100 text-emerald-700' :
+                          claim.status === 'submitted' ? 'bg-blue-100 text-blue-700' :
+                          claim.status === 'under_review' ? 'bg-amber-100 text-amber-700' :
+                          claim.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                          claim.status === 'paid' ? 'bg-violet-100 text-violet-700' : 'bg-gray-100 text-gray-600'
+                        }`}>{claim.status.replace('_', ' ')}</span>
+                        <span className="font-bold text-gray-900 text-sm">{formatCurrency(claim.totalAmount)}</span>
+                      </div>
+                    </div>
+                    {(canSubmit || canReview) && (
+                      <div className="flex gap-2 pt-1 border-t border-gray-100">
+                        {canSubmit && <button onClick={() => openSubmitModal(claim)} className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded hover:bg-blue-100 flex items-center gap-1"><Send size={12} /> Submit to HR</button>}
+                        {canReview && <button onClick={() => openReviewModal(claim)} className="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded hover:bg-amber-100 flex items-center gap-1"><Eye size={12} /> Review</button>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
 
       {/* Schedule Visit Modal */}
