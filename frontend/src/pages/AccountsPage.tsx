@@ -102,13 +102,13 @@ export default function AccountsPage() {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 sm:space-y-6 animate-fade-in">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="page-header">Accounts</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} total accounts</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <ExcelImportButton
             entityName="Accounts"
             columnHint="leadName (company name to match lead), accountName (optional override), notes"
@@ -136,7 +136,7 @@ export default function AccountsPage() {
         </div>
       </div>
 
-      <div className="relative max-w-xs">
+      <div className="relative w-full sm:max-w-xs">
         <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
         <input
           value={search}
@@ -183,7 +183,8 @@ export default function AccountsPage() {
         </div>
       )}
 
-      <div className="glass-card !p-0 overflow-hidden">
+      {/* Desktop Table */}
+      <div className="glass-card !p-0 overflow-hidden hidden md:block">
         {loading ? (
           <LoadingSpinner className="h-48" />
         ) : filteredAccounts.length === 0 ? (
@@ -279,6 +280,59 @@ export default function AccountsPage() {
           </div>
         )}
       </div>
+
+      {/* Mobile Card View */}
+      {loading ? (
+        <LoadingSpinner className="h-48 md:hidden" />
+      ) : filteredAccounts.length === 0 ? (
+        <div className="md:hidden text-center text-gray-400 py-16 glass-card">
+          {activeTab === 'unassigned' ? 'All accounts are assigned' : 'No accounts found'}
+        </div>
+      ) : (
+        <div className="md:hidden space-y-3">
+          {filteredAccounts.map((acc) => (
+            <div key={acc._id} className="glass-card !p-4 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <Link to={`/accounts/${acc._id}`} className="font-semibold text-violet-700 hover:underline text-sm block truncate">
+                    {acc.accountName}
+                  </Link>
+                  <p className="text-xs text-gray-500 mt-0.5 truncate">
+                    {(acc.leadId as Lead)?.companyName || acc.accountName}
+                  </p>
+                </div>
+                <StatusBadge status={acc.status} />
+              </div>
+              <div className="text-xs text-gray-500 space-y-1">
+                {(acc.assignedEngineer as User)?.name && (
+                  <p><span className="text-gray-400">Engineer:</span> {(acc.assignedEngineer as User).name}</p>
+                )}
+                {(acc.assignedSales as User)?.name && (
+                  <p><span className="text-gray-400">Sales:</span> {(acc.assignedSales as User).name}</p>
+                )}
+                <p><span className="text-gray-400">Created:</span> {formatDate(acc.createdAt)}</p>
+              </div>
+              <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
+                <Link to={`/accounts/${acc._id}`} className="p-1.5 rounded-md hover:bg-violet-100 hover:text-violet-600 text-gray-400">
+                  <ExternalLink size={14} />
+                </Link>
+                <button onClick={() => setDeleteTarget(acc)} className="p-1.5 rounded-md hover:bg-red-100 hover:text-red-600 text-gray-400 transition-colors">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+          {total > 15 && (
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-sm text-gray-500">Page {page} of {Math.ceil(total / 15)}</p>
+              <div className="flex gap-2">
+                <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="btn-secondary py-1 px-3 text-sm">Prev</button>
+                <button disabled={page >= Math.ceil(total / 15)} onClick={() => setPage(p => p + 1)} className="btn-secondary py-1 px-3 text-sm">Next</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <Modal isOpen={showConvert} onClose={() => setShowConvert(false)} title="Convert Lead to Account">
         <form onSubmit={handleConvert} className="space-y-4">

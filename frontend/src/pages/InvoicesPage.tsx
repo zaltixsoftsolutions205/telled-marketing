@@ -98,12 +98,12 @@ export default function InvoicesPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="page-header">Invoices</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} total</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <ExcelImportButton
             entityName="Invoices"
             columnHint="accountName, amount, dueDate (YYYY-MM-DD), notes"
@@ -204,7 +204,8 @@ export default function InvoicesPage() {
         </select>
       </div>
 
-      <div className="glass-card !p-0 overflow-hidden">
+      {/* Desktop Table */}
+      <div className="glass-card !p-0 overflow-hidden hidden md:block">
         {loading ? <LoadingSpinner className="h-48" /> : invoices.length === 0 ? (
           <div className="text-center text-gray-400 py-16">No invoices found</div>
         ) : (
@@ -282,6 +283,68 @@ export default function InvoicesPage() {
           </div>
         )}
       </div>
+
+      {/* Mobile Card View */}
+      {loading ? (
+        <LoadingSpinner className="h-48 md:hidden" />
+      ) : invoices.length === 0 ? (
+        <div className="md:hidden text-center text-gray-400 py-16 glass-card">No invoices found</div>
+      ) : (
+        <div className="md:hidden space-y-3">
+          {invoices.map((inv) => {
+            const isVendor = inv.invoiceType === 'vendor';
+            const partyName = isVendor
+              ? (inv.vendorName || 'ARK / Vendor')
+              : ((inv.accountId as any)?.accountName || (inv.accountId as any)?.companyName || (inv.leadId as any)?.companyName || '—');
+            return (
+              <div key={inv._id} className={`glass-card !p-4 space-y-2 ${inv.status === 'Overdue' ? 'border-red-200' : ''}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-mono font-semibold text-gray-800 text-sm">{inv.invoiceNumber}</p>
+                    <p className="text-xs text-gray-500 mt-0.5 truncate">{partyName}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <StatusBadge status={inv.status} />
+                    <span className={cn('badge text-xs', isVendor ? 'bg-amber-100 text-amber-700' : 'bg-violet-100 text-violet-700')}>
+                      {isVendor ? 'Vendor' : 'Customer'}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between text-xs text-gray-500">
+                  <span><span className="text-gray-400">Amount:</span> <span className="font-semibold text-gray-800">{formatCurrency(inv.totalAmount ?? inv.amount)}</span></span>
+                  <span><span className="text-gray-400">Paid:</span> <span className="text-green-700 font-medium">{formatCurrency(inv.paidAmount)}</span></span>
+                </div>
+                <div className="text-xs text-gray-500">
+                  <span className="text-gray-400">Due:</span> {formatDate(inv.dueDate)}
+                </div>
+                <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
+                  {inv.status !== 'Paid' && inv.status !== 'Cancelled' && (
+                    <button onClick={() => { setSelected(inv); setPayForm(f => ({...f, amount: String(inv.amount - inv.paidAmount)})); setShowPayment(true); }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-green-50 text-green-700 rounded-lg hover:bg-green-100 font-medium">
+                      <CreditCard size={12} /> Record Payment
+                    </button>
+                  )}
+                  {((inv as any).pdfUrl || inv.pdfPath) && (
+                    <a href={`/uploads/${(inv as any).pdfUrl || inv.pdfPath}`} download target="_blank" rel="noreferrer"
+                      className="p-1.5 rounded-md hover:bg-violet-100 hover:text-violet-600 text-gray-400">
+                      <Download size={14} />
+                    </a>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {total > 15 && (
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-sm text-gray-500">Page {page} of {Math.ceil(total / 15)}</p>
+              <div className="flex gap-2">
+                <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="btn-secondary py-1 px-3 text-sm">Prev</button>
+                <button disabled={page >= Math.ceil(total / 15)} onClick={() => setPage(p => p + 1)} className="btn-secondary py-1 px-3 text-sm">Next</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <Modal isOpen={showCreate} onClose={() => setShowCreate(false)} title="Create Invoice">
         <form onSubmit={handleCreate} className="space-y-4">

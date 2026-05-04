@@ -86,12 +86,12 @@ export default function InstallationsPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="page-header">Installations</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} total</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <ExcelImportButton
             entityName="Installations"
             columnHint="accountName, scheduledDate (YYYY-MM-DD), siteAddress, licenseVersion, notes"
@@ -131,7 +131,8 @@ export default function InstallationsPage() {
         </select>
       </div>
 
-      <div className="glass-card !p-0 overflow-hidden">
+      {/* Desktop Table */}
+      <div className="glass-card !p-0 overflow-hidden hidden md:block">
         {loading ? <LoadingSpinner className="h-48" /> : installations.length === 0 ? (
           <div className="text-center text-gray-400 py-16">No installations found</div>
         ) : (
@@ -178,6 +179,45 @@ export default function InstallationsPage() {
           </div>
         )}
       </div>
+
+      {/* Mobile Card View */}
+      {loading ? (
+        <LoadingSpinner className="h-48 md:hidden" />
+      ) : installations.length === 0 ? (
+        <div className="md:hidden text-center text-gray-400 py-16 glass-card">No installations found</div>
+      ) : (
+        <div className="md:hidden space-y-3">
+          {installations.map((inst) => (
+            <div key={inst._id} className="glass-card !p-4 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-gray-800 text-sm truncate">{(inst.accountId as Account)?.accountName}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{inst.siteAddress}</p>
+                </div>
+                <StatusBadge status={inst.status} />
+              </div>
+              <div className="text-xs text-gray-500 space-y-0.5">
+                {(inst.engineer as User)?.name && <p><span className="text-gray-400">Engineer:</span> {(inst.engineer as User).name}</p>}
+                {inst.licenseVersion && <p><span className="text-gray-400">License:</span> {inst.licenseVersion}</p>}
+                <p><span className="text-gray-400">Scheduled:</span> {formatDate(inst.scheduledDate)}</p>
+                {inst.completedDate && <p><span className="text-gray-400">Completed:</span> {formatDate(inst.completedDate)}</p>}
+              </div>
+              <div className="pt-1 border-t border-gray-100">
+                <button onClick={() => openEdit(inst)} className="text-xs text-violet-600 hover:text-violet-800 font-medium">Edit</button>
+              </div>
+            </div>
+          ))}
+          {total > 15 && (
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-sm text-gray-500">Page {page} of {Math.ceil(total / 15)}</p>
+              <div className="flex gap-2">
+                <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="btn-secondary py-1 px-3 text-sm">Prev</button>
+                <button disabled={page >= Math.ceil(total / 15)} onClick={() => setPage(p => p + 1)} className="btn-secondary py-1 px-3 text-sm">Next</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editTarget ? 'Edit Installation' : 'Schedule Installation'}>
         <form onSubmit={handleSubmit} className="space-y-4">

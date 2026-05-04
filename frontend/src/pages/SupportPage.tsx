@@ -339,7 +339,8 @@ export default function SupportPage() {
         </select>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      {/* Desktop Table */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hidden md:block">
         {loading ? (
           <div className="flex justify-center py-12"><LoadingSpinner /></div>
         ) : tickets.length === 0 ? (
@@ -458,6 +459,112 @@ export default function SupportPage() {
           </div>
         )}
       </div>
+
+      {/* Mobile Card View */}
+      {loading ? (
+        <div className="md:hidden flex justify-center py-12"><LoadingSpinner /></div>
+      ) : tickets.length === 0 ? (
+        <div className="md:hidden text-center py-12 text-gray-500 glass-card">No tickets found</div>
+      ) : (
+        <div className="md:hidden space-y-3">
+          {tickets.map((ticket) => {
+            const resolvedDaysLeft = ticket.status === 'Resolved' ? daysLeft(ticket.resolvedAt, 3) : null;
+            const reopenedDaysLeft = ticket.status === 'Reopened' ? daysLeft(ticket.reopenedAt, 3) : null;
+            const reopenDaysLeft = ticket.status === 'Closed' ? daysLeft(ticket.closedAt, 3) : null;
+            return (
+              <div key={ticket._id} className="glass-card !p-4 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <button onClick={() => { setSelected(ticket); setShowDetail(true); }}
+                      className="text-violet-600 hover:underline font-semibold text-sm text-left truncate block w-full">
+                      {ticket.subject}
+                    </button>
+                    <p className="text-xs text-gray-400 font-mono mt-0.5">{ticket.ticketId}</p>
+                    {ticket.parentTicketId && <p className="text-xs text-orange-500">Follow-up ticket</p>}
+                  </div>
+                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getPriorityColor(ticket.priority)}`}>{ticket.priority}</span>
+                    <StatusBadge status={ticket.status} />
+                  </div>
+                </div>
+                <div className="text-xs text-gray-500 space-y-0.5">
+                  {(ticket.accountId as Account)?.accountName && (
+                    <p><span className="text-gray-400">Account:</span> {(ticket.accountId as Account).accountName}</p>
+                  )}
+                  {((ticket.assignedEngineer as User)?.name || (ticket.assignedTo as User)?.name) && (
+                    <p><span className="text-gray-400">Assigned:</span> {(ticket.assignedEngineer as User)?.name || (ticket.assignedTo as User)?.name}</p>
+                  )}
+                </div>
+                {(resolvedDaysLeft !== null || reopenedDaysLeft !== null || (reopenDaysLeft !== null && reopenDaysLeft > 0)) && (
+                  <div className="text-xs space-y-0.5">
+                    {resolvedDaysLeft !== null && (
+                      <span className={`flex items-center gap-1 ${resolvedDaysLeft <= 1 ? 'text-red-600 font-semibold' : 'text-orange-500'}`}>
+                        <Clock size={11} /> {resolvedDaysLeft}d left (feedback)
+                      </span>
+                    )}
+                    {reopenedDaysLeft !== null && (
+                      <span className={`flex items-center gap-1 ${reopenedDaysLeft <= 1 ? 'text-red-600 font-semibold' : 'text-violet-600'}`}>
+                        <AlertTriangle size={11} /> {reopenedDaysLeft}d left (new ticket)
+                      </span>
+                    )}
+                    {reopenDaysLeft !== null && reopenDaysLeft > 0 && (
+                      <span className="flex items-center gap-1 text-blue-500">
+                        <RotateCcw size={11} /> {reopenDaysLeft}d to reopen
+                      </span>
+                    )}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-1.5 items-center pt-1 border-t border-gray-100">
+                  <button onClick={() => { setSelected(ticket); setShowNote(true); }}
+                    className="p-1.5 text-gray-400 hover:text-violet-600 rounded" title="Add note">
+                    <MessageSquarePlus size={14} />
+                  </button>
+                  <button onClick={() => { setSelected(ticket); setShowDetail(true); }}
+                    className="p-1.5 text-gray-400 hover:text-violet-600 rounded" title="View details">
+                    <Eye size={14} />
+                  </button>
+                  {(user?.role === 'engineer' || user?.role === 'admin') && !['Closed', 'Resolved'].includes(ticket.status) && (
+                    <select value={ticket.status}
+                      onChange={(e) => { if (ticket.status !== e.target.value) openStatusUpdateModal(ticket, e.target.value); }}
+                      className="text-xs border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-violet-500">
+                      {allowedStatusOptions(ticket.status).map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  )}
+                  {canResolve(ticket) && (
+                    <button onClick={() => { setSelected(ticket); setShowResolve(true); }}
+                      className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 font-medium">
+                      Resolve
+                    </button>
+                  )}
+                  {canFeedback(ticket) && (
+                    <button onClick={() => { setSelected(ticket); setShowFeedback(true); }}
+                      className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 font-medium flex items-center gap-1">
+                      <ThumbsUp size={11} /> Feedback
+                    </button>
+                  )}
+                  {canReopen(ticket) && (
+                    <button onClick={() => { setSelected(ticket); setShowReopen(true); }}
+                      className="px-2 py-1 text-xs bg-orange-100 text-orange-700 rounded hover:bg-orange-200 font-medium flex items-center gap-1">
+                      <RotateCcw size={11} /> Reopen
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {total > 15 && (
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-sm text-gray-500">Showing {((page - 1) * 15) + 1}–{Math.min(page * 15, total)} of {total}</p>
+              <div className="flex gap-2">
+                <button disabled={page === 1} onClick={() => setPage(p => p - 1)}
+                  className="px-3 py-1 border border-gray-300 rounded-lg disabled:opacity-50 hover:bg-gray-50 text-sm">Prev</button>
+                <button disabled={page >= Math.ceil(total / 15)} onClick={() => setPage(p => p + 1)}
+                  className="px-3 py-1 border border-gray-300 rounded-lg disabled:opacity-50 hover:bg-gray-50 text-sm">Next</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Create Ticket Modal */}
       <Modal isOpen={showCreate} onClose={() => setShowCreate(false)} title="Create Support Ticket" size="lg">

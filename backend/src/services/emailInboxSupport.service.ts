@@ -78,32 +78,31 @@ function stripQuotedContent(text: string): string {
 }
 
 async function findAccountByEmail(email: string): Promise<any | null> {
-  // Try to find lead with this email
+  const safeEmail = email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const emailRegex = new RegExp(`^${safeEmail}$`, 'i');
+
+  // Try direct account contactEmail match first (most common path)
+  const account = await Account.findOne({
+    contactEmail: emailRegex,
+    isArchived: false,
+  });
+  if (account) return account;
+
+  // Try via Lead → Account relationship
   const Lead = mongoose.model('Lead');
   const lead = await Lead.findOne({
     $or: [
-      { contactEmail: { $regex: new RegExp(email, 'i') } },
-      { email: { $regex: new RegExp(email, 'i') } }
+      { contactEmail: emailRegex },
+      { email: emailRegex },
     ],
-    isArchived: false
+    isArchived: false,
   });
-  
   if (lead) {
-    // Find account for this lead
-    const account = await Account.findOne({ leadId: lead._id, isArchived: false });
-    if (account) return account;
+    const leadAccount = await Account.findOne({ leadId: lead._id, isArchived: false });
+    if (leadAccount) return leadAccount;
   }
-  
-  // Try direct account email
-  const account = await Account.findOne({
-    $or: [
-      { 'contactEmail': { $regex: new RegExp(email, 'i') } },
-      { 'email': { $regex: new RegExp(email, 'i') } }
-    ],
-    isArchived: false
-  });
-  
-  return account;
+
+  return null;
 }
 
 export async function patchUnassignedTickets(): Promise<number> {
@@ -213,21 +212,20 @@ export async function syncSupportEmails(creds?: ImapCredentials): Promise<Suppor
           
           console.log(`\n📨 Processing: ${subject} (from: ${fromEmail})`);
 
-          // Check if it's a support email
-          const combined = (subject + ' ' + cleanEmailText(msg.source || Buffer.alloc(0))).toLowerCase();
-          const isSupport = SUPPORT_KEYWORDS.some(kw => combined.includes(kw));
-          
-          if (!isSupport) {
-            console.log('⏭️ Not a support email, skipping');
-            await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true });
-            continue;
-          }
-
-          // Find account
+          // Find account first — if it's a known customer, accept all their emails as support requests
           const account = await findAccountByEmail(fromEmail);
+
           if (!account) {
+            // Unknown sender — only create a ticket if it looks like a support email
+            const combined = (subject + ' ' + cleanEmailText(msg.source || Buffer.alloc(0))).toLowerCase();
+            const isSupport = SUPPORT_KEYWORDS.some(kw => combined.includes(kw));
+            if (!isSupport) {
+              console.log(`⏭️ Unknown sender ${fromEmail}, not a support email — skipping`);
+              await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true });
+              continue;
+            }
             console.log(`❌ No account found for email: ${fromEmail}`);
-            result.failed.push(`${fromEmail}: No account found`);
+            result.failed.push(`${fromEmail}: No matching account`);
             await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true });
             continue;
           }
