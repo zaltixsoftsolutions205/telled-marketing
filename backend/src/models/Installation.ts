@@ -1,6 +1,7 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IInstallation extends Document {
+  organizationId: mongoose.Types.ObjectId;
   accountId: mongoose.Types.ObjectId;
   engineerId: mongoose.Types.ObjectId;
   scheduledDate: Date;

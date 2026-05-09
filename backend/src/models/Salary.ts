@@ -1,6 +1,7 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface ISalary extends Document {
+  organizationId: mongoose.Types.ObjectId;
   employeeId: mongoose.Types.ObjectId;
   month: number;
   year: number;
@@ -47,15 +48,15 @@ const SalarySchema = new Schema<ISalary>(
 SalarySchema.index({ employeeId: 1, year: -1, month: -1 });
 SalarySchema.index({ employeeId: 1, month: 1, year: 1 }, { unique: true });
 
-SalarySchema.pre('save', function (next) {
+SalarySchema.pre('save', function (this: ISalary, next) {
   this.finalSalary = this.baseSalary + this.visitChargesTotal + (this.claimsTotal || 0) + (this.travelAllowance || 0) + this.incentives - this.deductions;
   next();
 });
 
 // Virtual: frontend uses "status" ('Calculated' | 'Paid') — derived from isPaid
-SalarySchema.virtual('status').get(function () { return this.isPaid ? 'Paid' : 'Calculated'; });
+SalarySchema.virtual('status').get(function (this: ISalary) { return this.isPaid ? 'Paid' : 'Calculated'; });
 // Virtual: frontend uses "pdfPath" — alias for payslipPdf
-SalarySchema.virtual('pdfPath').get(function () { return this.payslipPdf; });
+SalarySchema.virtual('pdfPath').get(function (this: ISalary) { return this.payslipPdf; });
 SalarySchema.set('toJSON', { virtuals: true });
 SalarySchema.set('toObject', { virtuals: true });
 

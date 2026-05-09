@@ -1,6 +1,7 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IEngineerVisit extends Document {
+  organizationId: mongoose.Types.ObjectId;
   engineerId: mongoose.Types.ObjectId;
   accountId: mongoose.Types.ObjectId;
   visitDate: Date;
@@ -70,7 +71,7 @@ VisitSchema.index({ accountId: 1 });
 VisitSchema.index({ hrStatus: 1 });
 VisitSchema.index({ status: 1, scheduledDate: 1 });
 
-VisitSchema.pre('save', function (next) {
+VisitSchema.pre('save', function (this: IEngineerVisit, next) {
   this.totalAmount = this.visitCharges + this.travelAllowance + this.additionalExpense;
   next();
 });

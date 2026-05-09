@@ -71,7 +71,7 @@ export const microsoftCallback = async (req: Request, res: Response) => {
       const decoded = JSON.parse(Buffer.from(state, 'base64url').toString());
       userId = decoded.userId;
     } catch {
-      return res.redirect(`${frontendBase}/microsoft-oauth-result?success=false&error=invalid_state`);
+      return res.redirect(`${oauthResultBase}?success=false&error=invalid_state`);
     }
 
     const redirectUri = getRedirectUri();
@@ -92,7 +92,7 @@ export const microsoftCallback = async (req: Request, res: Response) => {
     const { access_token, refresh_token } = tokenRes.data;
 
     if (!refresh_token) {
-      return res.redirect(`${frontendBase}/microsoft-oauth-result?success=false&error=no_refresh_token`);
+      return res.redirect(`${oauthResultBase}?success=false&error=no_refresh_token`);
     }
 
     // Get user's actual email from Microsoft to confirm it matches

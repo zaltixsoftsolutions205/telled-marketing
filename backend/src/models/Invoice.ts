@@ -1,6 +1,7 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IInvoice extends Document {
+  organizationId: mongoose.Types.ObjectId;
   accountId?: mongoose.Types.ObjectId;
   leadId?: mongoose.Types.ObjectId;
   purchaseOrderId?: mongoose.Types.ObjectId;

@@ -3,6 +3,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface IInternalNote { note: string; addedBy: mongoose.Types.ObjectId; addedAt: Date; }
 
 export interface ISupportTicket extends Document {
+  organizationId: mongoose.Types.ObjectId;
   accountId: mongoose.Types.ObjectId;
   ticketId: string;
   subject: string;

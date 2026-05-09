@@ -9,6 +9,7 @@ export interface IExtensionHistory {
 }
 
 export interface IOEMApprovalAttempt extends Document {
+  organizationId: mongoose.Types.ObjectId;
   leadId: mongoose.Types.ObjectId;
   attemptNumber: number;
   status: 'Pending' | 'Approved' | 'Rejected' | 'Expired';
@@ -65,8 +66,8 @@ OEMSchema.index({ leadId: 1, attemptNumber: 1 }, { unique: true });
 OEMSchema.index({ expiryDate: 1, status: 1 });
 
 // Virtuals: frontend DRF type expects "version" and "drfNumber"
-OEMSchema.virtual('version').get(function () { return this.attemptNumber; });
-OEMSchema.virtual('drfNumber').get(function () {
+OEMSchema.virtual('version').get(function (this: IOEMApprovalAttempt) { return this.attemptNumber; });
+OEMSchema.virtual('drfNumber').get(function (this: IOEMApprovalAttempt) {
   const d = this.sentDate || this.createdAt;
   const date = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
   return `DRF-${date}-${String(this.attemptNumber).padStart(3, '0')}`;

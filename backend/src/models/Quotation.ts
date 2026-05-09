@@ -11,6 +11,7 @@ export interface IQuotationItem {
 }
 
 export interface IQuotation extends Document {
+  organizationId: mongoose.Types.ObjectId;
   leadId: mongoose.Types.ObjectId;
   quotationNumber: string;
   version: number;
