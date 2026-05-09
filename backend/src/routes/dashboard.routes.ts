@@ -5,8 +5,8 @@ import { authorize } from '../middleware/role.middleware';
 
 const router = Router();
 router.use(authenticate);
-router.get('/admin',    authorize('admin'),                    getAdminDashboard);
-router.get('/sales',    authorize('admin', 'sales'),           getSalesDashboard);
-router.get('/engineer', authorize('admin', 'engineer'),        getEngineerDashboard);
-router.get('/hr',       authorize('admin', 'hr_finance'),      getHRDashboard);
+router.get('/admin',    authorize('admin', 'manager'),                    getAdminDashboard);
+router.get('/sales',    authorize('admin', 'manager', 'sales'),           getSalesDashboard);
+router.get('/engineer', authorize('admin', 'manager', 'engineer'),        getEngineerDashboard);
+router.get('/hr',       authorize('admin', 'manager', 'hr'),               getHRDashboard);
 export default router;

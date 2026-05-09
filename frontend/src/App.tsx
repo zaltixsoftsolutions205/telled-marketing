@@ -1,4 +1,5 @@
 // src/App.tsx
+import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuthStore } from '@/store/authStore';
@@ -8,6 +9,7 @@ import LandingPage from '@/pages/LandingPage';
 import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
 import RegisterPage from '@/pages/RegisterPage';
+import MicrosoftOAuthResultPage from '@/pages/MicrosoftOAuthResultPage';
 import ForgotPasswordPage from '@/pages/ForgotPasswordPage';
 import ResetPasswordPage from '@/pages/ResetPasswordPage';
 import AdminApplicationsPage from '@/pages/AdminApplicationsPage';
@@ -15,6 +17,7 @@ import DashboardPage from '@/pages/DashboardPage';
 import LeadsPage from '@/pages/LeadsPage';
 import LeadDetailPage from '@/pages/LeadDetailPage';
 import DRFPage from '@/pages/DRFPage';
+import ProspectsPage from '@/pages/ProspectsPage';
 import AccountsPage from '@/pages/AccountsPage';
 import AccountDetailPage from '@/pages/AccountDetailPage';
 import QuotationsPage from '@/pages/QuotationsPage';
@@ -26,6 +29,7 @@ import PaymentsPage from '@/pages/PaymentsPage';
 import EngineerVisitsPage from '@/pages/EngineerVisitsPage';
 import SalaryPage from '@/pages/SalaryPage';
 import UsersPage from '@/pages/UsersPage';
+import EmployeeDetailPage from '@/pages/EmployeeDetailPage';
 import TrainingPage from '@/pages/TrainingPage';
 import EngineerPerformancePage from '@/pages/EngineerPerformancePage';
 import AttendancePage from '@/pages/AttendancePage';
@@ -40,7 +44,20 @@ import type { Role } from '@/types';
 
 // Route guards
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const token = useAuthStore((s) => s.token);
+  const { token, refreshToken, setToken, logout } = useAuthStore();
+  const [checking, setChecking] = useState<boolean>(!token && !!refreshToken);
+
+  useEffect(() => {
+    if (!token && refreshToken) {
+      import('./api/axios').then(({ default: api }) => {
+        api.post('/auth/refresh', { refreshToken })
+          .then(res => { setToken(res.data.data.accessToken); setChecking(false); })
+          .catch(() => { logout(); setChecking(false); });
+      });
+    }
+  }, []);
+
+  if (checking) return null;
   return token ? <>{children}</> : <Navigate to="/login" replace />;
 }
 
@@ -49,10 +66,16 @@ function GuestRoute({ children }: { children: React.ReactNode }) {
   return !token ? <>{children}</> : <Navigate to="/dashboard" replace />;
 }
 
-function RoleRoute({ children, roles }: { children: React.ReactNode; roles: Role[] }) {
+// perm: if supplied, user must have this permission key (admin always bypasses)
+function RoleRoute({ children, roles, perm }: { children: React.ReactNode; roles: Role[]; perm?: string }) {
   const user = useAuthStore((s) => s.user);
   if (!user) return <Navigate to="/login" replace />;
   if (!roles.includes(user.role as Role)) return <Navigate to="/dashboard" replace />;
+  // only admin bypasses permission checks; manager + all others are gated by their permissions array
+  if (perm && user.role !== 'admin') {
+    const perms: string[] = (user as any).permissions ?? [];
+    if (perms.length > 0 && !perms.includes(perm)) return <Navigate to="/dashboard" replace />;
+  }
   return <>{children}</>;
 }
 
@@ -72,6 +95,7 @@ export default function App() {
           <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
           <Route path="/signup" element={<GuestRoute><SignupPage /></GuestRoute>} />
           <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
+          <Route path="/microsoft-oauth-result" element={<MicrosoftOAuthResultPage />} />
           <Route path="/forgot-password" element={<GuestRoute><ForgotPasswordPage /></GuestRoute>} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
 
@@ -82,55 +106,51 @@ export default function App() {
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="profile" element={<ProfilePage />} />
 
-            {/* Admin + Sales */}
-            <Route path="leads" element={<RoleRoute roles={['admin', 'sales']}><LeadsPage /></RoleRoute>} />
-            <Route path="leads/:id" element={<RoleRoute roles={['admin', 'sales']}><LeadDetailPage /></RoleRoute>} />
-            <Route path="drfs" element={<RoleRoute roles={['admin', 'sales']}><DRFPage /></RoleRoute>} />
-            <Route path="quotations" element={<RoleRoute roles={['admin', 'sales']}><QuotationsPage /></RoleRoute>} />
-            <Route path="purchases" element={<RoleRoute roles={['admin', 'sales']}><PurchasesPage /></RoleRoute>} />
+            {/* Admin + Manager + Sales */}
+            <Route path="leads" element={<RoleRoute roles={['admin', 'manager', 'sales']} perm="leads"><LeadsPage /></RoleRoute>} />
+            <Route path="leads/:id" element={<RoleRoute roles={['admin', 'manager', 'sales']} perm="leads"><LeadDetailPage /></RoleRoute>} />
+            <Route path="drfs" element={<RoleRoute roles={['admin', 'manager', 'sales']} perm="leads"><DRFPage /></RoleRoute>} />
+            <Route path="prospects" element={<RoleRoute roles={['admin', 'manager', 'sales', 'engineer']} perm="leads"><ProspectsPage /></RoleRoute>} />
+            <Route path="quotations" element={<RoleRoute roles={['admin', 'manager', 'sales']} perm="quotations"><QuotationsPage /></RoleRoute>} />
+            <Route path="purchases" element={<RoleRoute roles={['admin', 'manager', 'sales']} perm="purchases"><PurchasesPage /></RoleRoute>} />
 
-            {/* Admin + Sales + Engineer + HR */}
-            <Route path="accounts" element={<RoleRoute roles={['admin', 'sales', 'engineer', 'hr_finance']}><AccountsPage /></RoleRoute>} />
-            <Route path="accounts/:id" element={<RoleRoute roles={['admin', 'sales', 'engineer', 'hr_finance']}><AccountDetailPage /></RoleRoute>} />
-            <Route path="support" element={<RoleRoute roles={['admin', 'sales', 'engineer']}><SupportPage /></RoleRoute>} />
+            {/* Accounts */}
+            <Route path="accounts" element={<RoleRoute roles={['admin', 'manager', 'sales', 'engineer', 'hr', 'finance']} perm="accounts"><AccountsPage /></RoleRoute>} />
+            <Route path="accounts/:id" element={<RoleRoute roles={['admin', 'manager', 'sales', 'engineer', 'hr', 'finance']} perm="accounts"><AccountDetailPage /></RoleRoute>} />
+            <Route path="support" element={<RoleRoute roles={['admin', 'manager', 'sales', 'engineer']} perm="support"><SupportPage /></RoleRoute>} />
 
             {/* Engineer */}
-            <Route path="installations" element={<RoleRoute roles={['admin', 'engineer']}><InstallationsPage /></RoleRoute>} />
-            <Route path="training" element={<RoleRoute roles={['admin', 'engineer']}><TrainingPage /></RoleRoute>} />
+            <Route path="installations" element={<RoleRoute roles={['admin', 'manager', 'engineer']} perm="installations"><InstallationsPage /></RoleRoute>} />
+            <Route path="training" element={<RoleRoute roles={['admin', 'manager', 'engineer']}><TrainingPage /></RoleRoute>} />
 
-            {/* HR & Finance */}
-            <Route path="invoices" element={<RoleRoute roles={['admin', 'hr_finance']}><InvoicesPage /></RoleRoute>} />
-            <Route path="payments" element={<RoleRoute roles={['admin', 'hr_finance']}><PaymentsPage /></RoleRoute>} />
-            <Route path="salary" element={<RoleRoute roles={['admin', 'hr_finance']}><SalaryPage /></RoleRoute>} />
+            {/* Finance */}
+            <Route path="invoices" element={<RoleRoute roles={['admin', 'manager', 'hr', 'finance']} perm="invoices"><InvoicesPage /></RoleRoute>} />
+            <Route path="payments" element={<RoleRoute roles={['admin', 'manager', 'hr', 'finance']} perm="payments"><PaymentsPage /></RoleRoute>} />
 
-            {/* Engineer Visits & Claims - Combined Page */}
-            <Route path="visits-and-claims" element={
-              <RoleRoute roles={['admin', 'engineer', 'hr_finance']}>
-                <VisitsAndClaimsPage />
-              </RoleRoute>
-            } />
+            {/* HR */}
+            <Route path="salary" element={<RoleRoute roles={['admin', 'manager', 'hr']} perm="salary"><SalaryPage /></RoleRoute>} />
 
-            {/* Keep old route for backward compatibility (optional) */}
-            <Route path="engineer-visits" element={
-              <RoleRoute roles={['admin', 'engineer', 'hr_finance']}>
-                <EngineerVisitsPage />
-              </RoleRoute>
-            } />
+            {/* Visits & Claims */}
+            <Route path="visits-and-claims" element={<RoleRoute roles={['admin', 'manager', 'engineer', 'hr']} perm="visits"><VisitsAndClaimsPage /></RoleRoute>} />
+            <Route path="engineer-visits" element={<RoleRoute roles={['admin', 'manager', 'engineer', 'hr']} perm="visits"><EngineerVisitsPage /></RoleRoute>} />
 
-            <Route path="engineer-performance" element={<RoleRoute roles={['admin', 'engineer']}><EngineerPerformancePage /></RoleRoute>} />
+            <Route path="engineer-performance" element={<RoleRoute roles={['admin', 'manager', 'engineer', 'sales']}><EngineerPerformancePage /></RoleRoute>} />
 
             {/* Attendance & Leave */}
-            <Route path="attendance" element={<RoleRoute roles={['admin', 'hr_finance', 'engineer', 'sales']}><AttendancePage /></RoleRoute>} />
-            <Route path="leaves" element={<RoleRoute roles={['admin', 'hr_finance', 'engineer', 'sales']}><LeavePage /></RoleRoute>} />
+            <Route path="attendance" element={<RoleRoute roles={['admin', 'manager', 'hr', 'engineer', 'sales']} perm="attendance"><AttendancePage /></RoleRoute>} />
+            <Route path="leaves" element={<RoleRoute roles={['admin', 'manager', 'hr', 'engineer', 'sales']} perm="leaves"><LeavePage /></RoleRoute>} />
 
-            {/* Timesheet — all roles */}
-            <Route path="timesheet" element={<RoleRoute roles={['admin', 'sales', 'engineer', 'hr_finance']}><TimesheetPage /></RoleRoute>} />
+            {/* Timesheet */}
+            <Route path="timesheet" element={<RoleRoute roles={['admin', 'manager', 'sales', 'engineer', 'hr', 'finance']} perm="timesheet"><TimesheetPage /></RoleRoute>} />
 
-            {/* Contacts — all roles */}
-            <Route path="contacts" element={<RoleRoute roles={['admin', 'sales', 'engineer', 'hr_finance']}><ContactsPage /></RoleRoute>} />
+            {/* Contacts */}
+            <Route path="contacts" element={<RoleRoute roles={['admin', 'manager', 'sales', 'engineer', 'hr', 'finance']} perm="contacts"><ContactsPage /></RoleRoute>} />
+
+            {/* Admin + Manager + HR — user management */}
+            <Route path="users" element={<RoleRoute roles={['admin', 'manager', 'hr']}><UsersPage /></RoleRoute>} />
+            <Route path="employees/:id" element={<RoleRoute roles={['admin', 'manager', 'hr']}><EmployeeDetailPage /></RoleRoute>} />
 
             {/* Admin only */}
-            <Route path="users" element={<RoleRoute roles={['admin']}><UsersPage /></RoleRoute>} />
             <Route path="settings" element={<RoleRoute roles={['admin']}><SettingsPage /></RoleRoute>} />
 
             {/* Platform admin only */}

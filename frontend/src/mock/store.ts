@@ -65,6 +65,9 @@ export let PO_EXECUTION_WORKFLOWS: any[] = [];
 // ─── TIMESHEETS ───────────────────────────────────────────────────────────────
 export let TIMESHEETS: any[] = [];
 
+// ─── EMPLOYEE DOCUMENTS ───────────────────────────────────────────────────────
+export let EMPLOYEE_DOCUMENTS: any[] = [];
+
 // ─── SALES STATUS ─────────────────────────────────────────────────────────────
 const STAGE_TO_SALES_STATUS: Record<string, string> = {
   'New':           'Uninitiated',
@@ -1033,7 +1036,7 @@ export const mockInvoices = {
     } else {
       INVOICES = INVOICES.map((i: any) => i._id === id ? { ...i, paidAmount: newPaid, status } : i);
     }
-    const recorder = orgUsers().find((u: any) => u.role === 'hr_finance') || orgUsers().find((u: any) => u.role === 'admin') || orgUsers()[0];
+    const recorder = orgUsers().find((u: any) => u.role === 'hr' || u.role === 'finance') || orgUsers().find((u: any) => u.role === 'admin') || orgUsers()[0];
     const payment = { _id: 'pay' + uid(), organizationId: _currentOrgId, invoiceId: { _id: inv._id, invoiceNumber: inv.invoiceNumber }, amountPaid: Number(data.amountPaid), paymentDate: data.paymentDate, mode: data.mode, referenceNumber: data.referenceNumber || '', notes: String(data.notes || ''), recordedBy: { _id: recorder._id, name: recorder.name }, createdAt: now() };
     PAYMENTS = [...PAYMENTS, payment];
     return payment;
@@ -1068,13 +1071,13 @@ export const mockEngineerVisits = {
   },
   approve: async (id: string) => {
     await delay(300);
-    const approver = orgUsers().find((u: any) => u.role === 'hr_finance') || orgUsers()[0];
+    const approver = orgUsers().find((u: any) => u.role === 'hr' || u.role === 'finance') || orgUsers()[0];
     ENGINEER_VISITS = ENGINEER_VISITS.map((v: any) => v._id === id && v.organizationId === _currentOrgId ? { ...v, hrStatus: 'Approved', approvedBy: approver, approvedAt: now() } : v);
     return orgVisits().find((v: any) => v._id === id)!;
   },
   reject: async (id: string) => {
     await delay(300);
-    const approver = orgUsers().find((u: any) => u.role === 'hr_finance') || orgUsers()[0];
+    const approver = orgUsers().find((u: any) => u.role === 'hr' || u.role === 'finance') || orgUsers()[0];
     ENGINEER_VISITS = ENGINEER_VISITS.map((v: any) => v._id === id && v.organizationId === _currentOrgId ? { ...v, hrStatus: 'Rejected', approvedBy: approver, approvedAt: now() } : v);
     return orgVisits().find((v: any) => v._id === id)!;
   },
@@ -1117,8 +1120,13 @@ export const mockUsers = {
     await delay(400);
     const lowerEmail = (data.email as string).toLowerCase();
     if (USERS.find((u: any) => u.email === lowerEmail)) throw { response: { data: { message: 'Email already exists' } } };
-    const user = { _id: 'u' + uid(), organizationId: _currentOrgId, ...data, email: lowerEmail, isActive: true, createdAt: now() };
-    PASSWORDS[lowerEmail] = data.password as string;
+    const user = {
+      _id: 'u' + uid(), organizationId: _currentOrgId, ...data,
+      email: lowerEmail, isActive: true, createdAt: now(),
+      permissions: (data.permissions as string[]) ?? [],
+      emailSent: true,
+    };
+    PASSWORDS[lowerEmail] = (data.password as string) || 'Telled@123';
     USERS = [...USERS, user];
     return user;
   },
@@ -1133,6 +1141,9 @@ export const mockUsers = {
     USERS = USERS.map((u: any) => u._id === id && u.organizationId === _currentOrgId ? { ...u, isActive: !u.isActive } : u);
     const user = USERS.find((u: any) => u._id === id)!;
     return { isActive: user.isActive };
+  },
+  verifyPassword: (email: string, password: string) => {
+    return PASSWORDS[email.toLowerCase()] === password;
   },
   resetPassword: async (id: string, password: string) => {
     await delay(300);
@@ -1158,6 +1169,7 @@ export const mockUsers = {
   },
   getEngineers: async () => { await delay(200); return orgUsers().filter((u: any) => u.role === 'engineer' && u.isActive); },
   getSalesmen:  async () => { await delay(200); return orgUsers().filter((u: any) => u.role === 'sales'    && u.isActive); },
+  getManagers:  async () => { await delay(200); return orgUsers().filter((u: any) => u.role === 'manager'  && u.isActive); },
 };
 
 // ─── TRAINING MOCK ────────────────────────────────────────────────────────────
@@ -1213,6 +1225,7 @@ export const mockDashboard = {
       else if (i.status === 'Scheduled') engineerMap[engId].scheduled++;
     });
 
+    const allOrgUsers = orgUsers().filter((u: any) => !['admin', 'manager'].includes(u.role));
     return {
       leads:    { total: leads.length, new: leads.filter((l: any) => l.stage === 'New').length, converted: leads.filter((l: any) => l.stage === 'Converted').length, lost: leads.filter((l: any) => l.stage === 'Lost').length },
       accounts: { total: accounts.length, active: accounts.filter((a: any) => a.status === 'Active').length },
@@ -1221,6 +1234,15 @@ export const mockDashboard = {
       drfs:     { pending: drfs.filter((d: any) => d.status === 'Pending').length, approved: drfs.filter((d: any) => d.status === 'Approved').length, rejected: drfs.filter((d: any) => d.status === 'Rejected').length, expiringSoon: drfs.filter((d: any) => d.status === 'Approved' && d.expiryDate && new Date(d.expiryDate).getTime() - Date.now() < 30 * 86400000).length, totalThisMonth: 0 },
       installations: { total: installs.length, completed: installs.filter((i: any) => i.status === 'Completed').length, inProgress: installs.filter((i: any) => i.status === 'In Progress').length, scheduled: installs.filter((i: any) => i.status === 'Scheduled').length, pending: installs.filter((i: any) => ['Scheduled', 'In Progress'].includes(i.status)).length },
       installsByEngineer: Object.values(engineerMap).sort((a: any, b: any) => b.total - a.total),
+      users: {
+        total:    allOrgUsers.length,
+        active:   allOrgUsers.filter((u: any) => u.isActive).length,
+        sales:    allOrgUsers.filter((u: any) => u.role === 'sales').length,
+        engineer: allOrgUsers.filter((u: any) => u.role === 'engineer').length,
+        hr:       allOrgUsers.filter((u: any) => u.role === 'hr').length,
+        finance:  allOrgUsers.filter((u: any) => u.role === 'finance').length,
+      },
+      salary:   { pending: orgSalaries().filter((s: any) => s.status === 'Pending').length },
       drfBySalesPerson: [],
       rejectionReasons: [],
       recentLeads: leads.slice(0, 5),
@@ -1330,11 +1352,77 @@ export const mockDashboard = {
 
   getHRStats: async () => {
     await delay(300);
-    const invoices      = orgInvoices();
-    const visits        = orgVisits();
-    const salaries      = orgSalaries();
+    const invoices   = orgInvoices();
+    const visits     = orgVisits();
+    const salaries   = orgSalaries();
+    const employees  = orgUsers();
+    const todayStr   = new Date().toISOString().slice(0, 10);
+
+    // "Present today" = employees who have a visit or salary record today, or just simulate ~70% active
+    const activeEmps = employees.filter((u: any) => u.isActive);
+    const presentToday = Math.max(1, Math.round(activeEmps.length * 0.72));
+
+    // Payroll this month
+    const thisMonth = new Date().getMonth() + 1;
+    const thisYear  = new Date().getFullYear();
+    const monthSalaries = salaries.filter((s: any) => Number(s.month) === thisMonth && Number(s.year) === thisYear);
+    const payrollThisMonth = monthSalaries.reduce((sum: number, s: any) => sum + (s.finalSalary || 0), 0);
+
+    // Visit claims breakdown
+    const visitClaims = {
+      total:    visits.length,
+      pending:  visits.filter((v: any) => v.hrStatus === 'Pending').length,
+      approved: visits.filter((v: any) => v.hrStatus === 'Approved').length,
+      rejected: visits.filter((v: any) => v.hrStatus === 'Rejected').length,
+    };
+
+    // Department breakdown for bar chart
+    const deptMap: Record<string, number> = {};
+    employees.forEach((u: any) => {
+      const d = u.department || 'General';
+      deptMap[d] = (deptMap[d] || 0) + 1;
+    });
+    const departmentBreakdown = Object.entries(deptMap).map(([name, count]) => ({ name, count }));
+
+    // Role breakdown for pie chart
+    const roleMap: Record<string, number> = {};
+    employees.forEach((u: any) => { roleMap[u.role] = (roleMap[u.role] || 0) + 1; });
+    const roleBreakdown = Object.entries(roleMap).map(([role, count]) => ({ role, count }));
+
+    // Last 6 months payroll trend
+    const payrollTrend = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(); d.setMonth(d.getMonth() - (5 - i));
+      const m = d.getMonth() + 1; const y = d.getFullYear();
+      const total = salaries.filter((s: any) => Number(s.month) === m && Number(s.year) === y)
+        .reduce((sum: number, s: any) => sum + (s.finalSalary || 0), 0);
+      return { label: d.toLocaleString('default', { month: 'short' }), total };
+    });
+
+    // Visit claims last 6 months
+    const visitTrend = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(); d.setMonth(d.getMonth() - (5 - i));
+      const m = d.getMonth() + 1; const y = d.getFullYear();
+      const count = visits.filter((v: any) => {
+        const vd = new Date(v.visitDate || v.scheduledDate || v.createdAt);
+        return vd.getMonth() + 1 === m && vd.getFullYear() === y;
+      }).length;
+      return { label: d.toLocaleString('default', { month: 'short' }), count };
+    });
 
     return {
+      employees: {
+        total:        employees.length,
+        active:       activeEmps.length,
+        inactive:     employees.filter((u: any) => !u.isActive).length,
+        presentToday,
+      },
+      payroll: {
+        thisMonth:    payrollThisMonth,
+        pending:      salaries.filter((s: any) => s.status === 'Calculated').length,
+        paid:         salaries.filter((s: any) => s.status === 'Paid').length,
+        totalPaid:    salaries.filter((s: any) => s.status === 'Paid').reduce((sum: number, s: any) => sum + (s.finalSalary || 0), 0),
+      },
+      visitClaims,
       invoices: {
         totalRevenue: invoices.filter((i: any) => i.status === 'Paid').reduce((s: number, i: any) => s + i.amount, 0),
         total:        invoices.length,
@@ -1342,18 +1430,20 @@ export const mockDashboard = {
         overdue:      invoices.filter((i: any) => i.status === 'Overdue').length,
         partialPaid:  invoices.filter((i: any) => i.status === 'Partially Paid').length,
       },
-      visits: {
-        pending: visits.filter((v: any) => v.hrStatus === 'Pending').length,
-        total:   visits.length,
-      },
+      // legacy shape kept for finance role
+      visits: visitClaims,
       salaries: {
         pending:   salaries.filter((s: any) => s.status === 'Calculated').length,
         paid:      salaries.filter((s: any) => s.status === 'Paid').length,
         totalPaid: salaries.filter((s: any) => s.status === 'Paid').reduce((sum: number, s: any) => sum + (s.finalSalary || 0), 0),
       },
-      allInvoices:      invoices.slice(-10).reverse(),
+      departmentBreakdown,
+      roleBreakdown,
+      payrollTrend,
+      visitTrend,
+      allInvoices:       invoices.slice(-10).reverse(),
       pendingVisitsList: visits.filter((v: any) => v.hrStatus === 'Pending').slice(0, 10),
-      recentSalaries:   salaries.slice(-10).reverse(),
+      recentSalaries:    salaries.slice(-10).reverse(),
     };
   },
 };
@@ -1710,5 +1800,42 @@ export const mockTimesheets = {
       t._id === id && t.organizationId === _currentOrgId ? { ...t, status: 'Rejected', rejectionReason: reason, updatedAt: now() } : t
     );
     return orgTimesheets().find((t: any) => t._id === id)!;
+  },
+};
+
+// ─── EMPLOYEES MOCK ───────────────────────────────────────────────────────────
+export const mockEmployees = {
+  getDetail: async (id: string) => {
+    await delay(200);
+    const employee = USERS.find((u: any) => u._id === id && u.organizationId === _currentOrgId);
+    if (!employee) throw { response: { data: { message: 'Employee not found' } } };
+    const documents = EMPLOYEE_DOCUMENTS.filter((d: any) => d.employeeId === id);
+    return { employee, documents };
+  },
+  update: async (id: string, data: Record<string, unknown>) => {
+    await delay(300);
+    const { password, organizationId, ...safeData } = data as any;
+    USERS = USERS.map((u: any) => u._id === id && u.organizationId === _currentOrgId ? { ...u, ...safeData } : u);
+    return USERS.find((u: any) => u._id === id)!;
+  },
+  uploadDocument: async (id: string, file: File, label: string) => {
+    await delay(400);
+    const uploader = orgUsers().find((u: any) => u._id === id) || null;
+    const doc = {
+      _id: 'doc' + uid(),
+      employeeId: id,
+      label,
+      fileName: file.name,
+      fileUrl: `/mock-files/${file.name}`,
+      createdAt: now(),
+      uploadedBy: uploader ? { name: uploader.name } : null,
+    };
+    EMPLOYEE_DOCUMENTS = [...EMPLOYEE_DOCUMENTS, doc];
+    return doc;
+  },
+  deleteDocument: async (_employeeId: string, docId: string) => {
+    await delay(200);
+    EMPLOYEE_DOCUMENTS = EMPLOYEE_DOCUMENTS.filter((d: any) => d._id !== docId);
+    return { success: true };
   },
 };

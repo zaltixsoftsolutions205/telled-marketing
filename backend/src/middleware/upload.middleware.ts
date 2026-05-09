@@ -11,9 +11,9 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (_req: Express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  const allowed = /jpeg|jpg|png|pdf|doc|docx|xls|xlsx/;
+  const allowed = /jpeg|jpg|png|gif|svg|webp|pdf|doc|docx|xls|xlsx/;
   if (allowed.test(path.extname(file.originalname).toLowerCase())) cb(null, true);
-  else cb(new Error('Invalid file type'));
+  else cb(new Error('Invalid file type. Allowed: JPG, PNG, SVG, GIF, WebP, PDF, DOC, DOCX, XLS, XLSX'));
 };
 
 export const upload = multer({

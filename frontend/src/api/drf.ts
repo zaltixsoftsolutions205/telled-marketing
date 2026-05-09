@@ -59,8 +59,16 @@ export const drfApi = {
     const { data } = await api.post('/oem/sync-emails');
     return data.data;
   },
-  requestExtension: async (id: string) => {
-    const { data } = await api.patch(`/oem/${id}/request-extension`);
+  requestExtension: async (id: string, body?: {
+    toEmail?: string; toName?: string;
+    customSubject?: string; customMessage?: string;
+    requestedNewExpiry?: string;
+  }) => {
+    const { data } = await api.patch(`/oem/${id}/request-extension`, body || {});
+    return data.data;
+  },
+  updateProspectStatus: async (id: string, prospectStatus: string) => {
+    const { data } = await api.patch(`/oem/${id}/prospect-status`, { prospectStatus });
     return data.data;
   },
   sendExtensionEmail: async (emailData: { drfNumber: string; companyName: string; oemName: string; expiryDate: string; ownerName: string }) => {

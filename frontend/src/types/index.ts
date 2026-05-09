@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'sales' | 'engineer' | 'hr_finance' | 'platform_admin';
+export type Role = 'admin' | 'manager' | 'sales' | 'engineer' | 'hr' | 'finance' | 'platform_admin';
 export type LeadStatus = 'New' | 'Contacted' | 'Qualified' | 'Not Qualified';
 export type QuotationStatus = 'Draft' | 'Sent' | 'Accepted' | 'Rejected' | 'Final';
 
@@ -51,6 +51,20 @@ export interface User {
   isActive: boolean;
   organizationId: string;
   createdAt: string;
+  // permissions
+  permissions?: string[];
+  // personal details
+  bloodGroup?: string;
+  dateOfBirth?: string;
+  gender?: string;
+  address?: string;
+  emergencyContact?: string;
+  emergencyPhone?: string;
+  aadharNumber?: string;
+  panNumber?: string;
+  bankAccount?: string;
+  ifscCode?: string;
+  joiningDate?: string;
 }
 
 export type LeadStage =

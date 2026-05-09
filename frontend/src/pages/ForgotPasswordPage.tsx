@@ -45,8 +45,10 @@ export default function ForgotPasswordPage() {
               </div>
               <h2 className="text-xl font-semibold text-gray-800">Check Your Email</h2>
               <p className="text-gray-500 text-sm">
-                If <strong className="text-violet-700">{email}</strong> is registered, you'll receive a password reset link shortly.
-                The link expires in 15 minutes.
+                We've sent an email to <strong className="text-violet-700">{email}</strong> with instructions.
+              </p>
+              <p className="text-gray-400 text-xs mt-1">
+                If you log in with Outlook, Gmail, or a company email — your ZIEOS password is the same as your email account password. Change it there, then log in here with the new one.
               </p>
               <Link to="/login" className="inline-block mt-2 py-2.5 px-6 bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-medium transition-colors text-sm">
                 Back to Login
@@ -55,7 +57,7 @@ export default function ForgotPasswordPage() {
           ) : (
             <>
               <h2 className="text-xl font-semibold text-gray-800 mb-1">Forgot Password?</h2>
-              <p className="text-gray-500 text-sm mb-6">Enter your email and we'll send you a reset link.</p>
+              <p className="text-gray-500 text-sm mb-6">Enter your email and we'll send you instructions on how to change your password.</p>
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>

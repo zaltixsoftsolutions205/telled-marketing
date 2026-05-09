@@ -15,7 +15,7 @@ type TabType = 'visits' | 'claims';
 
 export default function VisitsAndClaimsPage() {
   const user = useAuthStore((s) => s.user);
-  const isHR = user?.role === 'admin' || user?.role === 'hr_finance';
+  const isHR = user?.role === 'admin' || user?.role === 'hr';
   const isEngineer = user?.role === 'engineer' || user?.role === 'admin';
   const [activeTab, setActiveTab] = useState<TabType>('visits');
   

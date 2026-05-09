@@ -43,6 +43,7 @@ export const STAGE_TO_SALES_STATUS: Partial<Record<string, SalesStatus>> = {
 };
 
 export interface ILead extends Document {
+  organizationId: mongoose.Types.ObjectId;
   companyName: string;
   contactName: string;
   contactPersonName?: string;
@@ -76,6 +77,7 @@ export interface ILead extends Document {
 
 const LeadSchema = new Schema<ILead>(
   {
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
     companyName:       { type: String, required: true, trim: true },
     contactName:       { type: String, required: true, trim: true },
     contactPersonName: { type: String, trim: true },

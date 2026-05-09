@@ -1,13 +1,13 @@
 import { Router } from 'express';
-import { getAllDRFs, getDRFAnalytics, getAttemptsByLead, createAttempt, approveAttempt, rejectAttempt, resetToPending, resendDRF, extendExpiry, reassignDRF, syncDRFEmails, deleteDRF, requestExtension } from '../controllers/oem.controller';
+import { getAllDRFs, getDRFAnalytics, getAttemptsByLead, createAttempt, approveAttempt, rejectAttempt, resetToPending, resendDRF, extendExpiry, reassignDRF, syncDRFEmails, deleteDRF, requestExtension, updateProspectStatus } from '../controllers/oem.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { authorize } from '../middleware/role.middleware';
 
 const router = Router();
 router.use(authenticate);
-router.get('/analytics',       authorize('admin', 'sales'),          getDRFAnalytics);
-router.get('/',                authorize('admin', 'sales'),          getAllDRFs);
-router.get('/lead/:leadId',    authorize('admin', 'sales'),          getAttemptsByLead);
+router.get('/analytics',       authorize('admin', 'manager', 'sales'),                      getDRFAnalytics);
+router.get('/',                authorize('admin', 'manager', 'sales', 'engineer'),           getAllDRFs);
+router.get('/lead/:leadId',    authorize('admin', 'manager', 'sales', 'engineer'),           getAttemptsByLead);
 router.post('/lead/:leadId',   authorize('admin', 'sales'),          createAttempt);
 router.patch('/:id/approve',   authorize('admin'),                   approveAttempt);
 router.patch('/:id/reject',    authorize('admin'),                   rejectAttempt);
@@ -16,6 +16,7 @@ router.post('/:id/resend',     authorize('admin', 'sales'),          resendDRF);
 router.patch('/:id/extend',    authorize('admin'),                   extendExpiry);
 router.patch('/:id/reassign',  authorize('admin'),                   reassignDRF);
 router.post('/sync-emails',           authorize('admin', 'sales'), syncDRFEmails);
-router.patch('/:id/request-extension', authorize('admin', 'sales'), requestExtension);
-router.delete('/:id',                  authorize('admin', 'sales'), deleteDRF);
+router.patch('/:id/request-extension',  authorize('admin', 'sales'), requestExtension);
+router.patch('/:id/prospect-status',    authorize('admin', 'manager', 'sales', 'engineer'), updateProspectStatus);
+router.delete('/:id',                   authorize('admin', 'sales'), deleteDRF);
 export default router;

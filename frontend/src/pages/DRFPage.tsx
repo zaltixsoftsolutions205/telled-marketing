@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { drfApi } from '@/api/drf';
 import { quotationsApi } from '@/api/quotations';
 import { purchasesApi } from '@/api/purchases';
+import QuotationModal from '@/components/common/QuotationModal';
 import { notify } from '@/store/notificationStore';
 import { usersApi } from '@/api/users';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
@@ -11,9 +12,8 @@ import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { formatDate, formatCurrency } from '@/utils/formatters';
 import { useAuthStore } from '@/store/authStore';
 import {
-  FileBadge, CheckCircle2, XCircle, Clock, AlertTriangle, Filter, UserCheck, FileText, Trash2, Mail, RefreshCw, RotateCcw, CalendarClock, Upload, X, CheckCircle,
+  FileBadge, CheckCircle2, XCircle, Clock, AlertTriangle, Filter, UserCheck, FileText, Trash2, Mail, RefreshCw, RotateCcw, CalendarClock, X,
 } from 'lucide-react';
-import ContactEmailPicker from '@/components/common/ContactEmailPicker';
 import ExcelImportButton from '@/components/common/ExcelImportButton';
 import type { User } from '@/types';
 
@@ -145,47 +145,67 @@ export default function DRFPage() {
 
   // Email sync state
   const [syncing, setSyncing] = useState(false);
+  const [autoSyncing, setAutoSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{ approved: string[]; rejected: string[]; scanned: number; skipped: string[]; errors: string[] } | null>(null);
+  const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Quotation modal state (upload-based)
+  // Quotation modal — now handled by QuotationModal component
   const [quotationDRF, setQuotationDRF] = useState<any>(null);
-  const [qUploadStep, setQUploadStep] = useState<'upload' | 'review'>('upload');
-  const [qUploadFile, setQUploadFile] = useState<File | null>(null);
-  const [qParsing, setQParsing] = useState(false);
-  const [qFilePath, setQFilePath] = useState('');
-  const [qFileName, setQFileName] = useState('');
-  const [qAmount, setQAmount] = useState('');
-  const [qToEmail, setQToEmail] = useState('');
-  const [qCcEmail, setQCcEmail] = useState('');
-  const [qValidUntil, setQValidUntil] = useState('');
-  const [qNotes, setQNotes] = useState('');
-  const [qSaving, setQSaving] = useState(false);
-  const [qError, setQError] = useState('');
-  const qFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Extension state
-  const [extensionSending, setExtensionSending] = useState<string | null>(null);
+  // Extension composer modal state
+  const [extensionDRF, setExtensionDRF]             = useState<any>(null);
+  const [extToEmail, setExtToEmail]                 = useState('');
+  const [extToName, setExtToName]                   = useState('');
+  const [extSubject, setExtSubject]                 = useState('');
+  const [extMessage, setExtMessage]                 = useState('');
+  const [extNewExpiry, setExtNewExpiry]             = useState('');
+  const [extensionSending, setExtensionSending]     = useState(false);
 
   const getExpiryDays = (drf: any): number | null => {
     if (!drf.expiryDate) return null;
     return Math.ceil((new Date(drf.expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
   };
 
-  const handleRequestExtension = async (drf: any) => {
-    setExtensionSending(drf._id);
+  const openExtensionModal = (drf: any) => {
+    const company  = drf.leadId?.companyName || '';
+    const oem      = drf.leadId?.oemName || '';
+    const expiry   = drf.expiryDate ? new Date(drf.expiryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+    const owner    = drf.createdBy?.name || currentUser?.name || '';
+    setExtensionDRF(drf);
+    setExtToEmail(drf.leadId?.oemEmail || drf.oemEmail || '');
+    setExtToName('');
+    setExtSubject(`DRF Extension Request — ${drf.drfNumber} — ${company}`);
+    setExtMessage(
+      `We are writing to request an extension for the DRF approval for ${company}.\n\n` +
+      `DRF Number: ${drf.drfNumber}\n` +
+      `OEM / Brand: ${oem}\n` +
+      `Current Expiry: ${expiry}\n\n` +
+      `We are actively working with the customer and request your support in extending the DRF validity. Kindly reply with the new valid-until date at your earliest convenience.\n\n` +
+      `Regards,\n${owner}`
+    );
+    setExtNewExpiry('');
+  };
+
+  const handleSendExtension = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!extensionDRF) return;
+    if (!extToEmail.trim()) return;
+    setExtensionSending(true);
     try {
-      await drfApi.requestExtension(drf._id);
-      await drfApi.sendExtensionEmail({
-        drfNumber: drf.drfNumber,
-        companyName: drf.leadId?.companyName || '',
-        oemName: drf.leadId?.oemName || drf.interestedModules || '',
-        expiryDate: drf.expiryDate || '',
-        ownerName: drf.createdBy?.name || '',
+      await drfApi.requestExtension(extensionDRF._id, {
+        toEmail:            extToEmail.trim(),
+        toName:             extToName.trim() || undefined,
+        customSubject:      extSubject.trim(),
+        customMessage:      extMessage.trim(),
+        requestedNewExpiry: extNewExpiry || undefined,
       });
-      notify('Extension Requested', `Extension email sent for DRF ${drf.drfNumber}.`, 'drf', '/drf');
-      setDRFs(prev => prev.map(d => d._id === drf._id ? { ...d, extensionRequested: true } : d));
-    } catch { /* silent */ } finally {
-      setExtensionSending(null);
+      notify('Extension Email Sent', `Extension email sent for DRF ${extensionDRF.drfNumber}.`, 'drf', '/drfs');
+      setDRFs(prev => prev.map(d => d._id === extensionDRF._id ? { ...d, extensionRequested: true } : d));
+      setExtensionDRF(null);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Failed to send extension email');
+    } finally {
+      setExtensionSending(false);
     }
   };
 
@@ -220,6 +240,20 @@ export default function DRFPage() {
       }));
       setDRFs(drfsWithFlag);
       setTotal(drfRes.pagination?.total ?? 0);
+
+      // Auto-resend rejected DRFs whose 30-day cooldown has passed (non-admin only)
+      if (!isAdmin) {
+        const eligible = drfsWithFlag.filter((d: any) => {
+          if (d.status !== 'Rejected' || !d.rejectedDate) return false;
+          const daysSince = Math.floor((Date.now() - new Date(d.rejectedDate).getTime()) / (1000 * 60 * 60 * 24));
+          return daysSince >= 30;
+        });
+        for (const drf of eligible) {
+          drfApi.resend(drf._id)
+            .then(() => notify('DRF Auto-Resent', `DRF for "${drf.leadId?.companyName || 'lead'}" auto-resent after 30-day cooldown.`, 'drf', '/drfs'))
+            .catch(() => {});
+        }
+      }
     } catch (err) {
       console.error('DRFPage load:', err);
       setAnalytics({});
@@ -228,10 +262,32 @@ export default function DRFPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, statusFilter, salesFilter, oemFilter, fromDate, toDate, multiVersion]);
+  }, [page, statusFilter, salesFilter, oemFilter, fromDate, toDate, multiVersion, isAdmin]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { usersApi.getSalesmen().then(setSalesUsers).catch(() => {}); }, []);
+
+  // Auto-sync emails on page open + every 2 minutes (only for non-admin sales users)
+  const silentSync = useCallback(async () => {
+    if (isAdmin) return;
+    setAutoSyncing(true);
+    try {
+      const result = await drfApi.syncEmails();
+      if (result.approved?.length || result.rejected?.length) {
+        load();
+        setSyncResult(result);
+      }
+    } catch { /* silent — don't show errors for background sync */ }
+    finally { setAutoSyncing(false); }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    silentSync(); // run immediately on mount
+    syncIntervalRef.current = setInterval(silentSync, 2 * 60 * 1000); // every 2 min
+    return () => {
+      if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+    };
+  }, [silentSync]);
 
 
   const resetFilters = () => {
@@ -289,74 +345,7 @@ export default function DRFPage() {
     }
   };
 
-  const openQuotationModal = (drf: any) => {
-    setQuotationDRF(drf);
-    setQUploadStep('upload');
-    setQUploadFile(null);
-    setQFilePath('');
-    setQFileName('');
-    setQAmount('');
-    setQToEmail(drf.leadId?.email || '');
-    setQCcEmail('');
-    setQValidUntil('');
-    setQNotes('');
-    setQError('');
-  };
-
-  const handleQFileSelect = async (file: File) => {
-    setQUploadFile(file);
-    setQParsing(true);
-    try {
-      const result = await quotationsApi.parsePdf(file);
-      setQFilePath(result.filePath);
-      setQFileName(result.fileName);
-      setQAmount(result.suggestedAmount ? String(result.suggestedAmount) : '');
-      setQUploadStep('review');
-    } catch {
-      setQFilePath('');
-      setQFileName(file.name);
-      setQAmount('');
-      setQUploadStep('review');
-    } finally {
-      setQParsing(false);
-    }
-  };
-
-  const handleCreateQuotation = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!quotationDRF) return;
-    if (!qAmount || Number(qAmount) <= 0) { setQError('Please enter the quotation amount'); return; }
-    setQSaving(true); setQError('');
-    try {
-      let created: any;
-      if (qFilePath) {
-        created = await quotationsApi.create({
-          leadId: quotationDRF.leadId?._id || quotationDRF.leadId,
-          uploadedFile: qFilePath,
-          uploadedFileName: qFileName,
-          totalAmount: Number(qAmount),
-          validUntil: qValidUntil || undefined,
-          notes: qNotes || undefined,
-        });
-      } else if (qUploadFile) {
-        const fd = new FormData();
-        fd.append('quotationFile', qUploadFile);
-        fd.append('leadId', quotationDRF.leadId?._id || quotationDRF.leadId);
-        fd.append('totalAmount', qAmount);
-        if (qValidUntil) fd.append('validUntil', qValidUntil);
-        if (qNotes) fd.append('notes', qNotes);
-        created = await quotationsApi.createFromUpload(fd);
-      }
-      setDRFs(prev => prev.map(d => d._id === quotationDRF._id ? { ...d, quotationSent: true } : d));
-      setQuotationDRF(null);
-      notify('Quotation Created', `Quotation created for "${quotationDRF.leadId?.companyName || 'lead'}".`, 'quotation', '/quotations');
-      if (created?._id) quotationsApi.sendEmail(created._id, qToEmail.trim() || undefined, qCcEmail.trim() || undefined).catch(() => {});
-    } catch (err: any) {
-      setQError(err?.response?.data?.message || 'Failed to create quotation');
-    } finally {
-      setQSaving(false);
-    }
-  };
+  const openQuotationModal = (drf: any) => setQuotationDRF(drf);
 
   if (loading && !analytics) return <LoadingSpinner className="h-64" />;
 
@@ -390,15 +379,22 @@ export default function DRFPage() {
             }}
           />
           {isSales && !isAdmin && (
-            <button
-              onClick={handleSyncEmails}
-              disabled={syncing}
-              className="inline-flex items-center gap-2 px-3 py-2 text-sm border border-violet-200 text-violet-700 bg-violet-50 rounded-lg hover:bg-violet-100 disabled:opacity-60 transition-colors"
-              title="Read inbox emails and auto-update DRF statuses"
-            >
-              {syncing ? <RefreshCw size={14} className="animate-spin" /> : <Mail size={14} />}
-              {syncing ? 'Syncing…' : 'Sync Emails'}
-            </button>
+            <div className="flex items-center gap-2">
+              {autoSyncing && (
+                <span className="flex items-center gap-1.5 text-xs text-violet-500 bg-violet-50 border border-violet-200 px-2.5 py-1.5 rounded-lg">
+                  <RefreshCw size={11} className="animate-spin" /> Checking emails…
+                </span>
+              )}
+              <button
+                onClick={handleSyncEmails}
+                disabled={syncing || autoSyncing}
+                className="inline-flex items-center gap-2 px-3 py-2 text-sm border border-violet-200 text-violet-700 bg-violet-50 rounded-lg hover:bg-violet-100 disabled:opacity-60 transition-colors"
+                title="Manually check inbox for OEM replies and update DRF statuses"
+              >
+                {syncing ? <RefreshCw size={14} className="animate-spin" /> : <Mail size={14} />}
+                {syncing ? 'Syncing…' : 'Sync Emails'}
+              </button>
+            </div>
           )}
           {activeFilterTitle && (
             <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 flex items-center gap-2">
@@ -490,12 +486,12 @@ export default function DRFPage() {
                         {days === 0 ? 'Expires today' : `${days}d left — expires ${formatDate(drf.expiryDate)}`}
                       </span>
                       <button
-                        onClick={() => handleRequestExtension(drf)}
-                        disabled={extensionSending === drf._id}
+                        onClick={() => openExtensionModal(drf)}
+                        disabled={extensionSending}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white text-amber-700 border border-amber-300 rounded-lg hover:bg-amber-50 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                       >
                         <CalendarClock size={12} />
-                        {extensionSending === drf._id ? 'Sending…' : 'Send Extension Mail'}
+                        {extensionSending ? 'Sending…' : 'Send Extension Mail'}
                       </button>
                     </div>
                   </div>
@@ -634,13 +630,13 @@ export default function DRFPage() {
                           if (drf.status === 'Approved' && days !== null && days <= 7) {
                             return (
                               <button
-                                onClick={() => handleRequestExtension(drf)}
-                                disabled={extensionSending === drf._id}
+                                onClick={() => openExtensionModal(drf)}
+                                disabled={extensionSending}
                                 title={`Valid until expiring in ${days} day${days !== 1 ? 's' : ''} — click to send extension email`}
                                 className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-300 rounded-lg hover:bg-amber-100 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 <CalendarClock size={12} />
-                                {extensionSending === drf._id ? 'Sending…' : `Extend (${days}d)`}
+                                {extensionSending ? 'Sending…' : `Extend (${days}d)`}
                               </button>
                             );
                           }
@@ -671,13 +667,13 @@ export default function DRFPage() {
                           if (drf.status === 'Pending' && days !== null && days <= 7) {
                             return (
                               <button
-                                onClick={() => handleRequestExtension(drf)}
-                                disabled={extensionSending === drf._id}
+                                onClick={() => openExtensionModal(drf)}
+                                disabled={extensionSending}
                                 title={`Expiring in ${days} day${days !== 1 ? 's' : ''} — click to send DRF extension email`}
                                 className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-300 rounded-lg hover:bg-amber-100 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 <CalendarClock size={12} />
-                                {extensionSending === drf._id ? 'Sending…' : `Extend (${days}d)`}
+                                {extensionSending ? 'Sending…' : `Extend (${days}d)`}
                               </button>
                             );
                           }
@@ -707,22 +703,7 @@ export default function DRFPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          {drf.status === 'Approved' && isSales && !drf.quotationSent && (
-                            <button
-                              onClick={() => !drf.poReceived && openQuotationModal(drf)}
-                              disabled={drf.poReceived}
-                              className={`inline-flex items-center gap-1 px-2 py-1 text-xs border rounded-md transition-colors ${
-                                drf.poReceived
-                                  ? 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed'
-                                  : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 cursor-pointer'
-                              }`}
-                              title={drf.poReceived ? 'PO already received — quotation not needed' : 'Create & Send Quotation from this DRF'}
-                            >
-                              <FileText size={12} />
-                              Send Quotation
-                            </button>
-                          )}
-                          {drf.status === 'Approved' && isSales && drf.quotationSent && (
+                          {drf.status === 'Approved' && (
                             drf.poReceived ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full font-medium bg-emerald-100 text-emerald-700">
                                 <CheckCircle2 size={11} /> PO Received
@@ -743,11 +724,11 @@ export default function DRFPage() {
                               <>
                                 <button
                                   onClick={() => { setResendTarget(drf); setResendError(''); }}
-                                  title={daysLeft > 0 ? `Resend DRF email to OEM (${30 - daysLeft}d since rejection)` : 'Resend DRF email to OEM'}
+                                  title={daysLeft > 0 ? `Auto-resend in ${daysLeft}d — or click to resend now` : 'Resend DRF email to OEM'}
                                   className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 cursor-pointer rounded-md transition-colors"
                                 >
                                   <RefreshCw size={12} />
-                                  Resend
+                                  {daysLeft > 0 ? `Resend (${daysLeft}d left)` : 'Resend'}
                                 </button>
                                 {isAdmin && (
                                   <button
@@ -851,17 +832,16 @@ export default function DRFPage() {
                 })()}
               </div>
               <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-gray-100">
-                {drf.status === 'Approved' && isSales && !drf.quotationSent && (
-                  <button onClick={() => !drf.poReceived && openQuotationModal(drf)} disabled={drf.poReceived}
-                    className={`inline-flex items-center gap-1 px-2 py-1 text-xs border rounded-md transition-colors ${drf.poReceived ? 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}>
-                    <FileText size={12} /> Send Quotation
-                  </button>
-                )}
-                {drf.status === 'Approved' && isSales && drf.quotationSent && !drf.poReceived && (
+                {drf.status === 'Approved' && !drf.poReceived && (
                   <button onClick={() => { setResendTarget(drf); setResendError(''); }}
                     className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-md hover:bg-blue-100">
                     <RefreshCw size={12} /> Resend DRF
                   </button>
+                )}
+                {drf.status === 'Approved' && drf.poReceived && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full font-medium bg-emerald-100 text-emerald-700">
+                    <CheckCircle2 size={11} /> PO Received
+                  </span>
                 )}
                 {drf.status === 'Rejected' && (
                   <button onClick={() => { setResendTarget(drf); setResendError(''); }}
@@ -1019,102 +999,92 @@ export default function DRFPage() {
         </form>
       </Modal>
 
-      {/* Create Quotation Modal — upload-first */}
-      <Modal isOpen={!!quotationDRF} onClose={() => setQuotationDRF(null)} title="Send Quotation" size="md">
-        {quotationDRF && (
-          <div className="space-y-4">
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-start gap-3">
-              <CheckCircle2 size={16} className="text-emerald-600 mt-0.5 flex-shrink-0" />
+      {/* ── Quotation Modal (template or upload) ── */}
+      {quotationDRF && (
+        <QuotationModal
+          drf={quotationDRF}
+          onClose={() => setQuotationDRF(null)}
+          onSuccess={(drfId) => {
+            setDRFs(prev => prev.map(d => d._id === drfId ? { ...d, quotationSent: true } : d));
+            setQuotationDRF(null);
+          }}
+        />
+      )}
+
+      {/* ── Extension Email Composer Modal ── */}
+      <Modal isOpen={!!extensionDRF} onClose={() => setExtensionDRF(null)} title="Send Extension Request Email" size="lg">
+        {extensionDRF && (
+          <form onSubmit={handleSendExtension} className="space-y-4">
+            {/* DRF Info banner */}
+            <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+              <CalendarClock size={15} className="text-amber-600 mt-0.5 flex-shrink-0" />
               <div>
-                <p className="text-xs font-semibold text-emerald-800">Approved DRF: {quotationDRF.drfNumber}</p>
-                <p className="text-xs text-emerald-700 mt-0.5">{quotationDRF.leadId?.companyName} — {quotationDRF.leadId?.oemName}</p>
+                <p className="text-xs font-bold text-amber-800">{extensionDRF.drfNumber} — {extensionDRF.leadId?.companyName}</p>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  OEM: {extensionDRF.leadId?.oemName || '—'} &nbsp;·&nbsp; Expires: {extensionDRF.expiryDate ? formatDate(extensionDRF.expiryDate) : '—'}
+                  {(() => { const d = getExpiryDays(extensionDRF); return d !== null ? ` (${d <= 0 ? 'expired' : `${d}d left`})` : ''; })()}
+                </p>
               </div>
             </div>
 
-            {qUploadStep === 'upload' ? (
-              <div className="space-y-4">
-                <p className="text-sm text-gray-500">Upload your prepared quotation PDF. The amount will be read automatically.</p>
-                <div
-                  onClick={() => qFileInputRef.current?.click()}
-                  onDragOver={e => e.preventDefault()}
-                  onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleQFileSelect(f); }}
-                  className="border-2 border-dashed border-violet-300 rounded-2xl p-10 text-center cursor-pointer hover:border-violet-500 hover:bg-violet-50/40 transition-all"
-                >
-                  {qParsing ? (
-                    <div className="space-y-2">
-                      <div className="w-10 h-10 border-2 border-violet-500 border-t-transparent rounded-full animate-spin mx-auto" />
-                      <p className="text-sm text-violet-600 font-medium">Reading quotation…</p>
-                    </div>
-                  ) : (
-                    <>
-                      <Upload size={36} className="mx-auto text-violet-400 mb-3" />
-                      <p className="text-sm font-semibold text-gray-700">Click or drag your quotation PDF here</p>
-                      <p className="text-xs text-gray-400 mt-1">PDF, DOC, DOCX supported · max 10 MB</p>
-                    </>
-                  )}
-                </div>
-                <input ref={qFileInputRef} type="file" accept=".pdf,.doc,.docx" className="hidden"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) handleQFileSelect(f); }} />
-                <div className="flex justify-end">
-                  <button onClick={() => setQuotationDRF(null)} className="btn-secondary">Cancel</button>
-                </div>
+            <div className="grid grid-cols-2 gap-4">
+              {/* To email */}
+              <div>
+                <label className="label">Send To (OEM Email) *</label>
+                <input required type="email" className="input-field" value={extToEmail}
+                  onChange={e => setExtToEmail(e.target.value)}
+                  placeholder="oem@company.com" />
               </div>
-            ) : (
-              <form onSubmit={handleCreateQuotation} className="space-y-4">
-                <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
-                  <CheckCircle size={20} className="text-emerald-600 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-emerald-800 truncate">{qFileName}</p>
-                    <p className="text-xs text-emerald-600">Quotation file ready</p>
-                  </div>
-                  <button type="button" onClick={() => { setQUploadStep('upload'); setQUploadFile(null); }} className="text-gray-400 hover:text-red-500 transition-colors">
-                    <X size={16} />
-                  </button>
-                </div>
+              {/* To name */}
+              <div>
+                <label className="label">Recipient Name</label>
+                <input className="input-field" value={extToName}
+                  onChange={e => setExtToName(e.target.value)}
+                  placeholder="e.g. Mr. Sharma (optional)" />
+              </div>
+            </div>
 
-                <div>
-                  <label className="label">Total Amount (₹) *</label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2.5 text-gray-500 font-semibold">₹</span>
-                    <input type="number" step="0.01" min="0" required className="input-field pl-7 text-lg font-bold text-violet-700"
-                      placeholder="0.00" value={qAmount} onChange={e => setQAmount(e.target.value)} />
-                  </div>
-                  {qAmount && Number(qAmount) > 0
-                    ? <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1"><CheckCircle size={11} /> Amount detected from your quotation</p>
-                    : <p className="text-xs text-amber-600 mt-1">Could not auto-detect amount — please enter manually</p>}
-                </div>
+            {/* Subject */}
+            <div>
+              <label className="label">Email Subject *</label>
+              <input required className="input-field" value={extSubject}
+                onChange={e => setExtSubject(e.target.value)} />
+            </div>
 
-                <div>
-                  <label className="label">Valid Until</label>
-                  <input type="date" className="input-field" value={qValidUntil} onChange={e => setQValidUntil(e.target.value)} />
-                </div>
+            {/* Message body */}
+            <div>
+              <label className="label">Email Message *</label>
+              <p className="text-[11px] text-gray-400 mb-1">Edit this message — DRF details table will be appended automatically below.</p>
+              <textarea required rows={8} className="input-field font-mono text-xs leading-relaxed"
+                value={extMessage} onChange={e => setExtMessage(e.target.value)} />
+            </div>
 
-                <div>
-                  <label className="label">Send To *</label>
-                  <ContactEmailPicker required placeholder="customer@company.com" value={qToEmail} onChange={setQToEmail} defaultContactType="CUSTOMER" defaultResponsibility="Procurement" />
-                </div>
+            {/* Requested new expiry */}
+            <div>
+              <label className="label">Requested New Expiry Date <span className="text-gray-400 font-normal">(optional — shown in email table)</span></label>
+              <input type="date" className="input-field" value={extNewExpiry}
+                onChange={e => setExtNewExpiry(e.target.value)} />
+            </div>
 
-                <div>
-                  <label className="label">CC</label>
-                  <ContactEmailPicker placeholder="cc@example.com" value={qCcEmail} onChange={setQCcEmail} defaultContactType="CUSTOMER" defaultResponsibility="Technical" applyLabel="Add to CC" />
-                </div>
+            {/* What will be in the email — info box */}
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-1.5">
+              <p className="text-xs font-semibold text-gray-600">The email will automatically include:</p>
+              <ul className="text-xs text-gray-500 space-y-0.5 list-inside list-disc">
+                <li>Your custom message above</li>
+                <li>DRF Number, Company Name, OEM/Brand, Current Expiry{extNewExpiry ? ', Requested New Expiry' : ''}</li>
+                <li>Your name and email as the sender signature</li>
+                <li>Request to reply with new valid-until date</li>
+              </ul>
+            </div>
 
-                <div>
-                  <label className="label">Notes</label>
-                  <textarea rows={2} className="input-field" placeholder="Additional notes..." value={qNotes} onChange={e => setQNotes(e.target.value)} />
-                </div>
-
-                {qError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">{qError}</div>}
-
-                <div className="flex gap-3 justify-end pt-1">
-                  <button type="button" onClick={() => setQuotationDRF(null)} className="btn-secondary">Cancel</button>
-                  <button type="submit" disabled={qSaving} className="btn-primary flex items-center gap-2">
-                    <FileText size={14} />{qSaving ? 'Sending…' : 'Create & Send Quotation'}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
+            <div className="flex gap-3 justify-end pt-1 border-t border-gray-100">
+              <button type="button" onClick={() => setExtensionDRF(null)} className="btn-secondary">Cancel</button>
+              <button type="submit" disabled={extensionSending} className="btn-primary flex items-center gap-2">
+                <Mail size={14} />
+                {extensionSending ? 'Sending…' : 'Send Extension Email'}
+              </button>
+            </div>
+          </form>
         )}
       </Modal>
 

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Search, ExternalLink, Upload, X, CheckCircle, Trash2, Send, Mail, Pencil } from 'lucide-react';
+import { Plus, Search, ExternalLink, Upload, X, CheckCircle, Trash2, Send, Mail, Pencil, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { notify } from '@/store/notificationStore';
 import { leadsApi } from '@/api/leads';
@@ -215,6 +215,35 @@ export default function LeadsPage() {
   const [importing, setImporting] = useState(false);
   const [importDone, setImportDone] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [importedLeads, setImportedLeads] = useState<Lead[]>([]);
+  const [updatingImportedStatus, setUpdatingImportedStatus] = useState<string | null>(null);
+
+  const downloadTemplate = () => {
+    const headers = [
+      'companyName', 'contactPersonName', 'designation', 'email', 'phone',
+      'oemName', 'oemEmail', 'channelPartner', 'source', 'city', 'state',
+      'address', 'website', 'annualTurnover', 'expectedClosure', 'notes'
+    ];
+    const sample = [
+      'Ashok Industries', 'Mr. Ashok Kumar', 'IT Manager', 'ashok@example.com', '9876543210',
+      'Ansys', 'ansys@oem.com', 'ZIEOS', 'Cold Call', 'Hyderabad', 'Telangana',
+      'Plot 12, HITEC City', 'https://ashok.com', '10 Crore', 'Q3 2026', 'Interested in simulation'
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([headers, sample]);
+    ws['!cols'] = headers.map(() => ({ wch: 22 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Leads Template');
+    XLSX.writeFile(wb, 'leads_template.xlsx');
+  };
+
+  const handleImportedStatusChange = async (leadId: string, newStatus: LeadStatus) => {
+    setUpdatingImportedStatus(leadId);
+    try {
+      await leadsApi.update(leadId, { status: newStatus });
+      setImportedLeads(prev => prev.map(l => l._id === leadId ? { ...l, status: newStatus } : l));
+      setLeads(prev => prev.map(l => l._id === leadId ? { ...l, status: newStatus } : l));
+    } catch { } finally { setUpdatingImportedStatus(null); }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -356,7 +385,10 @@ export default function LeadsPage() {
       setImportDone(res.imported);
       notify('Leads Imported', `${res.imported} lead(s) imported from file.`, 'lead', '/leads');
       setImportRows([]);
-      load();
+      await load();
+      // grab the freshly imported leads (first N from updated list)
+      const freshRes = await leadsApi.getAll({ limit: res.imported, page: 1 });
+      setImportedLeads(freshRes.data?.slice(0, res.imported) || []);
     } finally { setImporting(false); }
   };
 
@@ -373,6 +405,9 @@ export default function LeadsPage() {
           <p className="text-sm text-gray-500 mt-0.5">{total} total leads</p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <button onClick={downloadTemplate} className="btn-secondary flex items-center gap-2 text-sm">
+            <Download size={14} /> <span className="hidden sm:inline">Download Template</span><span className="sm:hidden">Template</span>
+          </button>
           <button onClick={() => { setShowImport(true); setImportDone(0); setImportRows([]); }} className="btn-secondary flex items-center gap-2 text-sm">
             <Upload size={14} /> <span className="hidden sm:inline">Import Excel / CSV</span><span className="sm:hidden">Import</span>
           </button>
@@ -417,7 +452,6 @@ export default function LeadsPage() {
                   <th className="table-header min-w-[150px]">Remarks</th>
                   <th className="table-header min-w-[110px]">Status</th>
                   <th className="table-header min-w-[100px]">Stage</th>
-                  <th className="table-header min-w-[200px]">Deal Status</th>
                   <th className="table-header min-w-[100px]">Assigned</th>
                   <th className="table-header min-w-[100px]">Actions</th>
                 </tr>
@@ -459,30 +493,6 @@ export default function LeadsPage() {
                       )}
                     </td>
                     <td className="table-cell"><StatusBadge status={lead.stage} /></td>
-                    <td className="table-cell">
-                      {updatingSalesStatus === lead._id ? (
-                        <span className="badge text-xs bg-violet-100 text-violet-600 animate-pulse">Updating…</span>
-                      ) : lead.stage === 'Lost' && canEdit ? (
-                        // Only Lost deals need manual rejection reason selection
-                        <select
-                          value={lead.salesStatus?.startsWith('Rejected') ? lead.salesStatus : ''}
-                          onChange={e => handleSalesStatusChange(lead._id, e.target.value as SalesStatus)}
-                          className="text-xs font-medium rounded-lg px-2 py-1 border cursor-pointer focus:ring-1 focus:ring-red-400 max-w-[190px] bg-red-50 text-red-700 border-red-200"
-                        >
-                          <option value="">— Select reason —</option>
-                          {REJECTED_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      ) : (
-                        // Auto-derived from stage — read only
-                        <span className={`badge text-xs font-medium ${
-                          deriveSalesStatus(lead).startsWith('Rejected')
-                            ? 'bg-red-100 text-red-600'
-                            : DEAL_STATUS_STYLE[deriveSalesStatus(lead)] || 'bg-gray-100 text-gray-500'
-                        }`}>
-                          {deriveSalesStatus(lead)}
-                        </span>
-                      )}
-                    </td>
                     <td className="table-cell text-gray-500 whitespace-nowrap">{(lead.assignedTo as User)?.name || '—'}</td>
                     <td className="table-cell">
                       <div className="flex items-center gap-1">
@@ -567,6 +577,77 @@ export default function LeadsPage() {
       )}
       {!loading && leads.length === 0 && (
         <div className="md:hidden text-center text-gray-400 py-16 glass-card">No leads found</div>
+      )}
+
+      {/* ── Imported Leads Section ── */}
+      {importedLeads.length > 0 && (
+        <div className="glass-card !p-0 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-emerald-50">
+            <div className="flex items-center gap-2">
+              <CheckCircle size={16} className="text-emerald-600" />
+              <span className="text-sm font-semibold text-emerald-800">Recently Imported — {importedLeads.length} leads</span>
+              <span className="text-xs text-emerald-600">You can change status directly below</span>
+            </div>
+            <button onClick={() => setImportedLeads([])} className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1"><X size={12} /> Dismiss</button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="table-header">#</th>
+                  <th className="table-header">Company</th>
+                  <th className="table-header">Contact</th>
+                  <th className="table-header">Phone / Email</th>
+                  <th className="table-header">OEM</th>
+                  <th className="table-header">City</th>
+                  <th className="table-header">Status</th>
+                  <th className="table-header">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {importedLeads.map((lead, idx) => (
+                  <tr key={lead._id} className="hover:bg-violet-50/30 transition-colors">
+                    <td className="table-cell text-gray-400 text-xs">{idx + 1}</td>
+                    <td className="table-cell">
+                      <Link to={`/leads/${lead._id}`} className="font-semibold text-violet-700 hover:underline whitespace-nowrap">{lead.companyName}</Link>
+                    </td>
+                    <td className="table-cell">
+                      <p className="text-gray-700 whitespace-nowrap">{lead.contactPersonName || lead.contactName || '—'}</p>
+                      {(lead as any).designation && <p className="text-xs text-gray-400">{(lead as any).designation}</p>}
+                    </td>
+                    <td className="table-cell">
+                      <p className="text-gray-600 whitespace-nowrap">{lead.phone || '—'}</p>
+                      <p className="text-xs text-gray-400 truncate max-w-[160px]">{lead.email || '—'}</p>
+                    </td>
+                    <td className="table-cell text-gray-600">{lead.oemName || '—'}</td>
+                    <td className="table-cell text-gray-500 whitespace-nowrap">{lead.city || '—'}</td>
+                    <td className="table-cell">
+                      {updatingImportedStatus === lead._id ? (
+                        <span className="badge text-xs bg-violet-100 text-violet-600 animate-pulse">Updating…</span>
+                      ) : (
+                        <select
+                          value={lead.status || 'New'}
+                          onChange={(e) => handleImportedStatusChange(lead._id, e.target.value as LeadStatus)}
+                          className={`text-xs font-medium rounded-full px-2 py-1 border-0 cursor-pointer focus:ring-1 focus:ring-violet-400 ${STATUS_COLORS[lead.status as LeadStatus] || 'bg-gray-100 text-gray-600'}`}
+                        >
+                          {(['New', 'Contacted', 'Qualified', 'Not Qualified'] as LeadStatus[]).map(s => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
+                        </select>
+                      )}
+                    </td>
+                    <td className="table-cell">
+                      <div className="flex items-center gap-1">
+                        <Link to={`/leads/${lead._id}`} title="View" className="p-1.5 rounded-md hover:bg-violet-100 hover:text-violet-600 text-gray-400 transition-colors"><ExternalLink size={13} /></Link>
+                        <button onClick={() => openEditModal(lead)} title="Edit" className="p-1.5 rounded-md hover:bg-amber-100 hover:text-amber-600 text-gray-400 transition-colors"><Pencil size={13} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       {/* ── New Lead Modal ── */}
@@ -876,45 +957,64 @@ export default function LeadsPage() {
       </Modal>
 
       {/* CSV Import Modal */}
-      <Modal isOpen={showImport} onClose={() => setShowImport(false)} title="Import Leads from Excel / CSV">
+      <Modal isOpen={showImport} onClose={() => { setShowImport(false); setImportDone(0); setImportRows([]); }} title="Import Leads from Excel / CSV">
         <div className="space-y-4">
           {importDone > 0 ? (
             <div className="text-center py-6">
               <CheckCircle size={40} className="text-emerald-500 mx-auto mb-3" />
               <p className="text-lg font-semibold text-gray-800">{importDone} leads imported!</p>
-              <button onClick={() => setShowImport(false)} className="btn-primary mt-4">Done</button>
+              <p className="text-sm text-gray-500 mt-1">You can change the status of imported leads in the table below.</p>
+              <button onClick={() => { setShowImport(false); setImportDone(0); setImportRows([]); }} className="btn-primary mt-4">Done</button>
             </div>
           ) : (
             <>
-              <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 text-sm text-violet-700">
-                <p className="font-semibold mb-1">Supported columns (any order, flexible naming):</p>
-                <p className="text-xs font-mono">companyName, contactPersonName, email, phone, oemName, source, city, state, notes, designation</p>
-                <p className="text-xs mt-1 text-violet-500">Common variations like "Company Name", "Contact Person", "Mobile", "Organization" are auto-mapped.</p>
-              </div>
-              {importRows.length > 0 && (
-                <div className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
-                  Detected columns: <span className="font-mono text-gray-700">{Object.keys(importRows[0]).join(', ')}</span>
+              <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 text-sm text-violet-700 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="font-semibold">Step 1 — Download the template, fill it and upload</p>
+                  <button onClick={downloadTemplate} className="flex items-center gap-1.5 text-xs bg-violet-600 text-white px-3 py-1.5 rounded-lg hover:bg-violet-700 transition-colors">
+                    <Download size={12} /> Download Template
+                  </button>
                 </div>
-              )}
+                <p className="text-xs text-violet-600">Template columns: <span className="font-mono">companyName, contactPersonName, designation, email, phone, oemName, oemEmail, channelPartner, source, city, state, address, website, annualTurnover, expectedClosure, notes</span></p>
+                <p className="text-xs text-violet-500">Common column name variations are auto-mapped (e.g. "Company", "Mobile", "Contact Person").</p>
+              </div>
               <div>
-                <label className="label">Upload Excel or CSV file</label>
+                <label className="label">Step 2 — Upload filled Excel or CSV file</label>
                 <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls" className="input-field" onChange={handleFileChange} />
               </div>
               {importRows.length > 0 && (
-                <div className="bg-gray-50 rounded-xl p-3 text-sm">
-                  <p className="font-medium text-gray-700 mb-2">{importRows.length} rows detected — preview:</p>
-                  <div className="overflow-x-auto max-h-40 overflow-y-auto">
-                    <table className="w-full text-xs">
-                      <thead><tr>{Object.keys(importRows[0]).map(h => <th key={h} className="text-left px-2 py-1 text-gray-500 font-medium">{h}</th>)}</tr></thead>
-                      <tbody>{importRows.slice(0,5).map((row, i) => <tr key={i}>{Object.values(row).map((v, j) => <td key={j} className="px-2 py-1 text-gray-700 border-t border-gray-100">{v || '—'}</td>)}</tr>)}</tbody>
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <p className="font-medium text-gray-700 text-sm mb-2">{importRows.length} rows detected — preview (first 5):</p>
+                  <div className="overflow-x-auto max-h-48 overflow-y-auto">
+                    <table className="w-full text-xs border-collapse">
+                      <thead className="bg-gray-100 sticky top-0">
+                        <tr>
+                          {Object.keys(importRows[0]).map(h => (
+                            <th key={h} className="text-left px-2 py-1.5 text-gray-600 font-semibold border border-gray-200 whitespace-nowrap">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {importRows.slice(0, 5).map((row, i) => (
+                          <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            {Object.values(row).map((v, j) => (
+                              <td key={j} className="px-2 py-1.5 text-gray-700 border border-gray-200 whitespace-nowrap">{v || '—'}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
                     </table>
                   </div>
+                  {importRows.length > 5 && (
+                    <p className="text-xs text-gray-400 mt-1.5 text-center">...and {importRows.length - 5} more rows</p>
+                  )}
                 </div>
               )}
               <div className="flex gap-3 justify-end">
-                <button onClick={() => setShowImport(false)} className="btn-secondary flex items-center gap-1"><X size={14} />Cancel</button>
-                <button onClick={handleImport} disabled={!importRows.length || importing} className="btn-primary">
-                  {importing ? 'Importing…' : `Import ${importRows.length} Leads`}
+                <button onClick={() => { setShowImport(false); setImportRows([]); }} className="btn-secondary flex items-center gap-1"><X size={14} />Cancel</button>
+                <button onClick={handleImport} disabled={!importRows.length || importing} className="btn-primary flex items-center gap-2">
+                  <Upload size={14} />
+                  {importing ? 'Importing…' : `Import ${importRows.length} Lead${importRows.length !== 1 ? 's' : ''}`}
                 </button>
               </div>
             </>

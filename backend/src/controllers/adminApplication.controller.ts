@@ -39,10 +39,6 @@ export const approveApplication = async (req: AuthRequest, res: Response) => {
     if (!app) return sendError(res, 'Application not found', 404);
     if (app.status === 'approved') return sendError(res, 'Already approved', 409);
 
-    // Generate a secure random password
-    const password = crypto.randomBytes(8).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 12) + '@1';
-
-    // Create Organization
     const baseSlug = app.orgName
       .toLowerCase()
       .replace(/\s+/g, '-')
@@ -58,15 +54,20 @@ export const approveApplication = async (req: AuthRequest, res: Response) => {
       isActive: true,
     }).save();
 
-    // Create admin user
     const user = await new User({
       name: app.contactName,
       email: app.email,
-      password,
+      password: 'pending',
       role: 'admin',
       phone: app.phone,
       organizationId: org._id,
       isActive: true,
+      mustSetPassword: true,
+      smtpHost:   (app as any).smtpHost,
+      smtpPort:   (app as any).smtpPort,
+      smtpSecure: (app as any).smtpSecure,
+      smtpUser:   (app as any).smtpUser || app.email,
+      smtpPass:   (app as any).smtpPass,
     }).save();
 
     org.ownerId = user._id as mongoose.Types.ObjectId;
@@ -79,13 +80,11 @@ export const approveApplication = async (req: AuthRequest, res: Response) => {
     app.createdUserId = user._id as mongoose.Types.ObjectId;
     await app.save();
 
-    // Send credentials email via Hostinger
     await sendApprovalEmail({
       to: app.email,
       contactName: app.contactName,
       orgName: app.orgName,
       loginEmail: app.email,
-      password,
     });
 
     sendSuccess(res, {

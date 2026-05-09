@@ -23,6 +23,7 @@ export interface IOEMApprovalAttempt extends Document {
   extensionRequested?: boolean;
   extensionRequestedAt?: Date;
   notes?: string;
+  prospectStatus?: string;
   createdBy: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -38,6 +39,7 @@ const ExtHistSchema = new Schema<IExtensionHistory>({
 
 const OEMSchema = new Schema<IOEMApprovalAttempt>(
   {
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
     leadId: { type: Schema.Types.ObjectId, ref: 'Lead', required: true },
     attemptNumber: { type: Number, required: true, min: 1 },
     status: { type: String, enum: ['Pending', 'Approved', 'Rejected', 'Expired'], default: 'Pending' },
@@ -52,6 +54,7 @@ const OEMSchema = new Schema<IOEMApprovalAttempt>(
     extensionRequested: { type: Boolean, default: false },
     extensionRequestedAt: { type: Date },
     notes: { type: String },
+    prospectStatus: { type: String, default: 'DRF Approved' },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },
   { timestamps: true }

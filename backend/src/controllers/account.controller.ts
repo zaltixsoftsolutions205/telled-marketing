@@ -8,16 +8,8 @@ import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, sanitizeQuery } from '../utils/helpers';
 import { notifyUser, notifyRole } from '../utils/notify';
 import { sendAccountWelcomeEmail, UserSmtpConfig } from '../services/email.service';
-import { decryptText } from '../utils/crypto';
 import logger from '../utils/logger';
-
-async function getUserSmtp(userId: string): Promise<UserSmtpConfig | undefined> {
-  try {
-    const user = await User.findById(userId).select('name email smtpHost smtpPort smtpUser smtpPass smtpSecure');
-    if (!user?.smtpHost || !user?.smtpUser || !user?.smtpPass) return undefined;
-    return { smtpHost: user.smtpHost, smtpPort: user.smtpPort || 465, smtpUser: user.smtpUser, smtpPass: decryptText(user.smtpPass), smtpSecure: user.smtpSecure, fromEmail: user.email, fromName: user.name };
-  } catch { return undefined; }
-}
+import { getUserSmtp, getUserSmtpWithFallback } from '../utils/getUserSmtp';
 
 export const getAccounts = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -67,7 +59,7 @@ export const convertLeadToAccount = async (req: AuthRequest, res: Response): Pro
       salesStatus: 'Closed, and now a Customer',
     }).save();
     await Lead.findByIdAndUpdate(leadId, { stage: 'Converted', salesStatus: 'Closed, and now a Customer' });
-    notifyRole(['admin', 'hr_finance'], {
+    notifyRole(['admin', 'hr'], {
       title: 'New Account Created',
       message: `"${account.companyName}" has been converted from a lead to an active account`,
       type: 'general',
@@ -116,7 +108,7 @@ export const sendWelcomeMail = async (req: AuthRequest, res: Response): Promise<
     }
     if (!account.contactEmail) { sendError(res, 'Account has no customer email', 400); return; }
 
-    const engineerSmtp = await getUserSmtp(req.user!.id);
+    const engineerSmtp = await getUserSmtpWithFallback(req.user!.id);
     const org = account.organizationId
       ? await Organization.findById(account.organizationId).select('name').lean()
       : null;

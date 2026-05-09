@@ -19,7 +19,7 @@ const statusColors: Record<string, string> = {
 
 export default function TimesheetPage() {
   const user = useAuthStore((s) => s.user);
-  const isManager = user?.role === 'admin' || user?.role === 'hr_finance';
+  const isManager = user?.role === 'admin' || user?.role === 'hr';
 
   const now = new Date();
   const [entries, setEntries] = useState<any[]>([]);
@@ -219,7 +219,7 @@ export default function TimesheetPage() {
                       className="hover:bg-violet-50/20 transition-colors cursor-pointer"
                       onClick={() => setExpandedId(expandedId === entry._id ? null : entry._id)}
                     >
-                      {isManager && <td className="table-cell font-medium">{entry.userName || '—'}</td>}
+                      {isManager && <td className="table-cell font-medium">{entry.userId?.name || entry.userName || '—'}</td>}
                       <td className="table-cell text-gray-500 whitespace-nowrap">{formatDate(entry.date)}</td>
                       <td className="table-cell">
                         <span className="badge bg-gray-100 text-gray-700">{entry.taskType}</span>
@@ -250,8 +250,14 @@ export default function TimesheetPage() {
                               </button>
                             </>
                           )}
-                          {!isManager && entry.status === 'Submitted' && (
+                          {!isManager && entry.status === 'Draft' && (
                             <>
+                              <button
+                                onClick={async () => { await timesheetApi.submit(entry._id); load(); }}
+                                className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 px-2.5 py-1 rounded-lg font-medium"
+                              >
+                                Submit
+                              </button>
                               <button
                                 onClick={() => openEdit(entry)}
                                 className="text-xs bg-violet-50 hover:bg-violet-100 text-violet-700 px-2.5 py-1 rounded-lg font-medium"
@@ -314,7 +320,7 @@ export default function TimesheetPage() {
             <div key={entry._id} className="glass-card !p-4 space-y-2">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  {isManager && <p className="font-medium text-gray-900 text-sm">{entry.userName || '—'}</p>}
+                  {isManager && <p className="font-medium text-gray-900 text-sm">{entry.userId?.name || entry.userName || '—'}</p>}
                   <p className="text-xs text-gray-500">{formatDate(entry.date)}</p>
                   <span className="badge bg-gray-100 text-gray-700 text-xs mt-0.5 inline-block">{entry.taskType}</span>
                 </div>
@@ -339,8 +345,12 @@ export default function TimesheetPage() {
                     </button>
                   </>
                 )}
-                {!isManager && entry.status === 'Submitted' && (
+                {!isManager && entry.status === 'Draft' && (
                   <>
+                    <button onClick={async () => { await timesheetApi.submit(entry._id); load(); }}
+                      className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 px-2.5 py-1.5 rounded-lg font-medium">
+                      Submit
+                    </button>
                     <button onClick={() => openEdit(entry)}
                       className="text-xs bg-violet-50 hover:bg-violet-100 text-violet-700 px-2.5 py-1.5 rounded-lg font-medium">
                       Edit

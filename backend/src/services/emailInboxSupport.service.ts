@@ -177,11 +177,11 @@ export async function syncSupportEmails(creds?: ImapCredentials): Promise<Suppor
   });
 
   client.on('error', (err: Error) => {
-    // Hostinger IMAP drops idle connections between syncs — harmless
-    if (err.message && (err.message.includes('socket') || err.message.includes('ECONNRESET') || err.message.includes('closed') || err.message.includes('EPIPE'))) {
-      // silently ignore
+    const msg = err.message?.toLowerCase() || '';
+    if (msg.includes('socket') || msg.includes('econnreset') || msg.includes('closed') || msg.includes('epipe') || msg.includes('timeout') || msg.includes('etimedout')) {
+      // Harmless — IMAP server closes idle connections between sync intervals
     } else {
-      logger.error('ImapFlow support sync error:', err.message);
+      logger.warn('ImapFlow support sync error:', err.message);
     }
   });
 

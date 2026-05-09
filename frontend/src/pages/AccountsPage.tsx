@@ -14,7 +14,7 @@ import type { Account, Lead, User } from '@/types';
 
 export default function AccountsPage() {
   const currentUser = useAuthStore((s) => s.user);
-  const isHRorAdmin = currentUser?.role === 'admin' || currentUser?.role === 'hr_finance';
+  const isHRorAdmin = currentUser?.role === 'admin' || currentUser?.role === 'hr' || currentUser?.role === 'finance';
   const isEngineer  = currentUser?.role === 'engineer';
 
   const [accounts, setAccounts] = useState<Account[]>([]);

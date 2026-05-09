@@ -11,7 +11,7 @@ import { notifyRole, notifyUser } from '../utils/notify';
 export const getInvoices = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { page, limit, skip } = getPaginationParams(req);
-    const filter: Record<string, unknown> = { isArchived: false };
+    const filter: Record<string, unknown> = { organizationId: req.user!.organizationId, isArchived: false };
     if (req.query.status) filter.status = req.query.status;
     if (req.query.accountId) filter.accountId = req.query.accountId;
     if (req.query.invoiceType) filter.invoiceType = req.query.invoiceType;
@@ -37,6 +37,7 @@ export const createInvoice = async (req: AuthRequest, res: Response): Promise<vo
     const totalAmount = amount + taxAmount;
     let invoice = await new Invoice({
       ...req.body,
+      organizationId: req.user!.organizationId,
       invoiceNumber: generateInvoiceNumber(),
       taxAmount,
       totalAmount,
@@ -51,7 +52,7 @@ export const createInvoice = async (req: AuthRequest, res: Response): Promise<vo
         invoice = (await Invoice.findByIdAndUpdate(invoice._id, { pdfUrl: pdf }, { new: true })) ?? invoice;
       }
     } catch (_e) {}
-    notifyRole(['admin', 'hr_finance'], {
+    notifyRole(['admin', 'hr'], {
       title: 'New Invoice Created',
       message: `Invoice ${invoice.invoiceNumber} for ₹${invoice.totalAmount.toLocaleString()} has been created`,
       type: 'salary',
@@ -71,7 +72,7 @@ export const recordPayment = async (req: AuthRequest, res: Response): Promise<vo
     invoice.status = invoice.paidAmount >= invoice.totalAmount ? 'Paid' : invoice.paidAmount > 0 ? 'Partially Paid' : invoice.status;
     await invoice.save();
     const payment = await Payment.findById(savedPayment._id).populate('recordedBy', 'name').populate('invoiceId', 'invoiceNumber');
-    notifyRole(['admin', 'hr_finance'], {
+    notifyRole(['admin', 'hr'], {
       title: invoice.status === 'Paid' ? 'Invoice Fully Paid' : 'Partial Payment Received',
       message: `₹${amountPaid.toLocaleString()} received for invoice ${invoice.invoiceNumber} — status: ${invoice.status}`,
       type: 'salary',

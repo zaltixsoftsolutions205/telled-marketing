@@ -213,21 +213,17 @@ function amountToWords(n: number): string {
 
 export const generateQuotationPDF = (data: {
   quotationNumber: string;
-  companyName?: string;
-  companyAddress?: string;
-  contactName: string;
-  contactEmail?: string;
-  contactPhone?: string;
-  contactAddress?: string;
-  oemName?: string;
-  salesPersonName?: string;
-  salesPersonEmail?: string;
-  salesPersonPhone?: string;
+  companyName?: string; companyAddress?: string;
+  contactName: string; contactEmail?: string; contactPhone?: string; contactAddress?: string;
+  oemName?: string; salesPersonName?: string; salesPersonEmail?: string; salesPersonPhone?: string;
   items: Array<{ description: string; quantity: number; listPrice?: number; discount?: number; unitPrice: number; total: number }>;
   subtotal: number; taxRate: number; taxAmount: number; total: number; gstApplicable?: boolean;
   discountApplicable?: boolean; discountType?: 'percent' | 'flat'; discountValue?: number; discountAmount?: number;
-  validUntil?: Date; notes?: string; terms?: string;
-  logoPath?: string;
+  validUntil?: Date; notes?: string; terms?: string; logoPath?: string;
+  sellerCompany?: string; sellerAddress?: string; sellerEmail?: string; sellerPhone?: string; sellerGST?: string;
+  bankName?: string; bankAccount?: string; bankIFSC?: string; bankBranch?: string; deliveryWeeks?: string;
+  secondLogoPath?: string; secondLogoLabel?: string;
+  customFields?: Array<{ label: string; value: string }>;
 }): Promise<string> => new Promise((resolve, reject) => {
   const fileName = `quotation-${data.quotationNumber}-${Date.now()}.pdf`;
   const filePath = path.join(uploadDir, fileName);
@@ -235,241 +231,238 @@ export const generateQuotationPDF = (data: {
   const stream = fs.createWriteStream(filePath);
   doc.pipe(stream);
 
-  const W = 595, M = 30, inner = W - M * 2;
-  const VIOLET  = '#4f2d7f';
-  const LVIO    = '#e8e0f0';
-  const BORDER  = '#cccccc';
-  const DARK    = '#111111';
-  const GRAY    = '#555555';
-  const now     = new Date();
-  const fmtDate = (d?: Date) => d ? d.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' }) : '—';
-  const fmtINR  = (n: number) => `INR ${n.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+  let settled = false;
+  const safeReject = (e: unknown) => { if (!settled) { settled = true; reject(e); } };
+  const safeResolve = (v: string)  => { if (!settled) { settled = true; resolve(v); } };
+  doc.on('error', (err: any) => { logger.error('PDFKit error:', err?.message || err); safeReject(err); });
+  stream.on('error', safeReject);
 
-  const drawBorder = (x: number, y: number, w: number, h: number) =>
-    doc.rect(x, y, w, h).stroke(BORDER);
-  const fillCell = (x: number, y: number, w: number, h: number, color: string) =>
-    doc.rect(x, y, w, h).fill(color);
+  try {
+    // ── Sanitise all numbers ──────────────────────────────────────────────────
+    const N = (v: unknown) => isFinite(Number(v)) ? Number(v) : 0;
+    data.subtotal      = N(data.subtotal);
+    data.taxRate       = N(data.taxRate);
+    data.taxAmount     = N(data.taxAmount);
+    data.total         = N(data.total);
+    data.discountValue  = N(data.discountValue);
+    data.discountAmount = N(data.discountAmount);
+    data.items = (data.items || []).map(i => ({
+      description: i.description || '',
+      quantity:  N(i.quantity)  || 1,
+      unitPrice: N(i.unitPrice),
+      total:     N(i.total),
+      listPrice: N((i as any).listPrice),
+      discount:  N((i as any).discount),
+    }));
 
-  // ── OUTER BORDER ──────────────────────────────────────────────────────────
-  doc.rect(M, 20, inner, 800).stroke(BORDER);
+    // ── Layout constants — ALL integers ───────────────────────────────────────
+    // W=595, M=30, inner=535
+    const W = 595, M = 30, INNER = 535;
+    const VIOLET = '#4f2d7f', LVIO = '#e8e0f0', BORDER = '#cccccc', DARK = '#111111', GRAY = '#555555';
+    const fmtDate = (d: Date | string | undefined) => {
+      if (!d) return '—';
+      const dt = d instanceof Date ? d : new Date(d as string);
+      return isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
+    };
+    const fmtINR = (v: unknown) => `INR ${N(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
-  // ── 1. LOGOS ROW ──────────────────────────────────────────────────────────
-  let y = 20;
-  // Telled logo (left) — image if available, text fallback
-  const logoH = 40;
-  const supportedExt = /\.(png|jpg|jpeg)$/i;
-  if (data.logoPath && fs.existsSync(data.logoPath) && supportedExt.test(data.logoPath)) {
-    doc.image(data.logoPath, M + 8, y + 6, { height: logoH, fit: [160, logoH] });
-  } else {
-    doc.fillColor(VIOLET).fontSize(18).font('Helvetica-Bold').text('TELLED', M + 8, y + 8);
-    doc.fillColor(GRAY).fontSize(9).font('Helvetica').text('MARKETING', M + 8, y + 28);
-  }
-  // OEM badge (right)
-  const oemLabel = data.oemName || 'OEM';
-  doc.fillColor(DARK).fontSize(11).font('Helvetica-Bold')
-     .text(oemLabel, W - M - 120, y + 12, { width: 110, align: 'right' });
-  doc.fillColor(GRAY).fontSize(7.5).font('Helvetica')
-     .text('CERTIFIED CHANNEL PARTNER', W - M - 120, y + 26, { width: 110, align: 'right' });
-  y += 52;
-  doc.moveTo(M, y).lineTo(W - M, y).stroke(BORDER);
+    const stroke = (x: number, y: number, w: number, h: number) => doc.rect(x, y, w, h).stroke(BORDER);
+    const fill   = (x: number, y: number, w: number, h: number, c: string) => doc.rect(x, y, w, h).fill(c);
 
-  // ── 2. TO SECTION + RIGHT TABLE ───────────────────────────────────────────
-  y += 6;
-  doc.fillColor(DARK).fontSize(8).font('Helvetica').text('To,', M + 6, y);
-  y += 12;
+    // ── Outer border ──────────────────────────────────────────────────────────
+    stroke(M, 20, INNER, 800);
 
-  const toW = 270, rightX = M + toW + 10, rightW = inner - toW - 10;
-  // Company name bold
-  doc.fillColor(DARK).fontSize(10).font('Helvetica-Bold')
-     .text(data.companyName || data.contactName, M + 6, y, { width: toW - 10 });
-  y += 14;
-  if (data.companyAddress || data.contactAddress) {
-    doc.fillColor(GRAY).fontSize(8).font('Helvetica')
-       .text(data.companyAddress || data.contactAddress || '', M + 6, y, { width: toW - 10 });
-    y += 28;
-  } else { y += 4; }
+    // ── §1 Logo row ───────────────────────────────────────────────────────────
+    let y = 20;
+    const supportedExt = /\.(png|jpg|jpeg)$/i;
+    if (data.logoPath && fs.existsSync(data.logoPath) && supportedExt.test(data.logoPath)) {
+      doc.image(data.logoPath, M + 8, y + 6, { height: 40, fit: [160, 40] });
+    } else if (data.sellerCompany) {
+      doc.fillColor(VIOLET).fontSize(16).font('Helvetica-Bold').text(data.sellerCompany, M + 8, y + 8, { width: 200 });
+      if (data.sellerAddress) doc.fillColor(GRAY).fontSize(7).font('Helvetica').text(data.sellerAddress, M + 8, y + 28, { width: 200 });
+    } else {
+      doc.fillColor(VIOLET).fontSize(18).font('Helvetica-Bold').text('TELLED', M + 8, y + 8);
+      doc.fillColor(GRAY).fontSize(9).font('Helvetica').text('MARKETING', M + 8, y + 28);
+    }
+    const secondLabel = data.secondLogoLabel || 'CERTIFIED CHANNEL PARTNER';
+    if (data.secondLogoPath && fs.existsSync(data.secondLogoPath) && supportedExt.test(data.secondLogoPath)) {
+      doc.image(data.secondLogoPath, 445, y + 6, { height: 40, fit: [110, 40] });
+      doc.fillColor(GRAY).fontSize(7).font('Helvetica').text(secondLabel, 445, y + 50, { width: 110, align: 'right' });
+    } else {
+      doc.fillColor(DARK).fontSize(11).font('Helvetica-Bold').text(data.oemName || 'OEM', 445, y + 12, { width: 110, align: 'right' });
+      doc.fillColor(GRAY).fontSize(7).font('Helvetica').text(secondLabel, 445, y + 26, { width: 110, align: 'right' });
+    }
+    y += 52;
+    doc.moveTo(M, y).lineTo(W - M, y).stroke(BORDER);
 
-  // Right info table
-  const rightStartY = y - 54;
-  const infoRows = [
-    ['Date', fmtDate(now)],
-    ['Quotation No.', data.quotationNumber],
-    ['Customer ID', ''],
-    ['Quote Validity', data.validUntil ? fmtDate(data.validUntil) : '15 Days'],
-    ['Prepared By', data.salesPersonName || 'ZIEOS'],
-  ];
-  const rLW = 90, rVW = rightW - rLW, rH = 16;
-  let ry = rightStartY;
-  infoRows.forEach(([lbl, val]) => {
-    fillCell(rightX, ry, rLW, rH, LVIO);
-    drawBorder(rightX, ry, rightW, rH);
-    doc.moveTo(rightX + rLW, ry).lineTo(rightX + rLW, ry + rH).stroke(BORDER);
-    doc.fillColor(DARK).fontSize(7.5).font('Helvetica-Bold').text(lbl, rightX + 3, ry + 4, { width: rLW - 6, lineBreak: false });
-    doc.fillColor(DARK).fontSize(7.5).font('Helvetica').text(val, rightX + rLW + 3, ry + 4, { width: rVW - 6, lineBreak: false });
-    ry += rH;
-  });
-  y = Math.max(y, ry) + 6;
+    // ── §2 To section + right info table ──────────────────────────────────────
+    // Left: 270 wide. Gap: 10. Right starts at x=310, width=255
+    // rLW=90 (label), rVW=165 (value). 90+165=255 ✓
+    const toW = 270, rightX = 310, rightW = 255, rLW = 90, rVW = 165, rH = 16;
+    y += 6;
+    doc.fillColor(DARK).fontSize(8).font('Helvetica').text('To,', M + 6, y);
+    y += 12;
+    doc.fillColor(DARK).fontSize(10).font('Helvetica-Bold').text(data.companyName || data.contactName || '—', M + 6, y, { width: toW - 10 });
+    y += 14;
+    if (data.companyAddress || data.contactAddress) {
+      doc.fillColor(GRAY).fontSize(8).font('Helvetica').text((data.companyAddress || data.contactAddress)!, M + 6, y, { width: toW - 10 });
+      y += 28;
+    } else { y += 4; }
 
-  // ── 3. SUBJECT LINE ───────────────────────────────────────────────────────
-  doc.moveTo(M, y).lineTo(W - M, y).stroke(BORDER);
-  y += 6;
-  doc.fillColor(DARK).fontSize(8.5).font('Helvetica-Bold')
-     .text(`Sub:  Proposal for ${data.oemName || 'Software'}`, M + 6, y);
-  doc.fillColor(DARK).fontSize(8.5).font('Helvetica-Bold')
-     .text(`Telled GST No.: 36AAKFT2721M1ZV`, W / 2, y, { width: W / 2 - M - 6, align: 'right' });
-  y += 14;
-  doc.fillColor(DARK).fontSize(8).font('Helvetica')
-     .text(`Kind Attn.: ${data.contactName}`, M + 6, y);
-  y += 14;
-  doc.moveTo(M, y).lineTo(W - M, y).stroke(BORDER);
-
-  // ── 4. SALES PERSON TABLE ─────────────────────────────────────────────────
-  y += 0;
-  const spCols = [inner / 4, inner / 4, inner / 4, inner / 4];
-  const spHeaders = ['Sales Person', 'Contact Number', 'Email ID', 'Delivery'];
-  const spValues  = [
-    data.salesPersonName || 'ZIEOS',
-    data.salesPersonPhone || '',
-    data.salesPersonEmail || '',
-    '2 Weeks',
-  ];
-  // Header
-  let sx = M;
-  spHeaders.forEach((h, i) => {
-    fillCell(sx, y, spCols[i], 18, LVIO);
-    drawBorder(sx, y, spCols[i], 18);
-    doc.fillColor(DARK).fontSize(8).font('Helvetica-Bold')
-       .text(h, sx + 4, y + 5, { width: spCols[i] - 8, align: 'center', lineBreak: false });
-    sx += spCols[i];
-  });
-  y += 18;
-  sx = M;
-  spValues.forEach((v, i) => {
-    drawBorder(sx, y, spCols[i], 18);
-    doc.fillColor(i === 2 ? VIOLET : DARK).fontSize(8).font('Helvetica')
-       .text(v, sx + 4, y + 5, { width: spCols[i] - 8, align: 'center', lineBreak: false });
-    sx += spCols[i];
-  });
-  y += 18;
-
-  // ── 5. ITEMS TABLE ────────────────────────────────────────────────────────
-  const hasItemDiscount = data.items.some(i => (i as any).discount > 0);
-  const iCols = [
-    { lbl: 'Sr. No',               w: 35,  al: 'center' as const },
-    { lbl: 'Product Description',  w: hasItemDiscount ? 130 : 155, al: 'center' as const },
-    { lbl: 'Qty',                  w: 30,  al: 'center' as const },
-    { lbl: 'List Price Per Qty',   w: 85,  al: 'center' as const },
-    { lbl: 'Strategic Price Per Qty', w: 85, al: 'center' as const },
-    ...(hasItemDiscount ? [{ lbl: 'Disc %', w: 45, al: 'center' as const }] : []),
-    { lbl: 'Total',                w: hasItemDiscount ? 125 : 125, al: 'center' as const },
-  ];
-  let ix = M;
-  iCols.forEach(c => {
-    fillCell(ix, y, c.w, 18, LVIO);
-    drawBorder(ix, y, c.w, 18);
-    doc.fillColor(DARK).fontSize(7.5).font('Helvetica-Bold')
-       .text(c.lbl, ix + 2, y + 4, { width: c.w - 4, align: c.al, lineBreak: false });
-    ix += c.w;
-  });
-  y += 18;
-
-  data.items.forEach((item, idx) => {
-    const rh = 20;
-    ix = M;
-    const itemDisc = (item as any).discount ?? 0;
-    const vals = [
-      String(idx + 1),
-      item.description,
-      String(item.quantity),
-      fmtINR((item as any).listPrice || item.unitPrice),
-      fmtINR(item.unitPrice),
-      ...(hasItemDiscount ? [`${itemDisc > 0 ? itemDisc + '%' : '—'}`] : []),
-      fmtINR(item.total),
+    const rightStartY = Math.max(20, y - 54);
+    const infoRows: [string, string][] = [
+      ['Date',          fmtDate(new Date())],
+      ['Quotation No.', data.quotationNumber || ''],
+      ['Quote Validity',data.validUntil ? fmtDate(data.validUntil) : '15 Days'],
+      ['Prepared By',   data.salesPersonName || 'ZIEOS'],
+      ...(data.customFields || []).filter(f => f.label).map(f => [f.label, f.value] as [string, string]),
     ];
-    iCols.forEach((c, ci) => {
-      drawBorder(ix, y, c.w, rh);
-      doc.fillColor(DARK).fontSize(8).font('Helvetica')
-         .text(vals[ci], ix + 2, y + 6, { width: c.w - 4, align: c.al, lineBreak: false, ellipsis: true });
+    let ry = rightStartY;
+    infoRows.forEach(([lbl, val]) => {
+      fill(rightX, ry, rLW, rH, LVIO);
+      stroke(rightX, ry, rightW, rH);
+      doc.moveTo(rightX + rLW, ry).lineTo(rightX + rLW, ry + rH).stroke(BORDER);
+      doc.fillColor(DARK).fontSize(7.5).font('Helvetica-Bold').text(lbl, rightX + 3, ry + 4, { width: rLW - 6, lineBreak: false });
+      doc.fillColor(DARK).fontSize(7.5).font('Helvetica').text(val || '', rightX + rLW + 3, ry + 4, { width: rVW - 6, lineBreak: false });
+      ry += rH;
+    });
+    y = Math.max(y, ry) + 6;
+
+    // ── §3 Subject line ───────────────────────────────────────────────────────
+    doc.moveTo(M, y).lineTo(W - M, y).stroke(BORDER);
+    y += 6;
+    doc.fillColor(DARK).fontSize(8.5).font('Helvetica-Bold').text(`Sub:  Proposal for ${data.oemName || 'Software'}`, M + 6, y);
+    doc.fillColor(DARK).fontSize(8.5).font('Helvetica-Bold')
+       .text(data.sellerGST ? `GST No.: ${data.sellerGST}` : 'GST No.: 36AAKFT2721M1ZV', 298, y, { width: 261, align: 'right' });
+    y += 14;
+    doc.fillColor(DARK).fontSize(8).font('Helvetica').text(`Kind Attn.: ${data.contactName || ''}`, M + 6, y);
+    y += 14;
+    doc.moveTo(M, y).lineTo(W - M, y).stroke(BORDER);
+
+    // ── §4 Sales person table — 4 equal cols, integers ────────────────────────
+    // 535 / 4 = 133 rem 3 → cols: 134, 133, 134, 134 = 535
+    const sp = [134, 133, 134, 134];
+    const spH = ['Sales Person', 'Contact Number', 'Email ID', 'Delivery'];
+    const spV = [
+      data.salesPersonName || 'ZIEOS',
+      data.salesPersonPhone || data.sellerPhone || '',
+      data.salesPersonEmail || data.sellerEmail || '',
+      data.deliveryWeeks || '2 Weeks',
+    ];
+    let sx = M;
+    spH.forEach((h, i) => {
+      fill(sx, y, sp[i], 18, LVIO); stroke(sx, y, sp[i], 18);
+      doc.fillColor(DARK).fontSize(8).font('Helvetica-Bold').text(h, sx + 4, y + 5, { width: sp[i] - 8, align: 'center', lineBreak: false });
+      sx += sp[i];
+    });
+    y += 18; sx = M;
+    spV.forEach((v, i) => {
+      stroke(sx, y, sp[i], 18);
+      doc.fillColor(i === 2 ? VIOLET : DARK).fontSize(8).font('Helvetica').text(v, sx + 4, y + 5, { width: sp[i] - 8, align: 'center', lineBreak: false });
+      sx += sp[i];
+    });
+    y += 18;
+
+    // ── §5 Items table ────────────────────────────────────────────────────────
+    // Without discount: 35+175+30+80+80+135=535 ✓
+    // With discount:    35+130+30+80+80+45+135=535 ✓
+    const hasDisc = data.items.some(i => (i as any).discount > 0);
+    const iCols = hasDisc
+      ? [{ l:'Sr. No',w:35,a:'center'},{l:'Product Description',w:130,a:'left'},{l:'Qty',w:30,a:'center'},
+         {l:'List Price',w:80,a:'right'},{l:'Strategic Price',w:80,a:'right'},{l:'Disc %',w:45,a:'center'},{l:'Total',w:135,a:'right'}]
+      : [{ l:'Sr. No',w:35,a:'center'},{l:'Product Description',w:175,a:'left'},{l:'Qty',w:30,a:'center'},
+         {l:'List Price',w:80,a:'right'},{l:'Strategic Price',w:80,a:'right'},{l:'Total',w:135,a:'right'}];
+    let ix = M;
+    iCols.forEach(c => {
+      fill(ix, y, c.w, 18, LVIO); stroke(ix, y, c.w, 18);
+      doc.fillColor(DARK).fontSize(7.5).font('Helvetica-Bold').text(c.l, ix + 2, y + 4, { width: c.w - 4, align: c.a as any, lineBreak: false });
       ix += c.w;
     });
-    y += rh;
-  });
-  y += 4;
+    y += 18;
+    data.items.forEach((item, idx) => {
+      ix = M;
+      const disc = N((item as any).discount);
+      const vals = [String(idx+1), item.description, String(item.quantity),
+        fmtINR((item as any).listPrice || item.unitPrice), fmtINR(item.unitPrice),
+        ...(hasDisc ? [disc > 0 ? disc + '%' : '—'] : []),
+        fmtINR(item.total)];
+      iCols.forEach((c, ci) => {
+        stroke(ix, y, c.w, 20);
+        doc.fillColor(DARK).fontSize(8).font('Helvetica').text(vals[ci] || '', ix + 2, y + 6, { width: c.w - 4, align: c.a as any, lineBreak: false, ellipsis: true });
+        ix += c.w;
+      });
+      y += 20;
+    });
+    y += 4;
 
-  // ── 6. PRICING SUMMARY (right-aligned) ────────────────────────────────────
-  const sumW = 220, sumLW = 100, sumVW = 120, sumH = 18;
-  const sumX = W - M - sumW;
-  const pricingRows = [
-    { lbl: 'Base Price',  val: fmtINR(data.subtotal), bold: false, bg: '#fff', color: DARK },
-    ...(data.discountApplicable && (data.discountAmount ?? 0) > 0
-      ? [{ lbl: data.discountType === 'percent' ? `Discount (${data.discountValue ?? 0}%)` : 'Discount (Flat)', val: `- ${fmtINR(data.discountAmount ?? 0)}`, bold: false, bg: '#fff8f8', color: '#dc2626' }]
-      : []),
-    ...(data.gstApplicable && data.taxAmount > 0
-      ? [{ lbl: `GST @ ${data.taxRate}%`, val: fmtINR(data.taxAmount), bold: false, bg: '#fff', color: DARK }]
-      : []),
-    { lbl: 'Final Price', val: fmtINR(data.total),    bold: true,  bg: LVIO, color: DARK },
-  ];
-  pricingRows.forEach(r => {
-    fillCell(sumX, y, sumW, sumH, r.bg);
-    drawBorder(sumX, y, sumW, sumH);
-    doc.moveTo(sumX + sumLW, y).lineTo(sumX + sumLW, y + sumH).stroke(BORDER);
-    doc.fillColor(r.color ?? DARK).fontSize(8).font(r.bold ? 'Helvetica-Bold' : 'Helvetica')
-       .text(r.lbl, sumX + 4, y + 5, { width: sumLW - 8, align: 'right', lineBreak: false });
-    doc.fillColor(r.color ?? DARK).fontSize(8).font(r.bold ? 'Helvetica-Bold' : 'Helvetica')
-       .text(r.val, sumX + sumLW + 4, y + 5, { width: sumVW - 8, align: 'right', lineBreak: false });
-    y += sumH;
-  });
-  y += 8;
+    // ── §6 Pricing summary — right-aligned ────────────────────────────────────
+    // sumW=220, sumLW=100, sumVW=120, sumX=345 (595-30-220=345)
+    const sumW = 220, sumLW = 100, sumVW = 120, sumH = 18, sumX = 345;
+    const pRows = [
+      { l: 'Base Price',  v: fmtINR(data.subtotal), bold: false, bg: '#ffffff', col: DARK },
+      ...(data.discountApplicable && data.discountAmount > 0
+        ? [{ l: data.discountType === 'percent' ? `Discount (${data.discountValue}%)` : 'Discount (Flat)',
+             v: `- ${fmtINR(data.discountAmount)}`, bold: false, bg: '#fff8f8', col: '#dc2626' }] : []),
+      ...(data.gstApplicable && data.taxAmount > 0
+        ? [{ l: `GST @ ${data.taxRate}%`, v: fmtINR(data.taxAmount), bold: false, bg: '#ffffff', col: DARK }] : []),
+      { l: 'Final Price', v: fmtINR(data.total), bold: true, bg: LVIO, col: DARK },
+    ];
+    pRows.forEach(r => {
+      fill(sumX, y, sumW, sumH, r.bg); stroke(sumX, y, sumW, sumH);
+      doc.moveTo(sumX + sumLW, y).lineTo(sumX + sumLW, y + sumH).stroke(BORDER);
+      doc.fillColor(r.col).fontSize(8).font(r.bold ? 'Helvetica-Bold' : 'Helvetica')
+         .text(r.l, sumX + 4, y + 5, { width: sumLW - 8, align: 'right', lineBreak: false });
+      doc.fillColor(r.col).fontSize(8).font(r.bold ? 'Helvetica-Bold' : 'Helvetica')
+         .text(r.v, sumX + sumLW + 4, y + 5, { width: sumVW - 8, align: 'right', lineBreak: false });
+      y += sumH;
+    });
+    y += 8;
 
-  // ── 7. TERMS + BANK DETAILS ───────────────────────────────────────────────
-  const termsW = inner / 2 - 5, bankW = inner / 2 - 5, bankX = M + inner / 2 + 5;
-  const termsText = [
-    'Order: License Form should be duly filled along with the Purchase Order',
-    'Taxes: Subject to change as per prevailing laws of the Country',
-    'Delivery: Within 2 weeks from the date of receipt of Purchase Order',
-    'Payment: 100% Advance',
-    'Delivery - Electronic Download',
-    'This offer may be subject to errors and changes.',
-  ];
-  const termsH = 14 * termsText.length + 12;
+    // ── §7 Terms + Bank — two equal columns ───────────────────────────────────
+    // INNER=535, termsW=263, gap=8, bankX2=M+263+8=301, bankW2=535-263-8=264
+    // 263+8+264=535 ✓  bankW2-80=184 ✓
+    const termsW = 263, bankX2 = 301, bankW2 = 264;
+    const termsLines = [
+      'Order: License Form should be duly filled along with the Purchase Order',
+      'Taxes: Subject to change as per prevailing laws of the Country',
+      'Delivery: Within 2 weeks from the date of receipt of Purchase Order',
+      'Payment: 100% Advance',
+      'Delivery: Electronic Download',
+      'This offer may be subject to errors and changes.',
+    ];
+    const termsH = 14 * termsLines.length + 12; // 96
+    stroke(M, y, termsW, termsH);
+    doc.fillColor(DARK).fontSize(8).font('Helvetica-Bold').text('General Terms and Conditions', M + 4, y + 5);
+    termsLines.forEach((t, i) => {
+      doc.fillColor(DARK).fontSize(7).font('Helvetica').text(t, M + 4, y + 16 + i * 11, { width: termsW - 8, lineBreak: false, ellipsis: true });
+    });
+    stroke(bankX2, y, bankW2, termsH);
+    doc.fillColor(DARK).fontSize(8).font('Helvetica-Bold').text('Bank Details', bankX2 + 4, y + 5);
+    [['Bank', data.bankName || 'ICICI Bank Ltd.'],
+     ['Account No.', data.bankAccount || '279905500216'],
+     ['IFSC Code',   data.bankIFSC    || 'ICIC0002799'],
+     ['Branch',      data.bankBranch  || 'Bachupally']].forEach(([l, v], i) => {
+      doc.fillColor(DARK).fontSize(7.5).font('Helvetica-Bold').text(l, bankX2 + 4, y + 18 + i * 14, { width: 70, lineBreak: false });
+      doc.fillColor(DARK).fontSize(7.5).font('Helvetica').text(v, bankX2 + 76, y + 18 + i * 14, { width: bankW2 - 80, lineBreak: false });
+    });
+    y += termsH + 10;
 
-  // Terms box
-  drawBorder(M, y, termsW, termsH);
-  doc.fillColor(DARK).fontSize(8).font('Helvetica-Bold').text('General Terms and Conditions', M + 4, y + 5);
-  termsText.forEach((t, i) => {
-    doc.fillColor(DARK).fontSize(7).font('Helvetica').text(t, M + 4, y + 16 + i * 11, { width: termsW - 8, lineBreak: false, ellipsis: true });
-  });
+    // ── §8 Signature — two equal boxes ────────────────────────────────────────
+    // sigW=263, gap=4, sig2X=M+263+4=297, sig2W=INNER-263-4=268, total=263+4+268=535 ✓
+    const sigH = 70, sigW = 263, sig2X = 297, sig2W = 268; // 30+263+4=297, 535-263-4=268
+    stroke(M, y, sigW, sigH);
+    stroke(sig2X, y, sig2W, sigH);
+    doc.fillColor(GRAY).fontSize(8).font('Helvetica').text('Authorised Signatory', M + 6, y + sigH - 16, { width: sigW - 12 });
+    doc.fillColor(DARK).fontSize(9).font('Helvetica-Bold').text((data.sellerCompany || 'TELLED MARKETING') + ',', sig2X + 4, y + 8, { width: sig2W - 8, align: 'center' });
+    doc.fillColor(GRAY).fontSize(7.5).font('Helvetica').text(data.sellerAddress || 'Hyderabad, Telangana', sig2X + 4, y + 22, { width: sig2W - 8, align: 'center' });
 
-  // Bank details box
-  drawBorder(bankX, y, bankW, termsH);
-  doc.fillColor(DARK).fontSize(8).font('Helvetica-Bold').text('Bank Details', bankX + 4, y + 5);
-  const bankRows = [
-    ['Bank', 'ICICI Bank Ltd.'],
-    ['Account No.', '279905500216'],
-    ['IFSC Code', 'ICIC0002799'],
-    ['Branch', 'Bachupally'],
-  ];
-  bankRows.forEach(([lbl, val], i) => {
-    doc.fillColor(DARK).fontSize(7.5).font('Helvetica-Bold').text(lbl, bankX + 4, y + 18 + i * 14, { width: 70, lineBreak: false });
-    doc.fillColor(DARK).fontSize(7.5).font('Helvetica').text(val, bankX + 76, y + 18 + i * 14, { width: bankW - 80, lineBreak: false });
-  });
-  y += termsH + 10;
-
-  // ── 8. SIGNATURE + COMPANY ADDRESS ────────────────────────────────────────
-  const sigH = 70;
-  drawBorder(M, y, inner / 2 - 5, sigH);
-  drawBorder(W - M - inner / 2 + 5, y, inner / 2 - 5, sigH);
-  doc.fillColor(GRAY).fontSize(8).font('Helvetica')
-     .text('Authorised Signatory', M + 6, y + sigH - 16, { width: inner / 2 - 14 });
-  doc.fillColor(DARK).fontSize(9).font('Helvetica-Bold')
-     .text('TELLED MARKETING,', W - M - inner / 2 + 10, y + 8, { width: inner / 2 - 18, align: 'center' });
-  doc.fillColor(GRAY).fontSize(7.5).font('Helvetica')
-     .text('RR Enclave, 3rd Floor, Plot No 231 Part 232,\nNear HI RISE PVR Meadows, Kranti Nagar Colony,\nMallampet, Hyderabad, Telangana, 500090',
-           W - M - inner / 2 + 10, y + 22, { width: inner / 2 - 18, align: 'center' });
-
-  doc.end();
-  stream.on('finish', () => { logger.info(`Quotation PDF: ${filePath}`); resolve(fileName); });
-  stream.on('error', reject);
+    doc.end();
+  } catch (e: any) {
+    logger.error('Quotation PDF error: %s', String(e));
+    safeReject(new Error(String(e)));
+    return;
+  }
+  stream.on('finish', () => { logger.info(`Quotation PDF: ${filePath}`); safeResolve(fileName); });
 });
 
 export const generatePayslipPDF = (data: {
@@ -531,7 +524,7 @@ export const generateInvoicePDF = (data: {
   const LIGHT_PURPLE = '#f3f0fa';
   const DARK = '#1a1a2e';
   const GREY = '#6b7280';
-  const fmt = (n: number) => `\u20b9${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmt = (n: number) => `\u20b9${(Number(n) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const fmtDate = (d: Date | string) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
   // ── Header band ──────────────────────────────────────────────────────────

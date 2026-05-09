@@ -1,6 +1,7 @@
 import { useLogoStore } from '@/store/logoStore';
 
-export const DEFAULT_LOGO = '/zaltix-logo.png';
+// Use import.meta.env.BASE_URL so it works under any base path (e.g. /zieos/)
+export const DEFAULT_LOGO = `${import.meta.env.BASE_URL}zaltix-logo.png`;
 
 export const settingsApi = {
   getLogo: async (): Promise<string | null> => {

@@ -5,7 +5,7 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, sanitizeQuery } from '../utils/helpers';
 import { sendDRFEmail, sendDRFExtensionEmail, UserSmtpConfig } from '../services/email.service';
-import { decryptText } from '../utils/crypto';
+import { getUserSmtp, getUserSmtpWithFallback } from '../utils/getUserSmtp';
 import logger from '../utils/logger';
 import { notifyUser, notifyRole } from '../utils/notify';
 
@@ -21,7 +21,7 @@ export const getLeads = async (req: AuthRequest, res: Response): Promise<void> =
   try {
     const { page, limit, skip } = getPaginationParams(req);
     const { stage, status, search, assignedTo } = req.query;
-    const filter: Record<string, unknown> = { isArchived: false };
+    const filter: Record<string, unknown> = { organizationId: req.user!.organizationId, isArchived: false };
     if (stage) filter.stage = stage;
     if (status) filter.status = status;
     if (assignedTo) filter.assignedTo = assignedTo;
@@ -41,7 +41,7 @@ export const getLeads = async (req: AuthRequest, res: Response): Promise<void> =
 
 export const getLeadById = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const lead = await Lead.findById(req.params.id).populate('assignedTo', 'name email');
+    const lead = await Lead.findOne({ _id: req.params.id, organizationId: req.user!.organizationId }).populate('assignedTo', 'name email');
     if (!lead || lead.isArchived) { sendError(res, 'Lead not found', 404); return; }
     const oemAttempts = await OEMApprovalAttempt.find({ leadId: lead._id })
       .populate('createdBy', 'name')
@@ -60,6 +60,7 @@ export const createLead = async (req: AuthRequest, res: Response): Promise<void>
     if (!data.status) data.status = 'New';
     if (!data.stage)  data.stage  = 'New';
     if (!data.salesStatus) data.salesStatus = 'Uninitiated';
+    data.organizationId = req.user!.organizationId;
     // Strip empty optional enum fields to avoid validation errors
     if (!data.source) delete data.source;
     if (!data.oemName) delete data.oemName;
@@ -168,7 +169,8 @@ export const sendDRFExtension = async (req: AuthRequest, res: Response): Promise
   try {
     const { drfNumber, companyName, oemName, expiryDate, ownerName } = req.body;
     if (!drfNumber || !companyName) { sendError(res, 'drfNumber and companyName are required', 400); return; }
-    await sendDRFExtensionEmail({ drfNumber, companyName, oemName: oemName || '', expiryDate: expiryDate || '', ownerName: ownerName || '' });
+    const senderSmtp = await getUserSmtpWithFallback(req.user!.id);
+    await sendDRFExtensionEmail({ drfNumber, companyName, oemName: oemName || '', expiryDate: expiryDate || '', ownerName: ownerName || '' }, senderSmtp);
     logger.info(`DRF extension email sent for ${drfNumber} (${companyName})`);
     sendSuccess(res, null, 'Extension email sent');
   } catch (err) {
@@ -179,9 +181,6 @@ export const sendDRFExtension = async (req: AuthRequest, res: Response): Promise
 
 export const sendDRF = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const User = (await import('../models/User')).default;
-    const senderUser = await User.findById(req.user!.id)
-      .select('name email smtpHost smtpPort smtpUser smtpPass smtpSecure');
 
     const lead = await Lead.findById(req.params.id).populate('assignedTo', 'name email');
     if (!lead) { sendError(res, 'Lead not found', 404); return; }
@@ -204,6 +203,7 @@ export const sendDRF = async (req: AuthRequest, res: Response): Promise<void> =>
     if (!oemEmail) { sendError(res, 'OEM email is required', 400); return; }
 
     await new OEMApprovalAttempt({
+      organizationId: req.user!.organizationId,
       leadId: lead._id, attemptNumber, status: 'Pending',
       sentDate: new Date(), expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       createdBy: req.user!.id,
@@ -211,19 +211,12 @@ export const sendDRF = async (req: AuthRequest, res: Response): Promise<void> =>
 
     await Lead.findByIdAndUpdate(lead._id, { drfNumber, drfEmailSent: true, drfEmailSentAt: new Date() });
 
-    let senderSmtp: UserSmtpConfig | undefined;
-    if (senderUser?.smtpHost && senderUser?.smtpUser && senderUser?.smtpPass) {
-      try {
-        senderSmtp = {
-          smtpHost: senderUser.smtpHost,
-          smtpPort: senderUser.smtpPort || 465,
-          smtpUser: senderUser.smtpUser,
-          smtpPass: decryptText(senderUser.smtpPass),
-          smtpSecure: senderUser.smtpSecure,
-          fromEmail: senderUser.email,
-          fromName: senderUser.name,
-        };
-      } catch { /* decryption failed — fall back to system SMTP */ }
+    let senderSmtp;
+    try {
+      senderSmtp = await getUserSmtp(req.user!.id, true);
+    } catch (smtpErr: any) {
+      sendError(res, smtpErr.message || 'Your personal email is not configured. Please set up your email in settings before sending a DRF.', 400);
+      return;
     }
 
     try {
@@ -232,8 +225,8 @@ export const sendDRF = async (req: AuthRequest, res: Response): Promise<void> =>
         companyName: accountName || lead.companyName,
         contactName: contactPerson || lead.contactPersonName || lead.contactName || '',
         oemName: interestedModules || lead.oemName || '',
-        salesName: partnerSalesRep || senderUser?.name || assignedUser?.name || 'Telled Sales',
-        salesEmail: senderUser?.email || assignedUser?.email || '',
+        salesName: partnerSalesRep || senderSmtp?.fromName || assignedUser?.name || 'Telled Sales',
+        salesEmail: senderSmtp?.fromEmail || assignedUser?.email || '',
         address, website, annualTurnover,
         designation, contactNo: contactNo || lead.phone,
         email: email || lead.email,

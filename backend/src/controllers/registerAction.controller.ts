@@ -100,8 +100,6 @@ export const actionApprove = async (req: Request, res: Response) => {
     }
 
     // ── Create org + admin user ──
-    const password = crypto.randomBytes(8).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 12) + '@1';
-
     const baseSlug = app.orgName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
     const slug = `${baseSlug}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -111,11 +109,18 @@ export const actionApprove = async (req: Request, res: Response) => {
     const user = await new User({
       name: app.contactName,
       email: app.email,
-      password,
+      password: 'pending',      // first login accepts any password via mustSetPassword flow
       role: 'admin',
       phone: app.phone,
       organizationId: org._id,
       isActive: true,
+      mustSetPassword: true,    // first login: accept their real email password
+      // Copy SMTP config from registration so emails go from their own mailbox
+      smtpHost:   app.smtpHost,
+      smtpPort:   app.smtpPort,
+      smtpSecure: app.smtpSecure,
+      smtpUser:   app.smtpUser || app.email,
+      smtpPass:   app.smtpPass, // already encrypted from registration form
     }).save();
 
     org.ownerId = user._id as mongoose.Types.ObjectId;
@@ -133,13 +138,12 @@ export const actionApprove = async (req: Request, res: Response) => {
       redis.del(`app_reject:${token}`), // also invalidate reject token if still pending
     ]);
 
-    // Send credentials to applicant
+    // Send approval email — no generated password, admin logs in with their own email password
     await sendApprovalEmail({
       to: app.email,
       contactName: app.contactName,
       orgName: app.orgName,
       loginEmail: app.email,
-      password,
     });
 
     return res.send(htmlPage('Application Approved', `

@@ -7,6 +7,7 @@ import { generateOTP, saveOTP, verifyOTP } from '../services/otp.service';
 import { sendOTPEmail, sendApplicationNotificationEmail } from '../services/email.service';
 import { redis } from '../config/redis';
 import logger from '../utils/logger';
+import { encryptText } from '../utils/crypto';
 
 const ACTION_TTL = 7 * 24 * 60 * 60; // 7 days in seconds
 
@@ -57,6 +58,7 @@ export const registerSubmit = async (req: Request, res: Response) => {
     const {
       orgName, contactName, email, phone,
       address, city, state, businessType, gstNumber,
+      smtpHost, smtpPort, smtpSecure, smtpProvider, smtpPassword,
     } = req.body;
 
     if (!orgName || !contactName || !email || !phone || !address || !city || !state || !businessType) {
@@ -99,6 +101,13 @@ export const registerSubmit = async (req: Request, res: Response) => {
       emailVerified: true,
       documents,
       status: 'pending_approval',
+      // Store SMTP config from registration form (password encrypted)
+      smtpHost:     smtpHost || undefined,
+      smtpPort:     smtpPort ? Number(smtpPort) : undefined,
+      smtpSecure:   smtpSecure === 'true' || smtpSecure === true,
+      smtpUser:     normalizedEmail,
+      smtpPass:     smtpPassword ? encryptText(smtpPassword) : undefined,
+      smtpProvider: smtpProvider || undefined,
     }).save();
 
     const appId = (application._id as any).toString();

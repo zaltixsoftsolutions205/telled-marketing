@@ -19,7 +19,7 @@ router.use(authenticate);
 
 async function getUserSmtp(userId: string): Promise<UserSmtpConfig | undefined> {
   try {
-    const user = await User.findById(userId).select('name email smtpHost smtpPort smtpUser smtpPass smtpSecure');
+    const user = await User.findById(userId).select('name email smtpHost smtpPort smtpUser smtpPass smtpSecure useGraphApi');
     if (!user?.smtpHost || !user?.smtpUser || !user?.smtpPass) return undefined;
     return {
       smtpHost: user.smtpHost,
@@ -29,6 +29,7 @@ async function getUserSmtp(userId: string): Promise<UserSmtpConfig | undefined> 
       smtpSecure: user.smtpSecure,
       fromEmail: user.email,
       fromName: user.name,
+      useGraphApi: user.useGraphApi,
     };
   } catch { return undefined; }
 }
@@ -89,7 +90,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 });
 
 // ── Create ───────────────────────────────────────────────────────────────────
-router.post('/', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
+router.post('/', authorize('admin', 'manager', 'sales', 'engineer', 'hr', 'finance'), async (req: AuthRequest, res: Response) => {
   try {
     const { leadId, items, amount, product, vendorName, vendorEmail, receivedDate, notes, paymentTerms } = req.body;
     if (!leadId || !receivedDate) { sendError(res, 'leadId and receivedDate are required', 400); return; }
@@ -140,7 +141,7 @@ router.post('/', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (r
 });
 
 // ── Update ───────────────────────────────────────────────────────────────────
-router.put('/:id', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
+router.put('/:id', authorize('admin', 'manager', 'sales', 'engineer', 'hr', 'finance'), async (req: AuthRequest, res: Response) => {
   try {
     const { items, amount, product, vendorName, vendorEmail, notes, receivedDate, paymentTerms } = req.body;
     const upd: any = {};
@@ -175,7 +176,7 @@ router.put('/:id', authorize('admin', 'sales', 'engineer', 'hr_finance'), async 
 });
 
 // ── Step 2: Forward PO to ARK (OEM) ─────────────────────────────────────────
-router.post('/:id/step2-forward-to-ark', authorize('admin', 'sales', 'hr_finance'), upload.single('attachment'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/step2-forward-to-ark', authorize('admin', 'manager', 'sales', 'hr', 'finance'), upload.single('attachment'), async (req: AuthRequest, res: Response) => {
   try {
     const po = await PurchaseOrder.findById(req.params.id).populate('leadId', 'companyName contactPersonName email');
     if (!po) { sendError(res, 'PO not found', 404); return; }
@@ -226,7 +227,7 @@ router.post('/:id/step2-forward-to-ark', authorize('admin', 'sales', 'hr_finance
 });
 
 // ── Step 3: ARK Response — Mark Price Clearance Received ────────────────────
-router.post('/:id/step3-price-clearance', authorize('admin', 'sales', 'hr_finance'), upload.array('attachments', 10), async (req: AuthRequest, res: Response) => {
+router.post('/:id/step3-price-clearance', authorize('admin', 'manager', 'sales', 'hr', 'finance'), upload.array('attachments', 10), async (req: AuthRequest, res: Response) => {
   try {
     const docNames: string[] = [];
     if ((req as any).files?.length) {
@@ -252,7 +253,7 @@ router.post('/:id/step3-price-clearance', authorize('admin', 'sales', 'hr_financ
 });
 
 // ── Step 4: Send Documents to Customer ──────────────────────────────────────
-router.post('/:id/step4-send-docs-to-customer', authorize('admin', 'sales', 'hr_finance'), upload.array('attachments', 10), async (req: AuthRequest, res: Response) => {
+router.post('/:id/step4-send-docs-to-customer', authorize('admin', 'manager', 'sales', 'hr', 'finance'), upload.array('attachments', 10), async (req: AuthRequest, res: Response) => {
   try {
     const po = await PurchaseOrder.findById(req.params.id).populate('leadId', 'companyName contactPersonName email');
     if (!po) { sendError(res, 'PO not found', 404); return; }
@@ -306,7 +307,7 @@ router.post('/:id/step4-send-docs-to-customer', authorize('admin', 'sales', 'hr_
 });
 
 // ── Step 5: Invoice to ARK ───────────────────────────────────────────────────
-router.post('/:id/step5-invoice-to-ark', authorize('admin', 'sales', 'hr_finance'), upload.single('attachment'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/step5-invoice-to-ark', authorize('admin', 'manager', 'sales', 'hr', 'finance'), upload.single('attachment'), async (req: AuthRequest, res: Response) => {
   try {
     const po = await PurchaseOrder.findById(req.params.id).populate('leadId', 'companyName');
     if (!po) { sendError(res, 'PO not found', 404); return; }
@@ -378,7 +379,7 @@ router.post('/:id/step5-invoice-to-ark', authorize('admin', 'sales', 'hr_finance
 });
 
 // ── Step 6: Send Documents to ARK ───────────────────────────────────────────
-router.post('/:id/step6-send-docs-to-ark', authorize('admin', 'sales', 'hr_finance'), upload.array('attachments', 10), async (req: AuthRequest, res: Response) => {
+router.post('/:id/step6-send-docs-to-ark', authorize('admin', 'manager', 'sales', 'hr', 'finance'), upload.array('attachments', 10), async (req: AuthRequest, res: Response) => {
   try {
     const po = await PurchaseOrder.findById(req.params.id).populate('leadId', 'companyName');
     if (!po) { sendError(res, 'PO not found', 404); return; }
@@ -427,7 +428,7 @@ router.post('/:id/step6-send-docs-to-ark', authorize('admin', 'sales', 'hr_finan
 });
 
 // ── Step 7: License Generation — Mark Mail Received ─────────────────────────
-router.post('/:id/step7-license-received', authorize('admin', 'sales', 'hr_finance'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/step7-license-received', authorize('admin', 'manager', 'sales', 'hr', 'finance'), async (req: AuthRequest, res: Response) => {
   try {
     await PurchaseOrder.findByIdAndUpdate(req.params.id, {
       step7LicenseMailReceived: true,
@@ -442,7 +443,7 @@ router.post('/:id/step7-license-received', authorize('admin', 'sales', 'hr_finan
 });
 
 // ── Step 8: Final Invoice — Generate/Send + Convert to Account ───────────────
-router.post('/:id/step8-final-invoice', authorize('admin', 'sales', 'hr_finance'), upload.single('attachment'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/step8-final-invoice', authorize('admin', 'manager', 'sales', 'hr', 'finance'), upload.single('attachment'), async (req: AuthRequest, res: Response) => {
   try {
     const po = await PurchaseOrder.findById(req.params.id).populate('leadId', 'companyName contactPersonName email phone address city state');
     if (!po) { sendError(res, 'PO not found', 404); return; }
@@ -544,7 +545,7 @@ router.post('/:id/step8-final-invoice', authorize('admin', 'sales', 'hr_finance'
 });
 
 // ── Convert to Account (standalone) ─────────────────────────────────────────
-router.post('/:id/convert', authorize('admin', 'sales', 'engineer', 'hr_finance'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/convert', authorize('admin', 'manager', 'sales', 'engineer', 'hr', 'finance'), async (req: AuthRequest, res: Response) => {
   try {
     const po = await PurchaseOrder.findById(req.params.id).populate('leadId');
     if (!po) { sendError(res, 'Purchase order not found', 404); return; }
@@ -578,7 +579,7 @@ router.post('/:id/convert', authorize('admin', 'sales', 'engineer', 'hr_finance'
 });
 
 // ── Record vendor payment ────────────────────────────────────────────────────
-router.post('/:id/payment', authorize('admin', 'hr_finance', 'sales'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/payment', authorize('admin', 'manager', 'hr', 'finance', 'sales'), async (req: AuthRequest, res: Response) => {
   try {
     const { paidAmount, paidDate, paymentMode, paymentReference, paymentNotes } = req.body;
     if (!paidAmount || !paidDate || !paymentMode) {
@@ -598,7 +599,7 @@ router.post('/:id/payment', authorize('admin', 'hr_finance', 'sales'), async (re
 });
 
 // ── Get vendor payments ──────────────────────────────────────────────────────
-router.get('/vendor-payments', authorize('admin', 'hr_finance'), async (req: AuthRequest, res: Response) => {
+router.get('/vendor-payments', authorize('admin', 'manager', 'hr', 'finance'), async (req: AuthRequest, res: Response) => {
   try {
     const { page, limit, skip } = getPaginationParams(req);
     const filter: Record<string, unknown> = { isArchived: false, paymentStatus: 'Paid' };
@@ -625,7 +626,7 @@ router.delete('/all', authorize('admin'), async (req: AuthRequest, res: Response
 });
 
 // ── Delete PO ────────────────────────────────────────────────────────────────
-router.delete('/:id', authorize('admin', 'sales'), async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('admin', 'manager', 'sales'), async (req: AuthRequest, res: Response) => {
   try {
     const po = await PurchaseOrder.findByIdAndDelete(req.params.id);
     if (!po) { sendError(res, 'Purchase order not found', 404); return; }
@@ -637,21 +638,21 @@ router.delete('/:id', authorize('admin', 'sales'), async (req: AuthRequest, res:
 });
 
 // ── Legacy step endpoints (backward compat) ──────────────────────────────────
-router.post('/:id/send-to-vendor', authorize('admin', 'sales', 'engineer', 'hr_finance'), upload.single('attachment'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/send-to-vendor', authorize('admin', 'manager', 'sales', 'engineer', 'hr', 'finance'), upload.single('attachment'), async (req: AuthRequest, res: Response) => {
   try {
     await PurchaseOrder.findByIdAndUpdate(req.params.id, { vendorEmailSent: true, vendorEmailSentAt: new Date() });
     sendSuccess(res, null, 'Vendor notified');
   } catch { sendError(res, 'Failed', 500); }
 });
 
-router.post('/:id/send-customer-invoice', authorize('admin', 'sales', 'hr_finance'), upload.single('attachment'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/send-customer-invoice', authorize('admin', 'manager', 'sales', 'hr', 'finance'), upload.single('attachment'), async (req: AuthRequest, res: Response) => {
   try {
     await PurchaseOrder.findByIdAndUpdate(req.params.id, { customerInvoiceSent: true, customerInvoiceSentAt: new Date() });
     sendSuccess(res, null, 'Customer invoice marked sent');
   } catch { sendError(res, 'Failed', 500); }
 });
 
-router.post('/:id/forward-to-ark', authorize('admin', 'sales', 'hr_finance'), upload.single('attachment'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/forward-to-ark', authorize('admin', 'manager', 'sales', 'hr', 'finance'), upload.single('attachment'), async (req: AuthRequest, res: Response) => {
   try {
     const arkEmail: string = req.body.arkEmail || '';
     await PurchaseOrder.findByIdAndUpdate(req.params.id, {
@@ -664,7 +665,7 @@ router.post('/:id/forward-to-ark', authorize('admin', 'sales', 'hr_finance'), up
   } catch { sendError(res, 'Failed', 500); }
 });
 
-router.post('/:id/mark-price-clearance', authorize('admin', 'sales', 'hr_finance'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/mark-price-clearance', authorize('admin', 'manager', 'sales', 'hr', 'finance'), async (req: AuthRequest, res: Response) => {
   try {
     await PurchaseOrder.findByIdAndUpdate(req.params.id, {
       priceClearanceReceived: true, priceClearanceReceivedAt: new Date(),
@@ -674,7 +675,7 @@ router.post('/:id/mark-price-clearance', authorize('admin', 'sales', 'hr_finance
   } catch { sendError(res, 'Failed', 500); }
 });
 
-router.post('/:id/send-po-to-ark', authorize('admin', 'sales', 'hr_finance'), upload.single('attachment'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/send-po-to-ark', authorize('admin', 'manager', 'sales', 'hr', 'finance'), upload.single('attachment'), async (req: AuthRequest, res: Response) => {
   try {
     await PurchaseOrder.findByIdAndUpdate(req.params.id, {
       poSentToArk: true, poSentToArkAt: new Date(),
@@ -684,7 +685,7 @@ router.post('/:id/send-po-to-ark', authorize('admin', 'sales', 'hr_finance'), up
   } catch { sendError(res, 'Failed', 500); }
 });
 
-router.post('/:id/mark-ark-invoice', authorize('admin', 'sales', 'hr_finance'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/mark-ark-invoice', authorize('admin', 'manager', 'sales', 'hr', 'finance'), async (req: AuthRequest, res: Response) => {
   try {
     await PurchaseOrder.findByIdAndUpdate(req.params.id, {
       arkInvoiceReceived: true, arkInvoiceReceivedAt: new Date(),

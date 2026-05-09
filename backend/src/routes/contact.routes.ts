@@ -13,7 +13,7 @@ import { authorize } from '../middleware/role.middleware';
 const router = Router();
 router.use(authenticate);
 
-const allRoles = authorize('admin', 'sales', 'engineer', 'hr_finance');
+const allRoles = authorize('admin', 'manager', 'sales', 'engineer', 'hr', 'finance');
 
 // All roles can view contacts
 router.get('/', allRoles, getContacts);

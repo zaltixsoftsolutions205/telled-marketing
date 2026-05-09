@@ -60,7 +60,7 @@
 // function canEdit(contact: Contact, user: User | null): boolean {
 //   if (!user) return false;
 //   if (user.role === 'admin') return true;
-//   if (user.role === 'hr_finance') return contact.contactType === 'TELLED';
+//   if (user.role === 'hr' || user.role === 'finance') return contact.contactType === 'TELLED';
 //   const createdById = typeof contact.createdBy === 'string'
 //     ? contact.createdBy
 //     : (contact.createdBy as User)._id;
@@ -145,7 +145,7 @@
 
 //   const openCreate = () => {
 //     const defaultType: ContactType =
-//       currentUser?.role === 'hr_finance' ? 'TELLED' :
+//       currentUser?.role === 'hr' || currentUser?.role === 'finance' ? 'TELLED' :
 //       activeTab !== 'ALL' ? activeTab : 'TELLED';
 //     setForm({ ...EMPTY_FORM, contactType: defaultType });
 //     setEditTarget(null);
@@ -196,7 +196,7 @@
 //       setFormError('Name and email are required.');
 //       return;
 //     }
-//     if (currentUser?.role === 'hr_finance' && form.contactType !== 'TELLED') {
+//     if (currentUser?.role === 'hr' || currentUser?.role === 'finance' && form.contactType !== 'TELLED') {
 //       setFormError('HR & Finance can only create Telled internal contacts.');
 //       return;
 //     }
@@ -257,7 +257,7 @@
 //   const totalPages = Math.ceil(total / 15);
 
 //   const allowedTypes: ContactType[] =
-//     currentUser?.role === 'hr_finance'
+//     currentUser?.role === 'hr' || currentUser?.role === 'finance'
 //       ? ['TELLED']
 //       : ['TELLED', 'ARK', 'CUSTOMER'];
 
@@ -525,7 +525,7 @@
 //               value={form.contactType}
 //               onChange={handleFormChange}
 //               className="input-field"
-//               disabled={currentUser?.role === 'hr_finance'}
+//               disabled={currentUser?.role === 'hr' || currentUser?.role === 'finance'}
 //             >
 //               {allowedTypes.map((t) => (
 //                 <option key={t} value={t}>
@@ -747,7 +747,7 @@ const EMPTY_FORM = {
 function canEdit(contact: Contact, user: User | null): boolean {
   if (!user) return false;
   if (user.role === 'admin') return true;
-  if (user.role === 'hr_finance') return contact.contactType === 'TELLED';
+  if (user.role === 'hr' || user.role === 'finance') return contact.contactType === 'TELLED';
   const createdById = typeof contact.createdBy === 'string'
     ? contact.createdBy
     : (contact.createdBy as User)._id;
@@ -832,7 +832,7 @@ export default function ContactsPage() {
 
   const openCreate = () => {
     const defaultType: ContactType =
-      currentUser?.role === 'hr_finance' ? 'TELLED' :
+      currentUser?.role === 'hr' || currentUser?.role === 'finance' ? 'TELLED' :
       activeTab !== 'ALL' ? activeTab : 'TELLED';
     setForm({ ...EMPTY_FORM, contactType: defaultType });
     setEditTarget(null);
@@ -883,7 +883,7 @@ export default function ContactsPage() {
       setFormError('Name and email are required.');
       return;
     }
-    if (currentUser?.role === 'hr_finance' && form.contactType !== 'TELLED') {
+    if (currentUser?.role === 'hr' || currentUser?.role === 'finance' && form.contactType !== 'TELLED') {
       setFormError('HR & Finance can only create Telled internal contacts.');
       return;
     }
@@ -944,7 +944,7 @@ export default function ContactsPage() {
   const totalPages = Math.ceil(total / 15);
 
   const allowedTypes: ContactType[] =
-    currentUser?.role === 'hr_finance'
+    currentUser?.role === 'hr' || currentUser?.role === 'finance'
       ? ['TELLED']
       : ['TELLED', 'ARK', 'ANSYS', 'CUSTOMER'];
 
@@ -1212,7 +1212,7 @@ export default function ContactsPage() {
               value={form.contactType}
               onChange={handleFormChange}
               className="input-field"
-              disabled={currentUser?.role === 'hr_finance'}
+              disabled={currentUser?.role === 'hr' || currentUser?.role === 'finance'}
             >
               {allowedTypes.map((t) => (
                 <option key={t} value={t}>

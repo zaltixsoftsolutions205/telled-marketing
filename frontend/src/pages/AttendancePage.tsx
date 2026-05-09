@@ -584,7 +584,7 @@ function FaceScanModal({ isOpen, onClose, onVerified, registeredFaces, action }:
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function AttendancePage() {
   const user = useAuthStore((s) => s.user);
-  const isHR = user?.role === 'admin' || user?.role === 'hr_finance';
+  const isHR = user?.role === 'admin' || user?.role === 'hr';
   const isEmployee = !isHR;
 
   const now = new Date();

@@ -10,7 +10,7 @@ import type { Payment, Invoice, User, PurchaseOrder, Lead } from '@/types';
 
 export default function PaymentsPage() {
   const { user } = useAuthStore();
-  const canSeeVendor = user?.role === 'admin' || user?.role === 'hr_finance';
+  const canSeeVendor = user?.role === 'admin' || user?.role === 'hr' || user?.role === 'finance';
   const [tab, setTab] = useState<'incoming' | 'vendor'>('incoming');
   const [payments, setPayments] = useState<Payment[]>([]);
   const [vendorPos, setVendorPos] = useState<PurchaseOrder[]>([]);

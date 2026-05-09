@@ -8,7 +8,7 @@ import { notifyUser, notifyRole } from '../utils/notify';
 export const getInstallations = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { page, limit, skip } = getPaginationParams(req);
-    const filter: Record<string, unknown> = { isArchived: false };
+    const filter: Record<string, unknown> = { organizationId: req.user!.organizationId, isArchived: false };
     if (req.query.status) filter.status = req.query.status;
     if (req.query.accountId) filter.accountId = req.query.accountId;
     if (req.user!.role === 'engineer') filter.engineerId = req.user!.id;
@@ -26,6 +26,7 @@ export const createInstallation = async (req: AuthRequest, res: Response): Promi
     // Normalize: frontend sends "engineer", backend uses "engineerId"
     if (data.engineer && !data.engineerId) { data.engineerId = data.engineer; delete data.engineer; }
     data.assignedBy = req.user!.id;
+    data.organizationId = req.user!.organizationId;
     const inst = await new Installation(data).save();
     if (data.engineerId) {
       notifyUser(data.engineerId, {
@@ -45,7 +46,7 @@ export const updateInstallation = async (req: AuthRequest, res: Response): Promi
     const inst = await Installation.findByIdAndUpdate(req.params.id, update, { new: true }).populate('accountId', 'companyName').populate('engineerId', 'name');
     if (!inst) { sendError(res, 'Installation not found', 404); return; }
     if (req.body.status === 'Completed') {
-      notifyRole(['admin', 'hr_finance'], {
+      notifyRole(['admin', 'hr'], {
         title: 'Installation Completed',
         message: `Installation for "${(inst.accountId as any)?.companyName || 'an account'}" has been marked as completed`,
         type: 'general',

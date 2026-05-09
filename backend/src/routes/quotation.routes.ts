@@ -25,25 +25,29 @@ const router = Router();
 router.use(authenticate);
 
 // Stats endpoint
-router.get('/stats', authorize('admin', 'sales', 'hr_finance'), getQuotationStats);
+router.get('/stats', authorize('admin', 'manager', 'sales', 'hr', 'finance'), getQuotationStats);
 
 // PDF parse endpoint (must be before /:id)
-router.post('/parse-pdf', authorize('admin', 'sales'), upload.single('file'), parsePdfQuotation);
+router.post('/parse-pdf', authorize('admin', 'manager', 'sales'), upload.single('file'), parsePdfQuotation);
 
 // CRUD endpoints
-router.get('/', authorize('admin', 'sales', 'engineer', 'hr_finance'), getQuotations);
-router.get('/:id', authorize('admin', 'sales', 'engineer'), getQuotationById);
-router.post('/', authorize('admin', 'sales'), upload.single('quotationFile'), createQuotation);
-router.put('/:id', authorize('admin', 'sales'), updateQuotation);
+router.get('/', authorize('admin', 'manager', 'sales', 'engineer', 'hr', 'finance'), getQuotations);
+router.get('/:id', authorize('admin', 'manager', 'sales', 'engineer'), getQuotationById);
+router.post('/', authorize('admin', 'manager', 'sales'), upload.fields([
+  { name: 'quotationFile', maxCount: 1 },
+  { name: 'sellerLogo',    maxCount: 1 },
+  { name: 'secondLogo',    maxCount: 1 },
+]), createQuotation);
+router.put('/:id', authorize('admin', 'manager', 'sales'), updateQuotation);
 
 // Action endpoints
-router.patch('/:id/accept', authorize('admin', 'sales'), acceptQuotation);
-router.patch('/:id/reject', authorize('admin', 'sales'), rejectQuotation);
-router.patch('/:id/finalize', authorize('admin', 'sales'), finalizeQuotation);
-router.post('/:id/send-email', authorize('admin', 'sales'), sendQuotationEmail);
-router.post('/:id/send-to-vendor', authorize('admin', 'sales'), sendToVendor);
-router.post('/:id/generate-pdf', authorize('admin', 'sales'), generateQuotationPDF);
-router.patch('/:id/archive', authorize('admin'), archiveQuotation);
-router.delete('/:id', authorize('admin', 'sales'), deleteQuotation);
+router.patch('/:id/accept', authorize('admin', 'manager', 'sales'), acceptQuotation);
+router.patch('/:id/reject', authorize('admin', 'manager', 'sales'), rejectQuotation);
+router.patch('/:id/finalize', authorize('admin', 'manager', 'sales'), finalizeQuotation);
+router.post('/:id/send-email', authorize('admin', 'manager', 'sales'), sendQuotationEmail);
+router.post('/:id/send-to-vendor', authorize('admin', 'manager', 'sales'), sendToVendor);
+router.post('/:id/generate-pdf', authorize('admin', 'manager', 'sales'), generateQuotationPDF);
+router.patch('/:id/archive', authorize('admin', 'manager'), archiveQuotation);
+router.delete('/:id', authorize('admin', 'manager', 'sales'), deleteQuotation);
 
 export default router;

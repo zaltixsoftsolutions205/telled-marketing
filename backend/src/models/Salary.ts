@@ -23,6 +23,7 @@ export interface ISalary extends Document {
 
 const SalarySchema = new Schema<ISalary>(
   {
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
     employeeId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     month: { type: Number, required: true, min: 1, max: 12 },
     year: { type: Number, required: true },

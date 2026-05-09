@@ -29,6 +29,7 @@ export interface IEngineerVisit extends Document {
 
 const VisitSchema = new Schema<IEngineerVisit>(
   {
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
     engineerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     accountId: { type: Schema.Types.ObjectId, ref: 'Account', required: true },
     visitDate: { type: Date, required: true },

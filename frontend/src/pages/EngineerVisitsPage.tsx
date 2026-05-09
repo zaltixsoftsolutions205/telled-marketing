@@ -41,13 +41,13 @@ type Tab = 'scheduled' | 'active' | 'completed' | 'all' | 'hr';
 export default function EngineerVisitsPage() {
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === 'admin';
-  const isHR    = user?.role === 'admin' || user?.role === 'hr_finance';
+  const isHR    = user?.role === 'admin' || user?.role === 'hr';
   const isEngineer = user?.role === 'engineer' || isAdmin;
 
   const [visits, setVisits] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [tab, setTab] = useState<Tab>(user?.role === 'hr_finance' ? 'hr' : 'all');
+  const [tab, setTab] = useState<Tab>(user?.role === 'hr' ? 'hr' : 'all');
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [loading, setLoading] = useState(true);

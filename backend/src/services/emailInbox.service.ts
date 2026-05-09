@@ -2,6 +2,7 @@ import { ImapFlow } from 'imapflow';
 import OEMApprovalAttempt from '../models/OEMApprovalAttempt';
 import Lead from '../models/Lead';
 import logger from '../utils/logger';
+import axios from 'axios';
 
 export interface ImapCredentials {
   host: string;
@@ -186,8 +187,13 @@ function extractExpiryDate(text: string): Date | null {
  * Subject format: "... Requesting for the approval of DRF - {companyName}"
  */
 function extractCompanyFromSubject(subject: string): string | null {
-  const m = subject.match(/Requesting for the approval of DRF\s*[-–]\s*(.+)/i);
-  return m ? m[1].trim() : null;
+  // Format 1: "Requesting for the approval of DRF - Company Name"
+  const m1 = subject.match(/Requesting for the approval of DRF\s*[-–]\s*(.+)/i);
+  if (m1) return m1[1].trim();
+  // Format 2: "OEM Approval Request — DRF-xxx — Company Name (Attempt #n)"
+  const m2 = subject.match(/OEM Approval Request\s*[-–]+\s*DRF-[\d-]+\s*[-–]+\s*(.+?)\s*\(Attempt/i);
+  if (m2) return m2[1].trim();
+  return null;
 }
 
 /** Convert raw email buffer to plain text */
@@ -245,19 +251,153 @@ async function findAttemptByCompanyName(companyName: string, emailDate?: Date): 
   return null;
 }
 
+/**
+ * Read DRF approval/rejection replies from a personal Outlook/Hotmail inbox
+ * using Microsoft Graph API (delegated OAuth — user's own refresh token).
+ */
+export async function syncEmailsForDRFViaGraph(
+  encryptedRefreshToken: string,
+  userEmail: string,
+): Promise<EmailSyncResult> {
+  const result: EmailSyncResult = {
+    scanned: 0, processed: 0,
+    approved: [], rejected: [], skipped: [], errors: [],
+  };
+
+  try {
+    const { decryptText, encryptText } = await import('../utils/crypto');
+    const refreshToken = decryptText(encryptedRefreshToken);
+
+    const tokenRes = await axios.post(
+      'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+      new URLSearchParams({
+        grant_type:    'refresh_token',
+        client_id:     process.env.GRAPH_CLIENT_ID     || '',
+        client_secret: process.env.GRAPH_CLIENT_SECRET || '',
+        refresh_token: refreshToken,
+        scope:         'offline_access Mail.Read Mail.ReadWrite',
+      }).toString(),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+
+    const accessToken = tokenRes.data.access_token;
+
+    if (tokenRes.data.refresh_token && tokenRes.data.refresh_token !== refreshToken) {
+      const User = (await import('../models/User')).default;
+      await User.updateOne(
+        { msRefreshToken: encryptedRefreshToken },
+        { msRefreshToken: encryptText(tokenRes.data.refresh_token) }
+      );
+    }
+
+    // Fetch all pending DRFs first — scan inbox only for those companies
+    const pendingAttempts = await OEMApprovalAttempt.find({ status: 'Pending' })
+      .populate('leadId', 'companyName oemEmail email _id')
+      .lean();
+
+    if (pendingAttempts.length === 0) return result;
+
+    // Fetch last 90 days of inbox — both read and unread
+    const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    let url = `https://graph.microsoft.com/v1.0/me/mailFolders/Inbox/messages?$filter=receivedDateTime ge ${since}&$select=id,subject,bodyPreview,body,receivedDateTime,from&$top=100&$orderby=receivedDateTime desc`;
+
+    const allMessages: any[] = [];
+    while (url) {
+      const res2 = await axios.get(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      allMessages.push(...(res2.data.value || []));
+      url = res2.data['@odata.nextLink'] || '';
+    }
+    result.scanned = allMessages.length;
+
+    // Filter to only DRF-related emails
+    const drfMessages = allMessages.filter(m =>
+      /requesting for the approval of DRF|OEM Approval Request/i.test(m.subject || '')
+    );
+
+    for (const attempt of pendingAttempts) {
+      const lead = attempt.leadId as any;
+      if (!lead) continue;
+      const companyName = lead.companyName;
+
+      // Find the most recent reply for this company after sentDate
+      const sentDate = new Date(attempt.sentDate);
+      const replies = drfMessages.filter(m => {
+        const subj = m.subject || '';
+        const msgDate = new Date(m.receivedDateTime);
+        return msgDate > sentDate &&
+          (subj.toLowerCase().includes(companyName.toLowerCase()) ||
+           extractCompanyFromSubject(subj)?.toLowerCase() === companyName.toLowerCase());
+      }).sort((a, b) => new Date(b.receivedDateTime).getTime() - new Date(a.receivedDateTime).getTime());
+
+      if (replies.length === 0) {
+        result.skipped.push(`${companyName} — no reply found`);
+        continue;
+      }
+
+      const msg = replies[0];
+      const bodyText = msg.body?.content || msg.bodyPreview || '';
+      const emailDate = new Date(msg.receivedDateTime);
+      const fresh = stripQuotedContent(bodyText.replace(/<[^>]+>/g, ' '));
+      const fullText = fresh + ' ' + bodyText.replace(/<[^>]+>/g, ' ');
+
+      let decision = detectDecision(fresh);
+      if (!decision) decision = detectDecision(fullText);
+
+      if (!decision) {
+        result.skipped.push(`${companyName} — reply found but no approval/rejection keyword`);
+        continue;
+      }
+
+      if (decision === 'Approved') {
+        const expiryDate = extractExpiryDate(fresh) || extractExpiryDate(fullText);
+        await OEMApprovalAttempt.findByIdAndUpdate(attempt._id, {
+          status: 'Approved',
+          approvedDate: emailDate,
+          approvedBy: msg.from?.emailAddress?.address || 'OEM',
+          ...(expiryDate ? { expiryDate } : {}),
+        });
+        await Lead.findByIdAndUpdate(lead._id, { stage: 'OEM Approved' });
+        result.approved.push(companyName);
+        logger.info(`DRF Graph auto-approved: "${companyName}" from ${msg.from?.emailAddress?.address}`);
+      } else {
+        await OEMApprovalAttempt.findByIdAndUpdate(attempt._id, {
+          status: 'Rejected',
+          rejectedDate: emailDate,
+          rejectionReason: `Auto (${msg.from?.emailAddress?.address}): ${fresh.slice(0, 300)}`,
+        });
+        await Lead.findByIdAndUpdate(lead._id, { stage: 'OEM Rejected' });
+        result.rejected.push(companyName);
+        logger.info(`DRF Graph auto-rejected: "${companyName}" from ${msg.from?.emailAddress?.address}`);
+      }
+      result.processed++;
+    }
+
+    if (result.approved.length || result.rejected.length) {
+      logger.info(`DRF Graph sync (${userEmail}): ${result.approved.length} approved, ${result.rejected.length} rejected`);
+    }
+
+  } catch (e: any) {
+    const msg = e?.response?.data?.error?.message || e?.response?.data || e?.message || String(e);
+    result.errors.push(`Graph DRF sync failed: ${JSON.stringify(msg)}`);
+    logger.warn(`DRF Graph sync error for ${userEmail}: ${JSON.stringify(msg)}`);
+  }
+
+  return result;
+}
+
 export async function syncEmailsForDRF(creds?: ImapCredentials): Promise<EmailSyncResult> {
   const result: EmailSyncResult = {
     scanned: 0, processed: 0,
     approved: [], rejected: [], skipped: [], errors: [],
   };
 
-  const imapUser = creds?.user || process.env.SUPPORT_EMAIL_USER || process.env.SMTP_USER || '';
-  const imapPass = creds?.pass || process.env.SUPPORT_EMAIL_PASS || process.env.SMTP_PASS || '';
-  const imapHost = creds?.host || process.env.SUPPORT_EMAIL_HOST || 'imap.hostinger.com';
-  const imapPort = creds?.port || Number(process.env.SUPPORT_EMAIL_PORT || 993);
+  const imapUser = creds?.user || '';
+  const imapPass = creds?.pass || '';
+  const imapHost = creds?.host || '';
+  const imapPort = creds?.port || 993;
 
-  if (!imapUser || !imapPass) {
-    result.errors.push('IMAP credentials not configured. Please set up your email in Email Configuration.');
+  if (!imapUser || !imapPass || !imapHost) {
+    result.errors.push('IMAP credentials not configured.');
     return result;
   }
 
@@ -268,13 +408,18 @@ export async function syncEmailsForDRF(creds?: ImapCredentials): Promise<EmailSy
     auth: { user: imapUser, pass: imapPass },
     logger: false,
     tls: { rejectUnauthorized: false },
-    connectionTimeout: 20000,
-    greetingTimeout: 15000,
-    socketTimeout: 30000,
+    connectionTimeout: 30000,
+    greetingTimeout: 20000,
+    socketTimeout: 60000,
   });
 
   client.on('error', (err: Error) => {
-    logger.error('ImapFlow socket error:', err.message);
+    const msg = (err?.message || String(err)).toLowerCase();
+    if (msg.includes('socket') || msg.includes('econnreset') || msg.includes('closed') || msg.includes('epipe') || msg.includes('timeout') || msg.includes('etimedout') || msg.includes('connection not available') || !msg) {
+      // Harmless idle connection drop — server closes inactive IMAP connections
+    } else {
+      logger.warn(`ImapFlow DRF sync error: ${err?.message || String(err)}`);
+    }
   });
 
   try {
@@ -284,133 +429,146 @@ export async function syncEmailsForDRF(creds?: ImapCredentials): Promise<EmailSy
     return result;
   }
 
+  // Load all pending DRFs first — we search inbox FOR these, not the other way around
+  const pendingAttempts = await OEMApprovalAttempt.find({ status: 'Pending' })
+    .populate('leadId', 'companyName oemEmail email _id')
+    .lean();
+
+  if (pendingAttempts.length === 0) {
+    try { await client.logout(); } catch { /* ignore */ }
+    return result;
+  }
+
   const lock = await client.getMailboxLock('INBOX');
   try {
+    // Fetch last 90 days of headers
     const since = new Date();
-    since.setDate(since.getDate() - 60);
-    const uids: number[] = await (client as any).search({ since }, { uid: true });
+    since.setDate(since.getDate() - 90);
+    const allUids: number[] = await (client as any).search({ since }, { uid: true });
 
-    if (!uids || uids.length === 0) {
-      result.skipped.push('No emails found in last 60 days');
+    if (!allUids || allUids.length === 0) {
       lock.release();
       await client.logout();
       return result;
     }
 
-    logger.info(`Email sync: found ${uids.length} messages`);
-
-    for await (const msg of client.fetch(uids, { envelope: true, source: true, internalDate: true }, { uid: true })) {
-      result.scanned++;
-      try {
-        const subject   = msg.envelope?.subject || '';
-        const fromAddr  = (msg.envelope?.from?.[0]?.address || 'unknown').toLowerCase();
-        const emailDate = msg.envelope?.date ? new Date(msg.envelope.date) : (msg.internalDate ? new Date(msg.internalDate) : undefined);
-
-        // Skip bounces and system emails
-        const isSystemSender = /mailer-daemon|postmaster|no-reply|noreply|bounce|delivery|mail-daemon|notification@|alerts@/i.test(fromAddr);
-        const isBounceSubject = /undelivered|delivery.*(failed|failure|status|notification)|bounce|mail delivery|returned mail|failure notice/i.test(subject);
-        if (isSystemSender || isBounceSubject) continue;
-
-        // Check for extension reply first
-        const isExtensionReply = /DRF Extension Request/i.test(subject);
-        if (isExtensionReply) {
-          const extCompany = subject.match(/DRF Extension Request\s*[-–]\s*DRF-[\d]+-[\d]+\s*[-–]\s*(.+)/i)?.[1]?.trim();
-          if (extCompany) {
-            const rawText = rawEmailToText(msg.source || Buffer.alloc(0));
-            const freshText = stripQuotedContent(rawText);
-            const newExpiry = extractExpiryDate(freshText) || extractExpiryDate(rawText);
-            if (newExpiry) {
-              const leads = await Lead.find({ companyName: { $regex: extCompany.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' }, isArchived: false }).select('_id');
-              for (const lead of leads) {
-                const attempt = await OEMApprovalAttempt.findOne({ leadId: lead._id, status: 'Approved' }).sort({ sentDate: -1 });
-                if (attempt) {
-                  attempt.expiryDate = newExpiry;
-                  await attempt.save();
-                  result.approved.push(`${extCompany} (extended to ${newExpiry.toLocaleDateString('en-IN')})`);
-                  result.processed++;
-                  logger.info(`DRF expiry extended for "${extCompany}" to ${newExpiry.toISOString()} via email from ${fromAddr}`);
-                }
-              }
-            } else {
-              result.skipped.push(`"${subject.slice(0, 60)}" — extension reply but no new date found`);
-            }
-          }
-          continue;
-        }
-
-        // Only process replies to OUR DRF emails
-        const isDRFReply = /requesting for the approval of DRF/i.test(subject);
-        if (!isDRFReply) continue;
-
-        const rawText  = rawEmailToText(msg.source || Buffer.alloc(0));
-        const freshText = subject + ' ' + stripQuotedContent(rawText);
-        let decision  = detectDecision(freshText);
-
-        // If fresh text has no decision, scan full body (catches decisions in nested/forwarded replies)
-        if (!decision) {
-          // Strip the original DRF subject line to avoid false positives from quoted original
-          const fullTextWithoutSubject = rawText.replace(/Requesting for the approval of DRF[^.!\n]*/gi, '');
-          decision = detectDecision(fullTextWithoutSubject);
-        }
-
-        if (!decision) {
-          result.skipped.push(`"${subject.slice(0, 60)}" — no approval/rejection keyword found`);
-          continue;
-        }
-
-        // Extract company name from subject
-        const companyName = extractCompanyFromSubject(subject);
-        if (!companyName) {
-          result.skipped.push(`"${subject.slice(0, 60)}" — could not extract company name`);
-          continue;
-        }
-
-        const found = await findAttemptByCompanyName(companyName, emailDate);
-        if (!found) {
-          result.skipped.push(`"${companyName}" — no DRF found in DB`);
-          continue;
-        }
-        if (found.alreadyProcessed) {
-          if (found.status !== 'stale') {
-            result.skipped.push(`"${companyName}" — DRF already ${found.status}`);
-          }
-          continue;
-        }
-
-        const { attempt, lead } = found;
-        const label = `${lead.companyName} (${attempt.drfNumber || attempt._id})`;
-
-        if (decision === 'Approved') {
-          const expiryDate = extractExpiryDate(freshText);
-          attempt.status       = 'Approved';
-          attempt.approvedDate = new Date();
-          attempt.approvedBy   = `Auto (${fromAddr})`;
-          if (expiryDate) attempt.expiryDate = expiryDate;
-          await attempt.save();
-          await Lead.findByIdAndUpdate(lead._id, { stage: 'OEM Approved' });
-          result.approved.push(label);
-          logger.info(`DRF auto-approved for "${lead.companyName}" via email from ${fromAddr}${expiryDate ? `, valid until: ${expiryDate.toISOString()}` : ''}`);
-        } else {
-          attempt.status          = 'Rejected';
-          attempt.rejectedDate    = new Date();
-          attempt.rejectionReason = `Auto (${fromAddr}): "${subject.slice(0, 120)}"`;
-          await attempt.save();
-          await Lead.findByIdAndUpdate(lead._id, { stage: 'OEM Rejected' });
-          result.rejected.push(label);
-          logger.info(`DRF auto-rejected for "${lead.companyName}" via email from ${fromAddr}`);
-        }
-        result.processed++;
-
-      } catch (msgErr) {
-        result.errors.push(`uid ${msg.uid}: ${(msgErr as Error).message}`);
+    // Phase 1: headers only — filter to DRF-related subjects
+    const relevantUids: number[] = [];
+    const uidSubjectMap = new Map<number, string>();
+    for await (const hdr of client.fetch(allUids, { envelope: true, internalDate: true }, { uid: true })) {
+      const subject = hdr.envelope?.subject || '';
+      if (/requesting for the approval of DRF|OEM Approval Request|DRF Extension Request/i.test(subject)) {
+        relevantUids.push(hdr.uid);
+        uidSubjectMap.set(hdr.uid, subject);
       }
     }
 
-  } catch (err) {
-    result.errors.push(`Sync error: ${(err as Error).message}`);
-    logger.error('DRF email sync error:', err);
+    logger.info(`Email sync: found ${allUids.length} messages, ${relevantUids.length} DRF-related`);
+    result.scanned = allUids.length;
+
+    if (relevantUids.length === 0) {
+      lock.release();
+      await client.logout();
+      return result;
+    }
+
+    // Phase 2: full source only for DRF-related emails
+    interface ParsedEmail { uid: number; subject: string; fromAddr: string; date: Date; rawText: string; }
+    const parsedEmails: ParsedEmail[] = [];
+    for await (const msg of client.fetch(relevantUids, { envelope: true, source: true, internalDate: true }, { uid: true })) {
+      const subject  = msg.envelope?.subject || '';
+      const fromAddr = (msg.envelope?.from?.[0]?.address || 'unknown').toLowerCase();
+      const date     = msg.envelope?.date ? new Date(msg.envelope.date) : (msg.internalDate ? new Date(msg.internalDate) : new Date());
+      const rawText  = rawEmailToText(msg.source || Buffer.alloc(0));
+      parsedEmails.push({ uid: msg.uid, subject, fromAddr, date, rawText });
+    }
+
+    // Phase 3: for each pending DRF, find the best matching reply
+    for (const attempt of pendingAttempts) {
+      const lead = attempt.leadId as any;
+      if (!lead) continue;
+      const companyName: string = lead.companyName;
+      const sentDate = new Date(attempt.sentDate);
+
+      // Skip system senders
+      const isSystem = (addr: string) => /mailer-daemon|postmaster|no-reply|noreply|bounce|delivery|mail-daemon/i.test(addr);
+      const isBounce = (subj: string) => /undelivered|delivery.*(failed|failure)|bounce|returned mail|failure notice/i.test(subj);
+
+      // Find replies for this company that arrived after the DRF was sent
+      const replies = parsedEmails.filter(e => {
+        if (isSystem(e.fromAddr) || isBounce(e.subject)) return false;
+        if (e.date <= sentDate) return false;
+        const extracted = extractCompanyFromSubject(e.subject);
+        return extracted?.toLowerCase() === companyName.toLowerCase() ||
+          e.subject.toLowerCase().includes(companyName.toLowerCase());
+      }).sort((a, b) => b.date.getTime() - a.date.getTime()); // newest first
+
+      if (replies.length === 0) {
+        result.skipped.push(`${companyName} — no reply found`);
+        continue;
+      }
+
+      // Handle extension replies
+      const extensionReply = replies.find(e => /DRF Extension Request/i.test(e.subject));
+      if (extensionReply) {
+        const freshText = stripQuotedContent(extensionReply.rawText);
+        const newExpiry = extractExpiryDate(freshText) || extractExpiryDate(extensionReply.rawText);
+        if (newExpiry) {
+          await OEMApprovalAttempt.findByIdAndUpdate(attempt._id, { expiryDate: newExpiry });
+          result.approved.push(`${companyName} (extended to ${newExpiry.toLocaleDateString('en-IN')})`);
+          result.processed++;
+          logger.info(`DRF expiry extended for "${companyName}" via email from ${extensionReply.fromAddr}`);
+        }
+        continue;
+      }
+
+      // Use most recent reply for approval/rejection decision
+      const reply = replies[0];
+      const freshText = stripQuotedContent(reply.rawText);
+      let decision = detectDecision(freshText);
+      if (!decision) decision = detectDecision(reply.rawText);
+
+      if (!decision) {
+        result.skipped.push(`${companyName} — reply found but no approval/rejection keyword`);
+        continue;
+      }
+
+      const label = `${companyName}`;
+      if (decision === 'Approved') {
+        const expiryDate = extractExpiryDate(freshText) || extractExpiryDate(reply.rawText);
+        await OEMApprovalAttempt.findByIdAndUpdate(attempt._id, {
+          status: 'Approved',
+          approvedDate: reply.date,
+          approvedBy: `Auto (${reply.fromAddr})`,
+          ...(expiryDate ? { expiryDate } : {}),
+        });
+        await Lead.findByIdAndUpdate(lead._id, { stage: 'OEM Approved' });
+        result.approved.push(label);
+        logger.info(`DRF auto-approved: "${companyName}" from ${reply.fromAddr}${expiryDate ? `, valid until ${expiryDate.toISOString()}` : ''}`);
+      } else {
+        await OEMApprovalAttempt.findByIdAndUpdate(attempt._id, {
+          status: 'Rejected',
+          rejectedDate: reply.date,
+          rejectionReason: `Auto (${reply.fromAddr}): ${freshText.slice(0, 300)}`,
+        });
+        await Lead.findByIdAndUpdate(lead._id, { stage: 'OEM Rejected' });
+        result.rejected.push(label);
+        logger.info(`DRF auto-rejected: "${companyName}" from ${reply.fromAddr}`);
+      }
+      result.processed++;
+    }
+
+  } catch (err: any) {
+    const msg = err?.message || String(err) || 'unknown error';
+    const isHarmless = /connection not available|socket|econnreset|closed|epipe|timeout|etimedout/i.test(msg);
+    if (isHarmless) {
+      logger.warn(`DRF IMAP connection dropped (harmless): ${msg}`);
+    } else {
+      result.errors.push(`Sync error: ${msg}`);
+      logger.warn(`DRF email sync error: ${msg}`);
+    }
   } finally {
-    lock.release();
+    try { lock.release(); } catch { /* already released */ }
   }
 
   try { await client.logout(); } catch { /* ignore */ }

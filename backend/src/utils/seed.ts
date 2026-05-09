@@ -11,7 +11,7 @@ const users = [
   { name: 'Sales Rep 2', email: 'sales2@telled.com', password: 'Sales@123', role: 'sales', baseSalary: 45000 },
   { name: 'Engineer 1', email: 'engineer1@telled.com', password: 'Eng@123', role: 'engineer', baseSalary: 55000 },
   { name: 'Engineer 2', email: 'engineer2@telled.com', password: 'Eng@123', role: 'engineer', baseSalary: 55000 },
-  { name: 'HR Manager', email: 'hr@telled.com', password: 'HR@123', role: 'hr_finance', baseSalary: 60000 },
+  { name: 'HR Manager', email: 'hr@telled.com', password: 'HR@123', role: 'finance', baseSalary: 60000 },
 ];
 
 const run = async () => {

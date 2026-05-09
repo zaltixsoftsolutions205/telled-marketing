@@ -76,7 +76,7 @@
 //     const { role } = req.user!;
 
 //     // HR can only create TELLED contacts
-//     if (role === 'hr_finance' && req.body.contactType !== 'TELLED') {
+//     if (role === 'hr' || role === 'finance' && req.body.contactType !== 'TELLED') {
 //       sendError(res, 'HR & Finance can only create Telled internal contacts', 403);
 //       return;
 //     }
@@ -112,7 +112,7 @@
 
 //     if (role === 'admin') {
 //       // Admin can edit all contacts
-//     } else if (role === 'hr_finance') {
+//     } else if (role === 'hr' || role === 'finance') {
 //       // HR can only edit TELLED contacts
 //       if (contact.contactType !== 'TELLED') {
 //         sendError(res, 'HR & Finance can only edit Telled internal contacts', 403);
@@ -154,7 +154,7 @@
 
 //     if (role === 'admin') {
 //       // Admin can delete all contacts
-//     } else if (role === 'hr_finance') {
+//     } else if (role === 'hr' || role === 'finance') {
 //       // HR can only delete TELLED contacts
 //       if (contact.contactType !== 'TELLED') {
 //         sendError(res, 'HR & Finance can only delete Telled internal contacts', 403);
@@ -257,7 +257,7 @@ export const createContact = async (req: AuthRequest, res: Response): Promise<vo
     const { role } = req.user!;
 
     // HR can only create TELLED contacts
-    if (role === 'hr_finance' && req.body.contactType !== 'TELLED') {
+    if (role === 'hr' || role === 'finance' && req.body.contactType !== 'TELLED') {
       sendError(res, 'HR & Finance can only create Telled internal contacts', 403);
       return;
     }
@@ -330,7 +330,7 @@ export const updateContact = async (req: AuthRequest, res: Response): Promise<vo
     // Permission checks
     if (role === 'admin') {
       // Admin can edit all contacts
-    } else if (role === 'hr_finance') {
+    } else if (role === 'hr' || role === 'finance') {
       // HR can only edit TELLED contacts
       if (contact.contactType !== 'TELLED') {
         sendError(res, 'HR & Finance can only edit Telled internal contacts', 403);
@@ -423,7 +423,7 @@ export const deleteContact = async (req: AuthRequest, res: Response): Promise<vo
 
     if (role === 'admin') {
       // Admin can delete all contacts
-    } else if (role === 'hr_finance') {
+    } else if (role === 'hr' || role === 'finance') {
       // HR can only delete TELLED contacts
       if (contact.contactType !== 'TELLED') {
         sendError(res, 'HR & Finance can only delete Telled internal contacts', 403);

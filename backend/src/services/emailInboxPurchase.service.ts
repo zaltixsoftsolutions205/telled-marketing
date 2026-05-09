@@ -438,10 +438,11 @@ export async function syncPurchaseOrderEmails(
   });
 
   client.on('error', (err: Error) => {
-    if (/socket|ECONNRESET|closed|EPIPE/i.test(err.message)) {
-      logger.warn('IMAP connection closed by server (harmless)');
+    const msg = err.message?.toLowerCase() || '';
+    if (msg.includes('socket') || msg.includes('econnreset') || msg.includes('closed') || msg.includes('epipe') || msg.includes('timeout') || msg.includes('etimedout')) {
+      // Harmless — IMAP server closes idle connections between sync intervals
     } else {
-      logger.error('ImapFlow PO sync error:', err.message);
+      logger.warn('ImapFlow PO sync error:', err.message);
     }
   });
 

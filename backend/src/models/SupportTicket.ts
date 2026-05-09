@@ -35,6 +35,7 @@ const NoteSchema = new Schema<IInternalNote>(
 
 const SupportTicketSchema = new Schema<ISupportTicket>(
   {
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
     accountId: { type: Schema.Types.ObjectId, ref: 'Account', required: true },
     ticketId: { type: String, required: true, unique: true },
     subject: { type: String, required: true },

@@ -99,7 +99,7 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<void>
     }).save();
     await leave.populate('employeeId', 'name email');
     const emp = leave.employeeId as any;
-    notifyRole(['admin', 'hr_finance'], {
+    notifyRole(['admin', 'hr'], {
       title: 'New Leave Request',
       message: `${emp?.name || 'An employee'} applied for ${type} leave (${days} day${Number(days) > 1 ? 's' : ''})`,
       type: 'leave',
@@ -114,7 +114,7 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<void>
 export const approveLeave = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const role = req.user!.role;
-    if (role !== 'admin' && role !== 'hr_finance') {
+    if (role !== 'admin' && role !== 'hr') {
       sendError(res, 'Not authorized', 403); return;
     }
     const leave = await Leave.findByIdAndUpdate(
@@ -139,7 +139,7 @@ export const approveLeave = async (req: AuthRequest, res: Response): Promise<voi
 export const rejectLeave = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const role = req.user!.role;
-    if (role !== 'admin' && role !== 'hr_finance') {
+    if (role !== 'admin' && role !== 'hr') {
       sendError(res, 'Not authorized', 403); return;
     }
     const { rejectionReason } = req.body;

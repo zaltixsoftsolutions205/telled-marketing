@@ -412,76 +412,87 @@ This offer may be subject to errors and changes.`;
 
     const B = '#000'; // border color
     const H = '#e8e8e8'; // header bg
-    const qDate = new Date(q.createdAt).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-    const td = (style='') => `border:1px solid ${B};padding:5px 8px;${style}`;
-    const th = (style='') => `border:1px solid ${B};padding:5px 8px;background:${H};font-weight:bold;${style}`;
+    const qDate = new Date(q.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
+    const td = (style='') => `border:1px solid ${B};padding:5px 10px;${style}`;
+    const th = (style='') => `border:1px solid ${B};padding:5px 10px;background:${H};font-weight:bold;${style}`;
 
     const container = document.createElement('div');
-    container.style.cssText = 'position:absolute;left:-9999px;top:0;width:820px;background:#fff;color:#000;font-family:Arial,sans-serif;font-size:11px;padding:16px;box-sizing:border-box;';
+    container.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;background:#fff;color:#000;font-family:Arial,sans-serif;font-size:11px;padding:0;box-sizing:border-box;';
     document.body.appendChild(container);
     container.innerHTML = `
       <style>
         *{box-sizing:border-box;margin:0;padding:0;}
         table{width:100%;border-collapse:collapse;}
-        td,th{font-family:Arial,sans-serif;font-size:11px;vertical-align:top;}
+        td,th{font-family:Arial,sans-serif;font-size:11px;}
       </style>
 
-      <!-- outer wrapper border -->
-      <div style="border:1.5px solid ${B};padding:0;">
+      <div style="border:1px solid ${B};">
 
-        <!-- ══ HEADER: Logo left | OEM right ══ -->
-        <table style="width:100%;border-collapse:collapse;border-bottom:1px solid ${B};">
+        <!-- HEADER: Telled logo left | OEM name right -->
+        <table style="border-bottom:1px solid ${B};">
           <tr>
-            <td style="padding:12px 16px;width:50%;vertical-align:middle;">
-              <img src="${resolvedLogo}" style="height:52px;object-fit:contain;" />
+            <td style="width:50%;padding:10px 14px;vertical-align:middle;">
+              <img src="${resolvedLogo}" style="height:48px;object-fit:contain;" />
             </td>
-            <td style="padding:12px 16px;width:50%;vertical-align:middle;text-align:right;border-left:1px solid ${B};">
-              ${lead?.oemName
-                ? `<div style="font-weight:bold;font-size:15px;color:#333;letter-spacing:1px;">${lead.oemName}</div>`
-                : ''
-              }
+            <td style="width:50%;padding:10px 14px;vertical-align:middle;text-align:center;border-left:1px solid ${B};">
+              ${lead?.oemName ? `<img src="${resolvedLogo}" style="display:none;"/><div style="font-size:16px;font-weight:bold;">${lead.oemName}</div><div style="font-size:9px;color:#555;margin-top:2px;">CERTIFIED CHANNEL PARTNER</div>` : ''}
             </td>
           </tr>
         </table>
 
-        <!-- ══ "To," line ══ -->
-        <div style="padding:6px 16px;border-bottom:1px solid ${B};font-size:11px;">To,</div>
+        <!-- "To," full width -->
+        <div style="padding:4px 14px;border-bottom:1px solid ${B};">To,</div>
 
-        <!-- ══ Address left | Details right ══ -->
-        <table style="width:100%;border-collapse:collapse;border-bottom:1px solid ${B};">
+        <!-- Address (centered) left | Date/QuotNo/CustomerID/Validity/PreparedBy right -->
+        <table style="border-bottom:1px solid ${B};">
           <tr>
-            <td style="width:50%;padding:10px 16px;vertical-align:middle;text-align:center;border-right:1px solid ${B};">
-              <div style="font-weight:bold;font-size:13px;">${lead?.companyName || '—'}</div>
-              ${lead?.address ? `<div style="color:#333;margin-top:3px;font-size:10px;">${lead.address}</div>` : ''}
-              ${(lead?.city || lead?.state) ? `<div style="color:#333;font-size:10px;">${[lead.city, lead.state].filter(Boolean).join(', ')}</div>` : ''}
+            <td style="width:50%;padding:10px 14px;vertical-align:middle;text-align:center;border-right:1px solid ${B};">
+              <div style="font-weight:bold;font-size:12px;">${lead?.companyName || '—'}</div>
+              ${lead?.address ? `<div style="font-size:10px;margin-top:3px;">${lead.address}</div>` : ''}
+              ${(lead?.city || lead?.state) ? `<div style="font-size:10px;">${[lead.city, lead.state].filter(Boolean).join(', ')}</div>` : ''}
             </td>
             <td style="width:50%;padding:0;vertical-align:top;">
-              <table style="width:100%;border-collapse:collapse;">
-                <tr><td style="${th('white-space:nowrap;')}">Date</td><td style="${td()}">${qDate}</td></tr>
-                <tr><td style="${th('white-space:nowrap;')}">Quotation No.</td><td style="${td()}">${q.quotationNumber}</td></tr>
-                <tr><td style="${th('white-space:nowrap;')}">Customer ID</td><td style="${td()}">${lead?._id?.slice(-6).toUpperCase() || ''}</td></tr>
-                <tr><td style="${th('white-space:nowrap;')}">Quote Validity</td><td style="${td()}">${q.validUntil ? formatDate(q.validUntil) : '15 Days'}</td></tr>
-                <tr><td style="${th('white-space:nowrap;')}">Prepared By</td><td style="${td()}">${createdBy?.name || '—'}</td></tr>
+              <table>
+                <tr>
+                  <td style="${th('width:40%;')}">Date</td>
+                  <td style="${td()}">${qDate}</td>
+                </tr>
+                <tr>
+                  <td style="${th()}">Quotation No.</td>
+                  <td style="${td()}">${q.quotationNumber}</td>
+                </tr>
+                <tr>
+                  <td style="${th()}">Customer ID</td>
+                  <td style="${td()}">${lead?._id?.slice(-6).toUpperCase() || ''}</td>
+                </tr>
+                <tr>
+                  <td style="${th()}">Quote Validity</td>
+                  <td style="${td()}">${q.validUntil ? formatDate(q.validUntil) : '15 Days'}</td>
+                </tr>
+                <tr>
+                  <td style="${th()}">Prepared By</td>
+                  <td style="${td()}">${createdBy?.name || '—'}</td>
+                </tr>
               </table>
             </td>
           </tr>
         </table>
 
-        <!-- ══ Sub / GST row ══ -->
-        <table style="width:100%;border-collapse:collapse;border-bottom:1px solid ${B};">
+        <!-- Sub/Attn left | Telled GST right -->
+        <table style="border-bottom:1px solid ${B};">
           <tr>
-            <td style="padding:5px 10px;width:60%;border-right:1px solid ${B};">
-              <strong>Sub: Proposal for ${lead?.oemName || 'Software'}</strong><br/>
-              ${lead?.contactPersonName || lead?.contactName ? `Kind Attn.: ${lead.contactPersonName || lead.contactName}` : ''}
+            <td style="width:55%;padding:5px 14px;vertical-align:top;">
+              <div><strong>Sub:&nbsp; Proposal for ${lead?.oemName || 'Software'}</strong></div>
+              ${lead?.contactPersonName || lead?.contactName ? `<div style="margin-top:2px;">Kind Attn.: ${lead.contactPersonName || lead.contactName}</div>` : ''}
             </td>
-            <td style="padding:5px 10px;">
+            <td style="padding:5px 14px;vertical-align:middle;">
               <strong>Telled GST No.: ${TELLED_INFO.gstNo}</strong>
             </td>
           </tr>
         </table>
 
-        <!-- ══ Sales Person ══ -->
-        <table style="width:100%;border-collapse:collapse;border-bottom:1px solid ${B};">
+        <!-- Sales Person -->
+        <table style="border-bottom:1px solid ${B};">
           <thead>
             <tr>
               <th style="${th('text-align:center;')}">Sales Person</th>
@@ -500,17 +511,17 @@ This offer may be subject to errors and changes.`;
           </tbody>
         </table>
 
-        <!-- ══ Items ══ -->
-        <table style="width:100%;border-collapse:collapse;border-bottom:1px solid ${B};">
+        <!-- Items -->
+        <table style="border-bottom:1px solid ${B};">
           <thead>
             <tr>
-              <th style="${th('text-align:center;width:5%;')}">Sr. No</th>
+              <th style="${th('text-align:center;width:6%;')}">Sr. No</th>
               <th style="${th('text-align:center;')}">Product Description</th>
               <th style="${th('text-align:center;width:5%;')}">Qty</th>
-              <th style="${th('text-align:center;width:15%;')}">List Price Per Qty</th>
+              <th style="${th('text-align:center;width:16%;')}">List Price Per Qty</th>
               <th style="${th('text-align:center;width:16%;')}">Strategic Price Per Qty</th>
-              ${hasItemDiscount ? `<th style="${th('text-align:center;width:8%;')}">Disc %</th>` : ''}
-              <th style="${th('text-align:center;width:14%;')}">Total</th>
+              ${hasItemDiscount ? `<th style="${th('text-align:center;width:7%;')}">Disc %</th>` : ''}
+              <th style="${th('text-align:center;width:13%;')}">Total</th>
             </tr>
           </thead>
           <tbody>
@@ -527,54 +538,74 @@ This offer may be subject to errors and changes.`;
           </tbody>
         </table>
 
-        <!-- ══ Totals (right-aligned block) ══ -->
-        <table style="width:100%;border-collapse:collapse;border-bottom:1px solid ${B};">
+        <!-- Totals: left empty | right stacked -->
+        <table style="border-bottom:1px solid ${B};">
           <tr>
-            <td style="width:55%;border-right:1px solid ${B};padding:0;" rowspan="${1 + (q.discountApplicable && (q.discountAmount ?? 0) > 0 ? 1 : 0) + (q.gstApplicable && q.taxAmount > 0 ? 1 : 0) + 1}"></td>
-            <td style="${th('white-space:nowrap;text-align:right;width:20%;')}">Base Price</td>
-            <td style="${td('text-align:right;width:25%;')}">${formatCurrency(q.subtotal)}</td>
+            <td style="width:52%;border-right:1px solid ${B};" rowspan="4"></td>
+            <td style="${th('text-align:right;width:24%;')}">Base Price</td>
+            <td style="${td('text-align:right;width:24%;')}">${formatCurrency(q.subtotal)}</td>
           </tr>
-          ${discountRow}
-          ${gstRow}
+          ${q.discountApplicable && (q.discountAmount ?? 0) > 0 ? `
           <tr>
-            <td style="${th('white-space:nowrap;text-align:right;')}">Final Price</td>
+            <td style="${th('text-align:right;color:#dc2626;')}">${q.discountType === 'percent' ? `Discount (${q.discountValue}%)` : 'Discount (Flat)'}</td>
+            <td style="${td('text-align:right;color:#dc2626;')}">- ${formatCurrency(q.discountAmount ?? 0)}</td>
+          </tr>` : ''}
+          ${q.gstApplicable && q.taxAmount > 0 ? `
+          <tr>
+            <td style="${th('text-align:right;')}">GST @ ${q.taxRate}%</td>
+            <td style="${td('text-align:right;')}">${formatCurrency(q.taxAmount)}</td>
+          </tr>` : ''}
+          <tr>
+            <td style="${th('text-align:right;')}">Final Price</td>
             <td style="${td('text-align:right;font-weight:bold;')}">${formatCurrency(finalPrice)}</td>
           </tr>
         </table>
 
-        <!-- ══ Terms + Bank ══ -->
-        <table style="width:100%;border-collapse:collapse;border-bottom:1px solid ${B};">
+        <!-- Terms left | Bank Details right -->
+        <table style="border-bottom:1px solid ${B};">
           <tr>
-            <td style="width:55%;padding:8px 10px;vertical-align:top;border-right:1px solid ${B};">
-              <div style="font-weight:bold;margin-bottom:5px;">General Terms and Conditions</div>
+            <td style="width:55%;padding:8px 14px;vertical-align:top;border-right:1px solid ${B};">
+              <div style="font-weight:bold;margin-bottom:4px;">General Terms and Conditions</div>
               <div style="font-size:10px;line-height:1.7;">${q.terms ? q.terms.replace(/\n/g, '<br/>') : defaultTerms}</div>
             </td>
-            <td style="width:45%;padding:8px 10px;vertical-align:top;">
-              <div style="font-weight:bold;margin-bottom:5px;">Bank Details</div>
-              <table style="width:100%;border-collapse:collapse;">
-                <tr><td style="padding:2px 0;font-weight:bold;width:38%;">Bank</td><td style="padding:2px 0;">${TELLED_INFO.bank}</td></tr>
-                <tr><td style="padding:2px 0;font-weight:bold;">Account No.</td><td style="padding:2px 0;">${TELLED_INFO.accountNo}</td></tr>
-                <tr><td style="padding:2px 0;font-weight:bold;">IFSC Code</td><td style="padding:2px 0;">${TELLED_INFO.ifsc}</td></tr>
-                <tr><td style="padding:2px 0;font-weight:bold;">Branch</td><td style="padding:2px 0;">${TELLED_INFO.branch}</td></tr>
+            <td style="width:45%;padding:8px 14px;vertical-align:top;">
+              <div style="font-weight:bold;margin-bottom:6px;">Bank Details</div>
+              <table style="border-collapse:collapse;width:100%;">
+                <tr>
+                  <td style="font-weight:bold;padding:2px 10px 2px 0;font-size:10px;width:38%;vertical-align:top;">Bank</td>
+                  <td style="font-size:10px;padding:2px 0;font-weight:bold;">${TELLED_INFO.bank}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:bold;padding:2px 10px 2px 0;font-size:10px;vertical-align:top;">Account No.</td>
+                  <td style="font-size:10px;padding:2px 0;font-weight:bold;">${TELLED_INFO.accountNo}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:bold;padding:2px 10px 2px 0;font-size:10px;vertical-align:top;">IFSC Code</td>
+                  <td style="font-size:10px;padding:2px 0;font-weight:bold;">${TELLED_INFO.ifsc}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:bold;padding:2px 10px 2px 0;font-size:10px;vertical-align:top;">Branch</td>
+                  <td style="font-size:10px;padding:2px 0;font-weight:bold;">${TELLED_INFO.branch}</td>
+                </tr>
               </table>
             </td>
           </tr>
         </table>
 
-        <!-- ══ Signature ══ -->
-        <table style="width:100%;border-collapse:collapse;">
+        <!-- Signature left | Company name + address right -->
+        <table>
           <tr>
-            <td style="width:35%;padding:40px 16px 10px;vertical-align:bottom;border-right:1px solid ${B};">
-              <div style="border-top:1px solid #999;padding-top:4px;font-size:10px;text-align:center;">Authorised Signatory</div>
+            <td style="width:35%;padding:50px 14px 10px;vertical-align:bottom;border-right:1px solid ${B};text-align:center;">
+              <div style="border-top:1px solid #000;padding-top:4px;font-size:10px;">Authorised Signatory</div>
             </td>
-            <td style="padding:12px 16px;vertical-align:middle;text-align:center;">
-              <img src="${resolvedLogo}" style="height:40px;object-fit:contain;margin-bottom:6px;" />
-              <div style="font-size:10px;margin-top:4px;color:#333;line-height:1.6;">${TELLED_INFO.address.replace(/\n/g, '<br/>')}</div>
+            <td style="padding:14px;vertical-align:middle;text-align:center;">
+              <div style="font-weight:bold;font-size:13px;">TELLED MARKETING,</div>
+              <div style="font-size:10px;margin-top:5px;line-height:1.7;">${TELLED_INFO.address.replace(/\n/g, '<br/>')}</div>
             </td>
           </tr>
         </table>
 
-      </div><!-- end outer border -->
+      </div>
     `;
     try {
       await downloadAsPDF(container, `${q.quotationNumber}.pdf`);

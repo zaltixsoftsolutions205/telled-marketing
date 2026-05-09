@@ -33,6 +33,7 @@ export const createVisit = async (req: AuthRequest, res: Response): Promise<void
     if (!data.engineerId) data.engineerId = req.user!.id;
     // Map workDone → purpose for backward compat
     if (data.workDone && !data.purpose) data.purpose = data.workDone;
+    data.organizationId = req.user!.organizationId;
     const visit = await new EngineerVisit(data).save();
     const populated = await visit.populate([
       { path: 'engineerId', select: 'name email' },
@@ -105,13 +106,13 @@ export const scheduleVisit = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
     const data = {
+      organizationId: req.user!.organizationId,
       visitType,
       scheduledDate: new Date(scheduledDate),
       accountId,
       notes,
       engineerId: req.body.engineerId || req.user!.id,
       status: 'Scheduled',
-      // visitDate defaults to scheduledDate; will be updated on completion
       visitDate: new Date(scheduledDate),
       purpose: visitType,
     };
@@ -148,7 +149,7 @@ export const completeVisit = async (req: AuthRequest, res: Response): Promise<vo
     ]);
     const eng = (populated.engineerId as any);
     if (visit.totalAmount > 0) {
-      notifyRole(['admin', 'hr_finance'], {
+      notifyRole(['admin', 'hr'], {
         title: 'Visit Claim Submitted',
         message: `${eng?.name || 'Engineer'} completed a visit with ₹${visit.totalAmount} claim — awaiting HR approval`,
         type: 'visit',

@@ -9,7 +9,7 @@ import { getPaginationParams, sanitizeQuery } from '../utils/helpers';
 import sendEmail, { sendEmailWithUserSmtp, UserSmtpConfig } from '../services/email.service';
 import User from '../models/User';
 import Organization from '../models/Organization';
-import { decryptText } from '../utils/crypto';
+import { getUserSmtp, getUserSmtpWithFallback } from '../utils/getUserSmtp';
 import { generateQuotationPDF as generateQuotationPDFService } from '../services/pdf.service';
 import logger from '../utils/logger';
 import path from 'path';
@@ -69,21 +69,6 @@ function extractAmountFromText(text: string): number | null {
   return null;
 }
 
-async function getUserSmtp(userId: string): Promise<UserSmtpConfig | undefined> {
-  try {
-    const user = await User.findById(userId).select('name email smtpHost smtpPort smtpUser smtpPass smtpSecure');
-    if (!user?.smtpHost || !user?.smtpUser || !user?.smtpPass) return undefined;
-    return {
-      smtpHost: user.smtpHost,
-      smtpPort: user.smtpPort || 465,
-      smtpUser: user.smtpUser,
-      smtpPass: decryptText(user.smtpPass),
-      smtpSecure: user.smtpSecure,
-      fromEmail: user.email,
-      fromName: user.name,
-    };
-  } catch { return undefined; }
-}
 
 const SETTINGS_FILE = path.join(process.cwd(), 'uploads', 'settings.json');
 function getLogoPath(): string | undefined {
@@ -218,6 +203,13 @@ export const createQuotation = async (req: AuthRequest, res: Response): Promise<
       uploadedFile,
       uploadedFileName,
       totalAmount,
+      // Seller / from-company info
+      fromCompany, fromAddress, fromEmail, fromPhone, fromGST,
+      toCompany, toContact, toAddress, deliveryWeeks,
+      bankName, bankAccount, bankIFSC, bankBranch,
+      templateId, templateColor,
+      secondLogoLabel,
+      customFields: rawCustomFields,
     } = req.body;
 
     if (!leadId) { sendError(res, 'leadId is required', 400); return; }
@@ -225,10 +217,15 @@ export const createQuotation = async (req: AuthRequest, res: Response): Promise<
     const lead = await Lead.findById(leadId);
     if (!lead || lead.isArchived) { sendError(res, 'Lead not found', 404); return; }
 
-    // Determine file from multer upload OR passed path
-    const fileFromUpload = (req as any).file;
-    const resolvedFile = fileFromUpload ? fileFromUpload.path : (uploadedFile || undefined);
-    const resolvedFileName = fileFromUpload ? fileFromUpload.originalname : (uploadedFileName || undefined);
+    // Determine file from multer upload (now using fields) OR passed path
+    const files = (req as any).files as Record<string, Express.Multer.File[]> | undefined;
+    const quotationFileUpload = files?.quotationFile?.[0] || (req as any).file;
+    const sellerLogoUpload    = files?.sellerLogo?.[0];
+    const secondLogoUpload    = files?.secondLogo?.[0];
+    const resolvedFile        = quotationFileUpload ? quotationFileUpload.path : (uploadedFile || undefined);
+    const resolvedFileName    = quotationFileUpload ? quotationFileUpload.originalname : (uploadedFileName || undefined);
+    const resolvedLogoPath    = sellerLogoUpload  ? sellerLogoUpload.path  : undefined;
+    const resolvedSecondLogo  = secondLogoUpload  ? secondLogoUpload.path  : undefined;
 
     let resolvedItems: any[];
     let subtotal: number;
@@ -266,6 +263,7 @@ export const createQuotation = async (req: AuthRequest, res: Response): Promise<
     const existingCount = await Quotation.countDocuments({ leadId, isArchived: false });
 
     const quotation = new Quotation({
+      organizationId: req.user!.organizationId,
       leadId,
       quotationNumber: await generateQuotationNumber(),
       version: existingCount + 1,
@@ -286,6 +284,30 @@ export const createQuotation = async (req: AuthRequest, res: Response): Promise<
       status: 'Draft',
       uploadedFile: resolvedFile,
       uploadedFileName: resolvedFileName,
+      // Seller info from the quotation modal
+      sellerCompany:  fromCompany  || undefined,
+      sellerAddress:  fromAddress  || undefined,
+      sellerEmail:    fromEmail    || undefined,
+      sellerPhone:    fromPhone    || undefined,
+      sellerGST:      fromGST      || undefined,
+      sellerLogoPath: resolvedLogoPath   || undefined,
+      secondLogoPath:  resolvedSecondLogo || undefined,
+      secondLogoLabel: secondLogoLabel    || undefined,
+      toCompany:       toCompany    || undefined,
+      toContact:      toContact    || undefined,
+      toAddress:      toAddress    || undefined,
+      bankName:       bankName     || undefined,
+      bankAccount:    bankAccount  || undefined,
+      bankIFSC:       bankIFSC     || undefined,
+      bankBranch:     bankBranch   || undefined,
+      deliveryWeeks:  deliveryWeeks || undefined,
+      templateId:     templateId   || undefined,
+      templateColor:  templateColor || undefined,
+      customFields:   (() => {
+        if (!rawCustomFields) return [];
+        // Comes as JSON string from FormData or as array from JSON body
+        try { return typeof rawCustomFields === 'string' ? JSON.parse(rawCustomFields) : rawCustomFields; } catch { return []; }
+      })(),
       createdBy: req.user!.id,
       isArchived: false,
     });
@@ -492,7 +514,19 @@ export const sendQuotationEmail = async (req: AuthRequest, res: Response): Promi
     }
 
     const lead = quotation.leadId as any;
-    const senderSmtp = await getUserSmtp(req.user!.id);
+    // Try req.user SMTP → creator SMTP → system SMTP (never block the operation)
+    let senderSmtp = await getUserSmtpWithFallback(req.user!.id);
+    if (!senderSmtp) {
+      const creatorId = (quotation.createdBy as any)?._id?.toString() || (quotation.createdBy as any)?.toString();
+      if (creatorId && creatorId !== req.user!.id) {
+        senderSmtp = await getUserSmtpWithFallback(creatorId);
+      }
+    }
+    if (!senderSmtp) {
+      sendError(res, 'Email sending is not configured. Please contact admin.', 500);
+      return;
+    }
+    logger.info(`[sendQuotationEmail] Sending from ${senderSmtp.fromEmail} to ${req.body?.toEmail || lead?.email}`);
     const senderContactEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || 'sales@telled.com';
 
     // Fetch organization name
@@ -522,9 +556,10 @@ export const sendQuotationEmail = async (req: AuthRequest, res: Response): Promi
     } else {
       const pdfFile = await generateQuotationPDFService({
         quotationNumber: quotation.quotationNumber,
-        companyName: lead.companyName,
-        companyAddress: [lead.address, lead.city, lead.state].filter(Boolean).join(', '),
-        contactName: lead.contactPersonName || lead.companyName,
+        // Use user-filled customer fields first, fall back to lead data
+        companyName:    (quotation as any).toCompany  || lead.companyName,
+        companyAddress: (quotation as any).toAddress  || [lead.address, lead.city, lead.state].filter(Boolean).join(', '),
+        contactName:    (quotation as any).toContact  || lead.contactPersonName || lead.companyName,
         contactEmail: lead.email,
         contactPhone: lead.phone,
         oemName: lead.oemName,
@@ -532,26 +567,41 @@ export const sendQuotationEmail = async (req: AuthRequest, res: Response): Promi
         salesPersonEmail: (quotation.createdBy as any)?.email,
         salesPersonPhone: (quotation.createdBy as any)?.phone,
         items: quotation.items.map(i => ({
-          description: i.description,
-          quantity: i.quantity,
-          listPrice: (i as any).listPrice,
-          unitPrice: i.unitPrice,
-          discount: (i as any).discount,
-          total: i.total,
+          description: i.description || '',
+          quantity: Number(i.quantity) || 1,
+          listPrice: Number((i as any).listPrice) || 0,
+          unitPrice: Number(i.unitPrice) || 0,
+          discount: Number((i as any).discount) || 0,
+          total: Number(i.total) || 0,
         })),
-        subtotal: quotation.subtotal ?? 0,
-        taxRate: quotation.taxRate ?? 0,
-        taxAmount: quotation.taxAmount ?? 0,
-        total: quotation.total ?? 0,
+        subtotal: Number(quotation.subtotal) || 0,
+        taxRate: Number(quotation.taxRate) || 0,
+        taxAmount: Number(quotation.taxAmount) || 0,
+        total: Number(quotation.total) || 0,
         gstApplicable: quotation.gstApplicable ?? false,
         discountApplicable: quotation.discountApplicable ?? false,
         discountType: quotation.discountType ?? 'percent',
-        discountValue: quotation.discountValue ?? 0,
-        discountAmount: quotation.discountAmount ?? 0,
+        discountValue: Number(quotation.discountValue) || 0,
+        discountAmount: Number(quotation.discountAmount) || 0,
         validUntil: quotation.validUntil,
         notes: quotation.notes,
         terms: quotation.terms,
-        logoPath: getLogoPath(),
+        // Use seller-uploaded logo first, then org logo, then nothing
+        logoPath:       (quotation as any).sellerLogoPath || getLogoPath(),
+        secondLogoPath: (quotation as any).secondLogoPath || undefined,
+        secondLogoLabel:(quotation as any).secondLogoLabel || 'Channel Partner',
+        // Seller info
+        sellerCompany: (quotation as any).sellerCompany,
+        sellerAddress: (quotation as any).sellerAddress,
+        sellerEmail:   (quotation as any).sellerEmail,
+        sellerPhone:   (quotation as any).sellerPhone,
+        sellerGST:     (quotation as any).sellerGST,
+        bankName:      (quotation as any).bankName,
+        bankAccount:   (quotation as any).bankAccount,
+        bankIFSC:      (quotation as any).bankIFSC,
+        bankBranch:    (quotation as any).bankBranch,
+        deliveryWeeks: (quotation as any).deliveryWeeks,
+        customFields:  (quotation as any).customFields || [],
       });
       const uploadDir = process.env.UPLOAD_PATH || './uploads';
       attachmentPath = path.join(process.cwd(), uploadDir, pdfFile);
@@ -678,22 +728,22 @@ export const generateQuotationPDF = async (req: AuthRequest, res: Response): Pro
       salesPersonEmail: (quotation.createdBy as any)?.email,
       salesPersonPhone: (quotation.createdBy as any)?.phone,
       items: quotation.items.map(i => ({
-        description: i.description,
-        quantity: i.quantity,
-        listPrice: (i as any).listPrice,
-        unitPrice: i.unitPrice,
-        discount: (i as any).discount,
-        total: i.total,
+        description: i.description || '',
+        quantity: Number(i.quantity) || 1,
+        listPrice: Number((i as any).listPrice) || 0,
+        unitPrice: Number(i.unitPrice) || 0,
+        discount: Number((i as any).discount) || 0,
+        total: Number(i.total) || 0,
       })),
-      subtotal: quotation.subtotal ?? 0,
-      taxRate: quotation.taxRate ?? 0,
-      taxAmount: quotation.taxAmount ?? 0,
-      total: quotation.total ?? 0,
+      subtotal: Number(quotation.subtotal) || 0,
+      taxRate: Number(quotation.taxRate) || 0,
+      taxAmount: Number(quotation.taxAmount) || 0,
+      total: Number(quotation.total) || 0,
       gstApplicable: quotation.gstApplicable ?? false,
       discountApplicable: quotation.discountApplicable ?? false,
       discountType: quotation.discountType ?? 'percent',
-      discountValue: quotation.discountValue ?? 0,
-      discountAmount: quotation.discountAmount ?? 0,
+      discountValue: Number(quotation.discountValue) || 0,
+      discountAmount: Number(quotation.discountAmount) || 0,
       validUntil: quotation.validUntil,
       notes: quotation.notes,
       terms: quotation.terms,

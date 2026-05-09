@@ -7,6 +7,6 @@ const router = Router();
 router.use(authenticate);
 router.get('/', getTrainings);
 router.get('/:id', getTrainingById);
-router.post('/', authorize('admin', 'engineer'), createTraining);
-router.put('/:id', authorize('admin', 'engineer'), updateTraining);
+router.post('/', authorize('admin', 'manager', 'engineer'), createTraining);
+router.put('/:id', authorize('admin', 'manager', 'engineer'), updateTraining);
 export default router;

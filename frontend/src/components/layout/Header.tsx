@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bell, Menu, CheckCheck, Calendar, Wrench, Headphones, DollarSign, Info, ImagePlus, X, FileText, ShoppingCart, Users, Receipt, BookOpen, UserCheck, User, LogOut } from 'lucide-react';
+import { Bell, Menu, CheckCheck, Calendar, Wrench, Headphones, DollarSign, Info, ImagePlus, X, FileText, ShoppingCart, Users, Receipt, BookOpen, UserCheck, User, LogOut, UserCircle } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useNavigate } from 'react-router-dom';
 import { settingsApi } from '@/api/settings';
@@ -226,11 +226,7 @@ export default function Header({ title, onMenuClick }: Props) {
             {avatar ? (
               <img src={avatar} alt="avatar" className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-cover ring-2 ring-violet-200 flex-shrink-0" />
             ) : (
-              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center shadow-sm shadow-violet-200 flex-shrink-0">
-                <span className="text-white font-bold text-sm leading-none">
-                  {user?.name?.trim() ? user.name.trim().charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase() ?? 'U'}
-                </span>
-              </div>
+              <UserCircle size={34} className="text-violet-400 flex-shrink-0" strokeWidth={1.5} />
             )}
             <div className="hidden sm:flex flex-col leading-tight text-left">
               <span className="text-sm font-semibold text-gray-800">

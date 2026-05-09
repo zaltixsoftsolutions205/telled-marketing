@@ -11,22 +11,14 @@ import { notifyUser } from '../utils/notify';
 import mongoose from 'mongoose';
 import logger from '../utils/logger';
 import User from '../models/User';
-import { decryptText } from '../utils/crypto';
+import { getUserSmtp, getUserSmtpWithFallback } from '../utils/getUserSmtp';
 
 const appUrl = () => (process.env.APP_URL || (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim() + '/zieos').replace(/\/$/, '');
-
-async function getUserSmtp(userId: string): Promise<UserSmtpConfig | undefined> {
-  try {
-    const user = await User.findById(userId).select('name email smtpHost smtpPort smtpUser smtpPass smtpSecure');
-    if (!user?.smtpHost || !user?.smtpUser || !user?.smtpPass) return undefined;
-    return { smtpHost: user.smtpHost, smtpPort: user.smtpPort || 465, smtpUser: user.smtpUser, smtpPass: decryptText(user.smtpPass), smtpSecure: user.smtpSecure, fromEmail: user.email, fromName: user.name };
-  } catch { return undefined; }
-}
 
 export const getTickets = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { page, limit, skip } = getPaginationParams(req);
-    const filter: Record<string, unknown> = { isArchived: false };
+    const filter: Record<string, unknown> = { organizationId: req.user!.organizationId, isArchived: false };
     if (req.query.status) filter.status = req.query.status;
     if (req.query.priority) filter.priority = req.query.priority;
     if (req.query.accountId) filter.accountId = req.query.accountId;
@@ -62,6 +54,7 @@ export const createTicket = async (req: AuthRequest, res: Response): Promise<voi
     
     const ticket = await new SupportTicket({
       ...data,
+      organizationId: req.user!.organizationId,
       ticketId: generateTicketId(),
       createdBy: req.user!.id
     }).save();
@@ -74,7 +67,7 @@ export const createTicket = async (req: AuthRequest, res: Response): Promise<voi
     // Acknowledgement email to customer
     const account = populated?.accountId as any;
     if (account?.contactEmail) {
-      const senderSmtp = await getUserSmtp(req.user!.id);
+      const senderSmtp = await getUserSmtpWithFallback(req.user!.id);
       await sendTicketAcknowledgement(
         account.contactEmail, account.companyName || 'Customer', populated!.ticketId, populated!.subject, senderSmtp
       ).catch(e => logger.error('Failed to send acknowledgement email:', e));
@@ -90,7 +83,7 @@ export const createTicket = async (req: AuthRequest, res: Response): Promise<voi
         link: '/support',
       });
       if (engineer?.email) {
-        const senderSmtp = await getUserSmtp(req.user!.id);
+        const senderSmtp = await getUserSmtpWithFallback(req.user!.id);
         await sendTicketAssignmentNotification(
           engineer.email, populated.ticketId, populated.subject, engineer.name, senderSmtp
         ).catch(e => logger.error('Failed to send assignment email:', e));
@@ -139,7 +132,7 @@ export const updateTicket = async (req: AuthRequest, res: Response): Promise<voi
     if (oldStatus !== ticket.status && ticket.status !== 'Closed') {
       const account = ticket.accountId as any;
       if (account?.contactEmail) {
-        const senderSmtp = await getUserSmtp(req.user!.id);
+        const senderSmtp = await getUserSmtpWithFallback(req.user!.id);
         await sendTicketStatusUpdate(
           account.contactEmail, ticket.ticketId, ticket.subject,
           oldStatus, ticket.status, req.user?.name || 'System', req.body.updateNote, senderSmtp, account.companyName || 'Customer'
@@ -167,7 +160,7 @@ export const updateTicket = async (req: AuthRequest, res: Response): Promise<voi
         link: '/support',
       });
       if (engineer?.email) {
-        const senderSmtp = await getUserSmtp(req.user!.id);
+        const senderSmtp = await getUserSmtpWithFallback(req.user!.id);
         await sendTicketAssignmentNotification(
           engineer.email, ticket.ticketId, ticket.subject, engineer.name, senderSmtp
         ).catch(e => logger.error('Failed to send assignment email:', e));
@@ -216,7 +209,7 @@ export const resolveTicket = async (req: AuthRequest, res: Response): Promise<vo
 
     const account = ticket.accountId as any;
     if (account?.contactEmail) {
-      const senderSmtp = await getUserSmtp(req.user!.id);
+      const senderSmtp = await getUserSmtpWithFallback(req.user!.id);
       const feedbackUrl = `${appUrl()}/feedback/${ticket.feedbackToken}`;
       await sendFeedbackRequestEmail(account.contactEmail, ticket.ticketId, ticket.subject, account.companyName || 'Customer', senderSmtp, feedbackUrl)
         .catch(e => logger.error('Failed to send feedback request email:', e));
@@ -307,7 +300,7 @@ export const reopenTicket = async (req: AuthRequest, res: Response): Promise<voi
 
     const account = ticket.accountId as any;
     if (account?.contactEmail) {
-      const senderSmtp = await getUserSmtp(req.user!.id);
+      const senderSmtp = await getUserSmtpWithFallback(req.user!.id);
       await sendTicketReopenedEmail(account.contactEmail, ticket.ticketId, ticket.subject, account.companyName || 'Customer', senderSmtp)
         .catch(e => logger.error('Failed to send reopen email:', e));
     }

@@ -39,6 +39,8 @@ import visitClaimRoutes from './routes/visitClaim.routes';
 import registerRoutes from './routes/register.routes';
 import adminApplicationRoutes from './routes/adminApplication.routes';
 import poSyncRoutes from './routes/poSync.routes';
+import timesheetRoutes from './routes/timesheet.routes';
+import employeeRoutes from './routes/employee.routes';
 
 
 const app = express();
@@ -89,6 +91,8 @@ app.use('/api/visit-claims', visitClaimRoutes);
 app.use('/api/register', registerRoutes);
 app.use('/api/admin-applications', adminApplicationRoutes);
 app.use('/api/po-sync', poSyncRoutes);
+app.use('/api/timesheets', timesheetRoutes);
+app.use('/api/employees', employeeRoutes);
 app.use(notFound);
 app.use(errorHandler);
 
@@ -104,5 +108,13 @@ const start = async () => {
 };
 
 start().catch(e => { logger.error('Startup failed:', e); process.exit(1); });
+
+// Prevent uncaught errors (e.g. IMAP socket drops) from crashing the server
+process.on('uncaughtException', (err) => {
+  logger.error('Uncaught exception:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled rejection:', reason);
+});
 
 export default app;

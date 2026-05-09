@@ -6,10 +6,11 @@ import Invoice from '../models/Invoice';
 import SupportTicket from '../models/SupportTicket';
 import EngineerVisit from '../models/EngineerVisit';
 import logger from '../utils/logger';
-import sendEmail, { sendOEMExpiryReminder, sendInvoiceReminder, sendTicketClosureNotification } from '../services/email.service';
+import sendEmail, { sendOEMExpiryReminder, sendInvoiceReminder, sendTicketClosureNotification, sendOEMExtensionRequest } from '../services/email.service';
+import { getUserSmtp } from '../utils/getUserSmtp';
 import { OEM_EXPIRY_REMINDER_DAYS, TICKET_AUTO_CLOSE_DAYS, TICKET_RESOLVED_FORCE_CLOSE_DAYS, TICKET_REOPEN_EXPIRE_DAYS, INVOICE_DUE_REMINDER_DAYS } from '../config/constants';
 import User from '../models/User';
-import { syncEmailsForDRF, ImapCredentials } from '../services/emailInbox.service';
+import { syncEmailsForDRF, syncEmailsForDRFViaGraph, ImapCredentials } from '../services/emailInbox.service';
 import { syncPurchaseOrderEmails } from '../services/emailInboxPurchase.service';
 import { syncSupportEmails, patchUnassignedTickets } from '../services/emailInboxSupport.service';
 import { generateTicketId } from '../utils/helpers';
@@ -33,6 +34,7 @@ async function syncPurchaseOrderEmailsJob() {
     }
 
     for (const u of users) {
+      if (shouldSkipImap(u.email || '')) continue;
       try {
         const smtpHost = u.smtpHost || 'smtp.hostinger.com';
         const imapHost = smtpHost.includes('office365') || smtpHost.includes('outlook')
@@ -43,8 +45,12 @@ async function syncPurchaseOrderEmailsJob() {
         if (result.created.length || result.updated.length) {
           logger.info(`PO sync (${u.email}): created=${result.created.length} updated=${result.updated.length}`);
         }
-      } catch (e) {
-        logger.error(`PO sync failed for ${u.email}:`, e);
+      } catch (e: any) {
+        if (isImapSocketError(e)) {
+          logger.warn(`PO IMAP connection issue for ${u.email}`);
+        } else {
+          logger.error(`PO sync failed for ${u.email}:`, e);
+        }
       }
     }
   } catch (e) {
@@ -52,25 +58,33 @@ async function syncPurchaseOrderEmailsJob() {
   }
 }
 
+function isImapSocketError(e: any): boolean {
+  const msg = (e?.message || '').toLowerCase();
+  return msg.includes('socket') || msg.includes('econnreset') || msg.includes('closed')
+    || msg.includes('etimedout') || msg.includes('econnrefused') || msg.includes('imap')
+    || msg.includes('greeting') || msg.includes('tls') || msg.includes('connect');
+}
+
+// Providers that use IMAP differently or block automated access
+const SKIP_IMAP_DOMAINS = ['outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'live.in', 'live.co.uk'];
+
+function shouldSkipImap(email: string): boolean {
+  const domain = email.split('@')[1]?.toLowerCase() || '';
+  return SKIP_IMAP_DOMAINS.includes(domain);
+}
+
 async function syncSupportEmailsJob() {
   try {
     const result = await syncSupportEmails();
     if (result.created.length || result.failed.length) {
       logger.info(`Support Email sync: ${result.created.length} tickets created, ${result.failed.length} failed, ${result.errors.length} errors`);
-      
-      if (result.created.length) {
-        logger.info(`Created tickets from emails: ${result.created.join(', ')}`);
-      }
-      if (result.failed.length) {
-        logger.warn(`Failed to process emails: ${result.failed.join(', ')}`);
-      }
-      if (result.errors.length) {
-        logger.error(`Support sync errors: ${result.errors.join(', ')}`);
-      }
+      if (result.created.length) logger.info(`Created tickets from emails: ${result.created.join(', ')}`);
+      if (result.failed.length) logger.warn(`Failed to process emails: ${result.failed.join(', ')}`);
+      if (result.errors.length) logger.warn(`Support sync errors: ${result.errors.join(', ')}`);
     }
   } catch (e: any) {
-    if (e?.message && (e.message.includes('socket') || e.message.includes('ECONNRESET') || e.message.includes('closed'))) {
-      logger.warn('Support IMAP socket closed by server (harmless)');
+    if (isImapSocketError(e)) {
+      logger.warn('Support IMAP connection issue (harmless — server may have closed idle connection)');
     } else {
       logger.error('Support email sync cron error:', e);
     }
@@ -103,6 +117,69 @@ export const startCronJobs = (): void => {
       }
       logger.info(`Sent ${expiring.length} OEM expiry reminders`);
     } catch (e) { logger.error('OEM reminder cron:', e); }
+  });
+
+  // Auto DRF extension email — daily 8 AM
+  // Sends extension request to OEM automatically when DRF expires in 2–5 days
+  // and extension hasn't been requested yet
+  cron.schedule('0 8 * * *', async () => {
+    try {
+      const now = new Date();
+      const in2Days = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+      const in5Days = new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000);
+
+      const expiring = await OEMApprovalAttempt.find({
+        status: { $in: ['Pending', 'Approved'] },
+        expiryDate: { $gte: in2Days, $lte: in5Days },
+        extensionRequested: { $ne: true },
+      }).populate('leadId').populate('createdBy', 'name email _id');
+
+      let sent = 0;
+      for (const attempt of expiring) {
+        const lead = attempt.leadId as any;
+        const creator = attempt.createdBy as any;
+        const oemTo = lead?.oemEmail || lead?.email;
+        if (!oemTo || !attempt.expiryDate) continue;
+
+        const d = new Date(attempt.sentDate);
+        const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+        const drfNumber = `DRF-${dateStr}-${String(attempt.attemptNumber).padStart(3, '0')}`;
+        const daysLeft = Math.ceil((attempt.expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        const expiry = attempt.expiryDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+        // Use the sales owner's SMTP if configured, else fall back to system SMTP
+        const senderSmtp = creator?._id ? await getUserSmtp(creator._id.toString()) : undefined;
+
+        const autoMessage =
+          `We are writing to request an extension for the DRF approval for ${lead.companyName}.\n\n` +
+          `The current DRF (${drfNumber}) is expiring in ${daysLeft} day${daysLeft !== 1 ? 's' : ''} on ${expiry}. ` +
+          `We are actively progressing with the customer and kindly request an extension of the validity period.\n\n` +
+          `Please reply with the new valid-until date at your earliest convenience.`;
+
+        try {
+          await sendOEMExtensionRequest(oemTo, {
+            drfNumber,
+            companyName: lead.companyName,
+            oemName: lead.oemName || '',
+            expiryDate: attempt.expiryDate.toISOString(),
+            salesName: creator?.name || 'ZIEOS Sales',
+            salesEmail: creator?.email || '',
+            customMessage: autoMessage,
+            customSubject: `[Auto] DRF Extension Request — ${drfNumber} — ${lead.companyName} (expires in ${daysLeft}d)`,
+          }, senderSmtp);
+
+          // Mark as requested so it doesn't send again
+          attempt.extensionRequested = true;
+          attempt.extensionRequestedAt = new Date();
+          await attempt.save();
+          sent++;
+          logger.info(`Auto-extension email sent for ${drfNumber} (expires in ${daysLeft}d)`);
+        } catch (mailErr: any) {
+          logger.error(`Auto-extension email failed for ${drfNumber}:`, mailErr?.message);
+        }
+      }
+      if (sent > 0) logger.info(`Auto-sent ${sent} DRF extension emails`);
+    } catch (e) { logger.error('DRF auto-extension cron:', e); }
   });
 
   // Invoice due reminders — daily 10 AM
@@ -218,12 +295,14 @@ export const startCronJobs = (): void => {
       const users = await User.find({
         isActive: true,
         role: { $in: ['admin', 'sales'] },
-        smtpUser: { $exists: true, $ne: '' },
-        smtpPass: { $exists: true, $ne: '' },
-      }).select('smtpHost smtpUser smtpPass email name');
+        $or: [
+          { smtpUser: { $exists: true, $ne: '' }, smtpPass: { $exists: true, $ne: '' } },
+          { msRefreshToken: { $exists: true, $ne: '' } },
+        ],
+      }).select('smtpHost smtpUser smtpPass email name msRefreshToken');
 
       if (users.length === 0) {
-        // No users with SMTP configured — fall back to system inbox
+        // No users with email configured — fall back to system inbox
         const result = await syncEmailsForDRF();
         if (result.approved.length || result.rejected.length) {
           logger.info(`DRF email sync (system): ${result.approved.length} approved, ${result.rejected.length} rejected`);
@@ -232,11 +311,47 @@ export const startCronJobs = (): void => {
       }
 
       for (const u of users) {
+        // Derive IMAP host from SMTP host
+        const smtpHost = u.smtpHost || '';
+        let imapHost = '';
+
+        if (smtpHost.includes('gmail')) {
+          imapHost = 'imap.gmail.com';
+        } else if (smtpHost.includes('office365') || smtpHost.includes('outlook')) {
+          imapHost = 'outlook.office365.com';
+        } else if (smtpHost.includes('zoho')) {
+          imapHost = 'imap.zoho.com';
+        } else if (smtpHost.includes('hostinger')) {
+          imapHost = 'imap.hostinger.com';
+        } else if (smtpHost) {
+          imapHost = smtpHost.replace(/^smtp[.-]/, 'imap.');
+        }
+
+        // Personal Outlook with OAuth — use Graph API to read inbox instead of IMAP
+        if ((u as any).msRefreshToken) {
+          try {
+            const result = await syncEmailsForDRFViaGraph((u as any).msRefreshToken, u.email || '');
+            if (result.approved.length || result.rejected.length) {
+              logger.info(`DRF Graph sync (${u.email}): ${result.approved.length} approved, ${result.rejected.length} rejected`);
+            }
+          } catch (graphErr: any) {
+            const msg = graphErr?.response?.data?.error?.message || graphErr?.response?.data || graphErr?.message || String(graphErr);
+            logger.warn(`DRF Graph sync failed for ${u.email}: ${JSON.stringify(msg)}`);
+          }
+          continue;
+        }
+
+        // Skip if no IMAP host could be derived or no credentials
+        if (!imapHost || !u.smtpUser || !u.smtpPass) {
+          continue;
+        }
+
+        // Skip providers that block IMAP (Tuta, ProtonMail without Bridge)
+        if (shouldSkipImap(u.email || '')) {
+          continue;
+        }
+
         try {
-          const smtpHost = u.smtpHost || 'smtp.hostinger.com';
-          const imapHost = smtpHost.includes('office365') || smtpHost.includes('outlook')
-            ? 'imap-mail.outlook.com'
-            : smtpHost.replace(/^smtp\./, 'imap.');
           const creds: ImapCredentials = {
             host: imapHost,
             port: 993,
@@ -247,8 +362,12 @@ export const startCronJobs = (): void => {
           if (result.approved.length || result.rejected.length) {
             logger.info(`DRF email sync (${u.email}): ${result.approved.length} approved, ${result.rejected.length} rejected`);
           }
-        } catch (userErr) {
-          logger.error(`DRF email sync failed for ${u.email}:`, userErr);
+        } catch (userErr: any) {
+          if (isImapSocketError(userErr)) {
+            logger.warn(`DRF IMAP connection issue for ${u.email} (server may have closed idle connection)`);
+          } else {
+            logger.error(`DRF email sync failed for ${u.email}:`, userErr);
+          }
         }
       }
     } catch (e) { logger.error('DRF email sync cron:', e); }

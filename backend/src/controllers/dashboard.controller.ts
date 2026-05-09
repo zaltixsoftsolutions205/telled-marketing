@@ -14,8 +14,10 @@ import { sendSuccess, sendError } from '../utils/response';
 import mongoose from 'mongoose';
 
 // ── Admin Dashboard ────────────────────────────────────────────────────────
-export const getAdminDashboard = async (_req: AuthRequest, res: Response): Promise<void> => {
+export const getAdminDashboard = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const orgId = new mongoose.Types.ObjectId(req.user!.organizationId);
+
     const [
       totalLeads, newLeads, convertedLeads,
       totalAccounts, activeAccounts,
@@ -27,41 +29,43 @@ export const getAdminDashboard = async (_req: AuthRequest, res: Response): Promi
       totalInstalls, scheduledInstalls, inProgressInstalls, completedInstalls,
       installsByEngineer,
     ] = await Promise.all([
-      Lead.countDocuments({ isArchived: false }),
-      Lead.countDocuments({ isArchived: false, status: 'New' }),
-      Lead.countDocuments({ stage: 'Converted' }),
-      Account.countDocuments({}),
-      Account.countDocuments({ status: 'Active' }),
-      Invoice.aggregate([{ $match: { status: 'Paid' } }, { $group: { _id: null, total: { $sum: '$paidAmount' } } }]),
-      Invoice.countDocuments({ status: { $in: ['Sent', 'Partially Paid', 'Overdue'] } }),
-      Invoice.countDocuments({ status: 'Overdue' }),
-      SupportTicket.countDocuments({ status: { $in: ['Open', 'In Progress'] }, isArchived: false }),
-      SupportTicket.countDocuments({ priority: 'Critical', status: { $in: ['Open', 'In Progress'] } }),
-      SupportTicket.countDocuments({ status: { $in: ['Resolved', 'Closed'] }, isArchived: false }),
+      Lead.countDocuments({ organizationId: orgId, isArchived: false }),
+      Lead.countDocuments({ organizationId: orgId, isArchived: false, status: 'New' }),
+      Lead.countDocuments({ organizationId: orgId, stage: 'Converted' }),
+      Account.countDocuments({ organizationId: orgId }),
+      Account.countDocuments({ organizationId: orgId, status: 'Active' }),
+      Invoice.aggregate([{ $match: { organizationId: orgId, status: 'Paid' } }, { $group: { _id: null, total: { $sum: '$paidAmount' } } }]),
+      Invoice.countDocuments({ organizationId: orgId, status: { $in: ['Sent', 'Partially Paid', 'Overdue'] } }),
+      Invoice.countDocuments({ organizationId: orgId, status: 'Overdue' }),
+      SupportTicket.countDocuments({ organizationId: orgId, status: { $in: ['Open', 'In Progress'] }, isArchived: false }),
+      SupportTicket.countDocuments({ organizationId: orgId, priority: 'Critical', status: { $in: ['Open', 'In Progress'] } }),
+      SupportTicket.countDocuments({ organizationId: orgId, status: { $in: ['Resolved', 'Closed'] }, isArchived: false }),
       Lead.aggregate([
-        { $match: { isArchived: false } },
+        { $match: { organizationId: orgId, isArchived: false } },
         { $group: { _id: '$stage', count: { $sum: 1 } } },
         { $project: { stage: '$_id', count: 1, _id: 0 } },
       ]),
-      Lead.find({ isArchived: false }).populate('assignedTo', 'name email').sort({ createdAt: -1 }).limit(5).lean(),
-      OEMApprovalAttempt.countDocuments({ status: 'Pending' }),
-      OEMApprovalAttempt.countDocuments({ status: 'Approved' }),
+      Lead.find({ organizationId: orgId, isArchived: false }).populate('assignedTo', 'name email').sort({ createdAt: -1 }).limit(5).lean(),
+      OEMApprovalAttempt.countDocuments({ organizationId: orgId, status: 'Pending' }),
+      OEMApprovalAttempt.countDocuments({ organizationId: orgId, status: 'Approved' }),
       OEMApprovalAttempt.countDocuments({
+        organizationId: orgId,
         status: 'Approved',
         expiryDate: { $lte: new Date(Date.now() + 30 * 86400000), $gte: new Date() },
       }),
       Invoice.aggregate([
-        { $match: { status: 'Paid' } },
+        { $match: { organizationId: orgId, status: 'Paid' } },
         { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$createdAt' } }, revenue: { $sum: '$paidAmount' } } },
         { $sort: { _id: -1 } },
         { $limit: 6 },
         { $project: { month: '$_id', revenue: 1, _id: 0 } },
       ]),
-      Installation.countDocuments({}),
-      Installation.countDocuments({ status: 'Scheduled' }),
-      Installation.countDocuments({ status: 'In Progress' }),
-      Installation.countDocuments({ status: 'Completed' }),
+      Installation.countDocuments({ organizationId: orgId }),
+      Installation.countDocuments({ organizationId: orgId, status: 'Scheduled' }),
+      Installation.countDocuments({ organizationId: orgId, status: 'In Progress' }),
+      Installation.countDocuments({ organizationId: orgId, status: 'Completed' }),
       Installation.aggregate([
+        { $match: { organizationId: orgId } },
         { $lookup: { from: 'users', localField: 'engineerId', foreignField: '_id', as: 'eng' } },
         { $unwind: { path: '$eng', preserveNullAndEmptyArrays: true } },
         { $group: { _id: '$engineerId', engineerName: { $first: '$eng.name' }, total: { $sum: 1 }, completed: { $sum: { $cond: [{ $eq: ['$status', 'Completed'] }, 1, 0] } }, inProgress: { $sum: { $cond: [{ $eq: ['$status', 'In Progress'] }, 1, 0] } }, scheduled: { $sum: { $cond: [{ $eq: ['$status', 'Scheduled'] }, 1, 0] } } } },
@@ -88,14 +92,15 @@ export const getAdminDashboard = async (_req: AuthRequest, res: Response): Promi
 export const getSalesDashboard = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = new mongoose.Types.ObjectId(req.user!.id);
+    const orgId  = new mongoose.Types.ObjectId(req.user!.organizationId);
 
     const [allMyLeads, allAccounts, allQuotations, allPOs, allOrgPOs, recentLeads] = await Promise.all([
-      Lead.find({ assignedTo: userId, isArchived: false }).lean(),
-      Account.find({ assignedSales: userId }).lean(),
-      Quotation.find({ createdBy: userId }).lean(),
-      PurchaseOrder.find({ uploadedBy: userId }).lean(),
-      PurchaseOrder.find({}).populate('uploadedBy', 'name').lean(),
-      Lead.find({ assignedTo: userId, isArchived: false }).sort({ createdAt: -1 }).limit(5).lean(),
+      Lead.find({ organizationId: orgId, assignedTo: userId, isArchived: false }).lean(),
+      Account.find({ organizationId: orgId, assignedSales: userId }).lean(),
+      Quotation.find({ organizationId: orgId, createdBy: userId }).lean(),
+      PurchaseOrder.find({ organizationId: orgId, uploadedBy: userId }).lean(),
+      PurchaseOrder.find({ organizationId: orgId }).populate('uploadedBy', 'name').lean(),
+      Lead.find({ organizationId: orgId, assignedTo: userId, isArchived: false }).sort({ createdAt: -1 }).limit(5).lean(),
     ]);
 
     const myLeadCounts = {
@@ -196,30 +201,32 @@ export const getEngineerDashboard = async (req: AuthRequest, res: Response): Pro
 };
 
 // ── HR/Finance Dashboard ───────────────────────────────────────────────────
-export const getHRDashboard = async (_req: AuthRequest, res: Response): Promise<void> => {
+export const getHRDashboard = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const orgId = new mongoose.Types.ObjectId(req.user!.organizationId);
+
     const [
       paidRevenue, totalInvoices, unpaidCount, overdueCount, partialCount, paidCount,
       totalVisits, pendingVisits, approvedVisits,
       totalSalaries, paidSalaryCount, pendingSalaryCount, paidSalaryTotal,
       allInvoices, recentVisitsList, recentSalaries,
     ] = await Promise.all([
-      Invoice.aggregate([{ $match: { status: 'Paid' } }, { $group: { _id: null, total: { $sum: '$paidAmount' } } }]),
-      Invoice.countDocuments({}),
-      Invoice.countDocuments({ status: 'Sent' }),
-      Invoice.countDocuments({ status: 'Overdue' }),
-      Invoice.countDocuments({ status: 'Partially Paid' }),
-      Invoice.countDocuments({ status: 'Paid' }),
-      EngineerVisit.countDocuments({ isArchived: false }),
-      EngineerVisit.countDocuments({ hrStatus: 'Pending', isArchived: false }),
-      EngineerVisit.countDocuments({ hrStatus: 'Approved', isArchived: false }),
-      Salary.countDocuments({}),
-      Salary.countDocuments({ isPaid: true }),
-      Salary.countDocuments({ isPaid: false }),
-      Salary.aggregate([{ $match: { isPaid: true } }, { $group: { _id: null, total: { $sum: '$finalSalary' } } }]),
-      Invoice.find({}).sort({ createdAt: -1 }).limit(10).populate('accountId', 'companyName').lean(),
-      EngineerVisit.find({ isArchived: false, status: 'Completed' }).sort({ visitDate: -1 }).limit(10).populate('engineerId', 'name').populate('accountId', 'companyName').lean(),
-      Salary.find({}).sort({ createdAt: -1 }).limit(10).populate('employeeId', 'name role').lean(),
+      Invoice.aggregate([{ $match: { organizationId: orgId, status: 'Paid' } }, { $group: { _id: null, total: { $sum: '$paidAmount' } } }]),
+      Invoice.countDocuments({ organizationId: orgId }),
+      Invoice.countDocuments({ organizationId: orgId, status: 'Sent' }),
+      Invoice.countDocuments({ organizationId: orgId, status: 'Overdue' }),
+      Invoice.countDocuments({ organizationId: orgId, status: 'Partially Paid' }),
+      Invoice.countDocuments({ organizationId: orgId, status: 'Paid' }),
+      EngineerVisit.countDocuments({ organizationId: orgId, isArchived: false }),
+      EngineerVisit.countDocuments({ organizationId: orgId, hrStatus: 'Pending', isArchived: false }),
+      EngineerVisit.countDocuments({ organizationId: orgId, hrStatus: 'Approved', isArchived: false }),
+      Salary.countDocuments({ organizationId: orgId }),
+      Salary.countDocuments({ organizationId: orgId, isPaid: true }),
+      Salary.countDocuments({ organizationId: orgId, isPaid: false }),
+      Salary.aggregate([{ $match: { organizationId: orgId, isPaid: true } }, { $group: { _id: null, total: { $sum: '$finalSalary' } } }]),
+      Invoice.find({ organizationId: orgId }).sort({ createdAt: -1 }).limit(10).populate('accountId', 'companyName').lean(),
+      EngineerVisit.find({ organizationId: orgId, isArchived: false, status: 'Completed' }).sort({ visitDate: -1 }).limit(10).populate('engineerId', 'name').populate('accountId', 'companyName').lean(),
+      Salary.find({ organizationId: orgId }).sort({ createdAt: -1 }).limit(10).populate('employeeId', 'name role').lean(),
     ]);
 
     sendSuccess(res, {

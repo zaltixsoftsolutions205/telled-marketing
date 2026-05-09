@@ -27,6 +27,13 @@ export interface IAdminApplication extends Document {
   approvedAt?: Date;
   rejectedAt?: Date;
   createdUserId?: mongoose.Types.ObjectId;
+  // SMTP fields collected during registration
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpSecure?: boolean;
+  smtpUser?: string;
+  smtpPass?: string; // encrypted
+  smtpProvider?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -67,6 +74,12 @@ const AdminApplicationSchema = new Schema<IAdminApplication>(
     approvedAt:      { type: Date },
     rejectedAt:      { type: Date },
     createdUserId:   { type: Schema.Types.ObjectId, ref: 'User' },
+    smtpHost:        { type: String },
+    smtpPort:        { type: Number },
+    smtpSecure:      { type: Boolean },
+    smtpUser:        { type: String },
+    smtpPass:        { type: String },
+    smtpProvider:    { type: String },
   },
   { timestamps: true }
 );

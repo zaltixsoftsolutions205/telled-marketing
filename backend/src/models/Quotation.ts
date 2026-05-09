@@ -32,6 +32,31 @@ export interface IQuotation extends Document {
   pdfPath?: string;
   uploadedFile?: string;
   uploadedFileName?: string;
+  // Seller / from-company info (filled by sales in quotation modal)
+  sellerCompany?: string;
+  sellerAddress?: string;
+  sellerEmail?: string;
+  sellerPhone?: string;
+  sellerGST?: string;
+  sellerLogoPath?: string;
+  // Bank details
+  bankName?: string;
+  bankAccount?: string;
+  bankIFSC?: string;
+  bankBranch?: string;
+  // Extra
+  deliveryWeeks?: string;
+  templateId?: string;
+  templateColor?: string;
+  // Customer / Bill-To fields (filled in modal, overrides lead data in PDF)
+  toCompany?: string;
+  toContact?: string;
+  toAddress?: string;
+  // Second logo (customer / channel partner)
+  secondLogoPath?: string;
+  secondLogoLabel?: string;
+  // Custom fields added by sales (appear in info table on PDF)
+  customFields?: Array<{ label: string; value: string }>;  // 'Channel Partner' | 'Customer' | custom
   emailSent: boolean;
   emailSentAt?: Date;
   vendorSent: boolean;
@@ -61,6 +86,7 @@ const ItemSchema = new Schema<IQuotationItem>({
 
 const QuotationSchema = new Schema<IQuotation>(
   {
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
     leadId: { type: Schema.Types.ObjectId, ref: 'Lead', required: true, index: true },
     quotationNumber: { type: String, required: true, unique: true },
     version: { type: Number, default: 1 },
@@ -87,6 +113,25 @@ const QuotationSchema = new Schema<IQuotation>(
     pdfPath: { type: String },
     uploadedFile: { type: String },
     uploadedFileName: { type: String },
+    sellerCompany:    { type: String },
+    sellerAddress:    { type: String },
+    sellerEmail:      { type: String },
+    sellerPhone:      { type: String },
+    sellerGST:        { type: String },
+    sellerLogoPath:   { type: String },
+    bankName:         { type: String },
+    bankAccount:      { type: String },
+    bankIFSC:         { type: String },
+    bankBranch:       { type: String },
+    deliveryWeeks:    { type: String },
+    templateId:       { type: String },
+    templateColor:    { type: String },
+    toCompany:        { type: String },
+    toContact:        { type: String },
+    toAddress:        { type: String },
+    secondLogoPath:   { type: String },
+    secondLogoLabel:  { type: String },
+    customFields:     { type: [{ label: String, value: String, _id: false }], default: [] },
     emailSent: { type: Boolean, default: false },
     emailSentAt: { type: Date },
     vendorSent: { type: Boolean, default: false },

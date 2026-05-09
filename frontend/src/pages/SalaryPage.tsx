@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, DollarSign, FileDown } from 'lucide-react';
+import { Plus, DollarSign, FileDown, RefreshCw } from 'lucide-react';
 import ExcelImportButton from '@/components/common/ExcelImportButton';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -19,7 +19,7 @@ const MONTHS = ['January','February','March','April','May','June','July','August
 
 export default function SalaryPage() {
   const user = useAuthStore((s) => s.user);
-  const isHR = user?.role === 'admin' || user?.role === 'hr_finance';
+  const isHR = user?.role === 'admin' || user?.role === 'hr';
   const { logoUrl, companyName } = useLogoStore();
   const resolvedLogo = resolveLogoUrl(logoUrl);
 
@@ -42,8 +42,10 @@ export default function SalaryPage() {
   });
   const [claimsTotal, setClaimsTotal] = useState<number | null>(null);
   const [claimsFetching, setClaimsFetching] = useState(false);
+  const [visitChargesPreview, setVisitChargesPreview] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [payTarget, setPayTarget] = useState<Salary | null>(null);
+  const [isRecalculating, setIsRecalculating] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -67,16 +69,49 @@ export default function SalaryPage() {
     } catch (err) { console.error('openCalc:', err); }
     setForm({ employeeId: '', month: now.getMonth() + 1, year: now.getFullYear(), baseSalary: '', incentives: '', deductions: '', travelAllowance: '' });
     setClaimsTotal(null);
+    setIsRecalculating(false);
     setShowCalc(true);
   };
 
-  // Auto-fetch approved claims when employee + month + year are set
+  const openRecalc = async (sal: Salary) => {
+    try {
+      const res = await usersApi.getAll({ limit: 200, isActive: true });
+      setEngineers((res.data || []).filter((u: User) => u.role !== 'admin'));
+    } catch { }
+    const emp = sal.employeeId as User;
+    setForm({
+      employeeId: emp._id,
+      month: sal.month,
+      year: sal.year,
+      baseSalary: String(sal.baseSalary || ''),
+      incentives: String(sal.incentives || ''),
+      deductions: String(sal.deductions || ''),
+      travelAllowance: String(sal.travelAllowance || ''),
+    });
+    setClaimsTotal(null);
+    setIsRecalculating(true);
+    setShowCalc(true);
+  };
+
+  // Auto-fill base salary from selected employee profile
   useEffect(() => {
-    if (!form.employeeId || !showCalc) { setClaimsTotal(null); return; }
+    if (!form.employeeId || !showCalc) return;
+    const emp = engineers.find(e => e._id === form.employeeId);
+    if (emp && emp.baseSalary) {
+      setForm(f => ({ ...f, baseSalary: String(emp.baseSalary) }));
+    }
+  }, [form.employeeId, showCalc, engineers]);
+
+  // Auto-fetch approved claims + visit charges when employee + month + year are set
+  useEffect(() => {
+    if (!form.employeeId || !showCalc) { setClaimsTotal(null); setVisitChargesPreview(null); return; }
     setClaimsFetching(true);
-    salariesApi.getClaimsPreview(form.employeeId, Number(form.month), Number(form.year))
-      .then(amt => setClaimsTotal(amt))
-      .catch(() => setClaimsTotal(0))
+    Promise.all([
+      salariesApi.getClaimsPreview(form.employeeId, Number(form.month), Number(form.year)),
+      salariesApi.getVisitChargesPreview?.(form.employeeId, Number(form.month), Number(form.year)).catch(() => 0),
+    ])
+      .then(([claims, visits]) => { setClaimsTotal(claims); setVisitChargesPreview(visits ?? 0); })
+      .catch(() => { setClaimsTotal(0); setVisitChargesPreview(0); })
       .finally(() => setClaimsFetching(false));
   }, [form.employeeId, form.month, form.year, showCalc]);
 
@@ -95,13 +130,16 @@ export default function SalaryPage() {
         employeeId: form.employeeId,
         month: Number(form.month),
         year: Number(form.year),
-        baseSalary: Number(form.baseSalary),
+        baseSalary: Number(form.baseSalary) || 0,
         incentives: Number(form.incentives) || 0,
         deductions: Number(form.deductions) || 0,
         travelAllowance: Number(form.travelAllowance) || 0,
-      } as any);
+        recalculate: isRecalculating,
+      });
       setShowCalc(false);
       load();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Failed to calculate salary');
     } finally { setSaving(false); }
   };
 
@@ -361,7 +399,12 @@ export default function SalaryPage() {
                     <td className="table-cell font-bold text-violet-700 text-base">{formatCurrency(sal.finalSalary)}</td>
                     <td className="table-cell"><StatusBadge status={sal.status} /></td>
                     <td className="table-cell">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {isHR && (
+                          <button onClick={() => openRecalc(sal)} className="flex items-center gap-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-800 px-2.5 py-1 rounded-lg font-medium" title="Edit & Recalculate">
+                            <RefreshCw size={11} /> Recalc
+                          </button>
+                        )}
                         {sal.status === 'Calculated' && isHR && (
                           <button onClick={() => setPayTarget(sal)} className="flex items-center gap-1 text-xs bg-green-100 hover:bg-green-200 text-green-800 px-2.5 py-1 rounded-lg font-medium">
                             <DollarSign size={12} /> Mark Paid
@@ -422,7 +465,12 @@ export default function SalaryPage() {
                   <span className="text-xs text-gray-400">Final Salary</span>
                   <p className="font-bold text-violet-700 text-base">{formatCurrency(sal.finalSalary)}</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {isHR && (
+                    <button onClick={() => openRecalc(sal)} className="flex items-center gap-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-800 px-2.5 py-1 rounded-lg font-medium">
+                      <RefreshCw size={11} /> Recalc
+                    </button>
+                  )}
                   {sal.status === 'Calculated' && isHR && (
                     <button onClick={() => setPayTarget(sal)} className="flex items-center gap-1 text-xs bg-green-100 hover:bg-green-200 text-green-800 px-2.5 py-1 rounded-lg font-medium">
                       <DollarSign size={12} /> Mark Paid
@@ -450,11 +498,13 @@ export default function SalaryPage() {
         </div>
       )}
 
-      <Modal isOpen={showCalc} onClose={() => setShowCalc(false)} title="Calculate Salary">
+      <Modal isOpen={showCalc} onClose={() => setShowCalc(false)} title={isRecalculating ? 'Recalculate Salary' : 'Calculate Salary'}>
         <form onSubmit={handleCalculate} className="space-y-4">
           <div>
-            <label className="label">Employee (HR / Sales / Engineer) *</label>
-            <select required className="input-field" value={form.employeeId} onChange={(e) => setForm(f => ({...f, employeeId: e.target.value}))}>
+            <label className="label">Employee *</label>
+            <select required className="input-field" value={form.employeeId}
+              disabled={isRecalculating}
+              onChange={(e) => setForm(f => ({...f, employeeId: e.target.value}))}>
               <option value="">Select employee</option>
               {engineers.map(e => <option key={e._id} value={e._id}>{e.name} ({e.role})</option>)}
             </select>
@@ -462,13 +512,17 @@ export default function SalaryPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">Month *</label>
-              <select required className="input-field" value={form.month} onChange={(e) => setForm(f => ({...f, month: Number(e.target.value)}))}>
+              <select required className="input-field" value={form.month}
+                disabled={isRecalculating}
+                onChange={(e) => setForm(f => ({...f, month: Number(e.target.value)}))}>
                 {MONTHS.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
               </select>
             </div>
             <div>
               <label className="label">Year *</label>
-              <input required type="number" className="input-field" value={form.year} onChange={(e) => setForm(f => ({...f, year: Number(e.target.value)}))} />
+              <input required type="number" className="input-field" value={form.year}
+                disabled={isRecalculating}
+                onChange={(e) => setForm(f => ({...f, year: Number(e.target.value)}))} />
             </div>
             <div>
               <label className="label">Base Salary (₹) *</label>
@@ -488,16 +542,24 @@ export default function SalaryPage() {
             </div>
           </div>
 
-          {/* Claims — auto-fetched from approved visit claims */}
+          {/* Auto-fetched: Visit Charges + Claims */}
           {form.employeeId && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-              <label className="label !mb-1 text-amber-800">Claims (Auto-calculated from approved HR claims)</label>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
+              <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Auto-calculated for this period</p>
               {claimsFetching ? (
-                <p className="text-sm text-amber-600 animate-pulse">Fetching approved claims…</p>
+                <p className="text-sm text-blue-600 animate-pulse">Fetching records…</p>
               ) : (
-                <div className="flex items-center gap-3">
-                  <p className="text-lg font-bold text-amber-700">{formatCurrency(claimsTotal ?? 0)}</p>
-                  {claimsTotal === 0 && <p className="text-xs text-amber-500">No approved claims for this period</p>}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-xs text-blue-500 mb-0.5">Visit Charges (Approved)</p>
+                    <p className="text-base font-bold text-blue-700">{formatCurrency(visitChargesPreview ?? 0)}</p>
+                    {visitChargesPreview === 0 && <p className="text-xs text-blue-400">No approved visits</p>}
+                  </div>
+                  <div>
+                    <p className="text-xs text-amber-500 mb-0.5">Claims (Approved)</p>
+                    <p className="text-base font-bold text-amber-700">{formatCurrency(claimsTotal ?? 0)}</p>
+                    {claimsTotal === 0 && <p className="text-xs text-amber-400">No approved claims</p>}
+                  </div>
                 </div>
               )}
             </div>
@@ -506,7 +568,9 @@ export default function SalaryPage() {
           <p className="text-xs text-gray-400">Visit charges and claims will be auto-aggregated from approved engineer records.</p>
           <div className="flex gap-3 justify-end">
             <button type="button" onClick={() => setShowCalc(false)} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Calculating…' : 'Calculate'}</button>
+            <button type="submit" disabled={saving} className="btn-primary">
+              {saving ? 'Saving…' : isRecalculating ? 'Recalculate & Update' : 'Calculate'}
+            </button>
           </div>
         </form>
       </Modal>

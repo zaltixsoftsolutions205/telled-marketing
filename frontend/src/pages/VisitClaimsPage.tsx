@@ -36,7 +36,7 @@ const EXPENSE_TYPES = [
 
 export default function VisitClaimsPage() {
   const user = useAuthStore((s) => s.user);
-  const isHR = user?.role === 'admin' || user?.role === 'hr_finance';
+  const isHR = user?.role === 'admin' || user?.role === 'hr';
   const isEngineer = user?.role === 'engineer' || user?.role === 'admin';
   
   const [claims, setClaims] = useState<VisitClaim[]>([]);

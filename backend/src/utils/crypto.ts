@@ -16,16 +16,27 @@ export const decryptText = (text: string): string => {
   return Buffer.concat([decipher.update(Buffer.from(encHex, 'hex')), decipher.final()]).toString('utf8');
 };
 
+const M365_DOMAINS = (process.env.M365_DOMAINS || '')
+  .split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
+
 export const detectSmtp = (email: string): { host: string; port: number; secure: boolean } => {
   const domain = email.split('@')[1]?.toLowerCase() || '';
-  if (domain.includes('gmail'))
-    return { host: 'smtp.gmail.com', port: 587, secure: false };
-  if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('office365') || domain.includes('live'))
+  if (domain.includes('gmail') || domain === 'googlemail.com')
+    return { host: 'smtp.gmail.com', port: 465, secure: true };
+  if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('live') || domain.includes('msn') || M365_DOMAINS.includes(domain))
+    return { host: 'smtp-mail.outlook.com', port: 587, secure: false };
+  if (domain.includes('office365'))
     return { host: 'smtp.office365.com', port: 587, secure: false };
-  if (domain.includes('yahoo'))
+  if (domain.includes('yahoo') || domain.includes('ymail'))
     return { host: 'smtp.mail.yahoo.com', port: 465, secure: true };
   if (domain.includes('zoho'))
     return { host: 'smtp.zoho.com', port: 465, secure: true };
-  // Custom domain — default to Hostinger SMTP
-  return { host: 'smtp.hostinger.com', port: 465, secure: true };
+  if (domain.includes('icloud') || domain === 'me.com' || domain === 'mac.com')
+    return { host: 'smtp.mail.me.com', port: 587, secure: false };
+  if (domain.includes('protonmail') || domain.includes('proton.me'))
+    return { host: '127.0.0.1', port: 1025, secure: false }; // ProtonMail Bridge
+  if (domain.includes('fastmail'))
+    return { host: 'smtp.fastmail.com', port: 465, secure: true };
+  // Unknown business domain — host is empty, caller must prompt user to select provider
+  return { host: '', port: 587, secure: false };
 };

@@ -18,6 +18,7 @@ export interface IInstallation extends Document {
 
 const InstallationSchema = new Schema<IInstallation>(
   {
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
     accountId: { type: Schema.Types.ObjectId, ref: 'Account', required: true },
     engineerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     scheduledDate: { type: Date, required: true },

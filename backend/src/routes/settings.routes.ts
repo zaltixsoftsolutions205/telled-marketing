@@ -67,7 +67,7 @@ router.get('/attendance', async (req: AuthRequest, res: Response) => {
   } catch { sendError(res, 'Failed to fetch attendance settings', 500); }
 });
 
-router.put('/attendance', authorize('admin', 'hr_finance'), async (req: AuthRequest, res: Response) => {
+router.put('/attendance', authorize('admin', 'hr'), async (req: AuthRequest, res: Response) => {
   try {
     const org = await Organization.findByIdAndUpdate(
       req.user!.organizationId,
@@ -90,7 +90,7 @@ router.get('/leave-policy', async (req: AuthRequest, res: Response) => {
   } catch { sendError(res, 'Failed to fetch leave policy', 500); }
 });
 
-router.put('/leave-policy', authorize('admin', 'hr_finance'), async (req: AuthRequest, res: Response) => {
+router.put('/leave-policy', authorize('admin', 'hr'), async (req: AuthRequest, res: Response) => {
   try {
     const org = await Organization.findByIdAndUpdate(
       req.user!.organizationId,

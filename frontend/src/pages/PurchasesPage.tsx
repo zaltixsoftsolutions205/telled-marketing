@@ -228,7 +228,7 @@ function LineItemsTable({
 export default function PurchasesPage() {
   const { user } = useAuthStore();
   const canEdit = user?.role === 'admin' || user?.role === 'sales';
-  const canFinance = user?.role === 'admin' || user?.role === 'hr_finance';
+  const canFinance = user?.role === 'admin' || user?.role === 'finance';
 
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [total, setTotal] = useState(0);

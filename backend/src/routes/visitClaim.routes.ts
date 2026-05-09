@@ -32,9 +32,9 @@ router.use(authenticate);
 
 router.get('/', getClaims);
 router.get('/stats', getClaimStats);
-router.post('/', authorize('admin', 'engineer'), createClaim);
-router.patch('/:id/submit', authorize('admin', 'engineer'), upload.single('invoiceFile'), submitClaim);
-router.patch('/:id/approve', authorize('admin', 'hr_finance'), approveClaim);
-router.patch('/:id/reject', authorize('admin', 'hr_finance'), rejectClaim);
+router.post('/', authorize('admin', 'manager', 'engineer'), createClaim);
+router.patch('/:id/submit', authorize('admin', 'manager', 'engineer'), upload.single('invoiceFile'), submitClaim);
+router.patch('/:id/approve', authorize('admin', 'manager', 'hr'), approveClaim);
+router.patch('/:id/reject', authorize('admin', 'manager', 'hr'), rejectClaim);
 
 export default router;

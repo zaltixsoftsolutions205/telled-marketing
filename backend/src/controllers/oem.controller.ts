@@ -8,16 +8,9 @@ import { addDays } from '../utils/helpers';
 import { OEM_EXPIRY_DAYS } from '../config/constants';
 import { sendOEMApprovalRequest, sendOEMRejectionNotification, sendDRFEmail, sendOEMExtensionRequest } from '../services/email.service';
 import { syncEmailsForDRF, ImapCredentials } from '../services/emailInbox.service';
-import { decryptText } from '../utils/crypto';
 import { UserSmtpConfig } from '../services/email.service';
-
-async function getUserSmtp(userId: string): Promise<UserSmtpConfig | undefined> {
-  try {
-    const user = await User.findById(userId).select('name email smtpHost smtpPort smtpUser smtpPass smtpSecure');
-    if (!user?.smtpHost || !user?.smtpUser || !user?.smtpPass) return undefined;
-    return { smtpHost: user.smtpHost, smtpPort: user.smtpPort || 465, smtpUser: user.smtpUser, smtpPass: decryptText(user.smtpPass), smtpSecure: user.smtpSecure, fromEmail: user.email, fromName: user.name };
-  } catch { return undefined; }
-}
+import { getUserSmtp, getUserSmtpWithFallback } from '../utils/getUserSmtp';
+import { decryptText } from '../utils/crypto';
 
 export const getAllDRFs = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -26,8 +19,15 @@ export const getAllDRFs = async (req: AuthRequest, res: Response): Promise<void>
     const filter: Record<string, unknown> = {};
     if (req.query.status) filter.status = req.query.status;
     if (req.query.leadId) filter.leadId = req.query.leadId;
-    // Non-admin users only see their own DRFs
-    if (req.user!.role !== 'admin') filter.createdBy = req.user!.id;
+    // Prospects page (status=Approved): admin/manager/engineer see all; sales sees own
+    // DRF Management page (no status filter): sales/admin see own
+    const role = req.user!.role;
+    const isProspectsView = req.query.status === 'Approved';
+    if (role === 'admin' || role === 'manager' || (isProspectsView && role === 'engineer')) {
+      // see all in org — no extra filter
+    } else {
+      filter.createdBy = req.user!.id;
+    }
     const [data, total] = await Promise.all([
       OEMApprovalAttempt.find(filter).populate('leadId', 'companyName oemName contactPersonName contactName email oemEmail').populate('createdBy', 'name email').sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
       OEMApprovalAttempt.countDocuments(filter),
@@ -75,11 +75,45 @@ export const createAttempt = async (req: AuthRequest, res: Response): Promise<vo
     const d = attempt.sentDate;
     const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
     const drfNumber = `DRF-${dateStr}-${String(attempt.attemptNumber).padStart(3, '0')}`;
-    const oemTo = lead.oemEmail || lead.email;
-    const senderSmtp = await getUserSmtp(req.user!.id);
-    await sendOEMApprovalRequest(oemTo, lead.companyName, lead.oemName || '', attempt.attemptNumber, drfNumber, senderSmtp);
+    const oemTo = lead.oemEmail;
+    if (!oemTo) {
+      await attempt.deleteOne();
+      await Lead.findByIdAndUpdate(leadId, { stage: 'New' });
+      sendError(res, 'OEM Email is not set on this lead. Please edit the lead and add the OEM Email before sending a DRF.', 400);
+      return;
+    }
+    const sender = await User.findById(req.user!.id).select('name email smtpHost smtpUser smtpPass');
+    let senderSmtp;
+    try {
+      senderSmtp = await getUserSmtp(req.user!.id, true);
+    } catch (smtpErr: any) {
+      await attempt.deleteOne();
+      await Lead.findByIdAndUpdate(leadId, { stage: 'New' });
+      sendError(res, smtpErr.message || 'Your personal email is not configured. Please set up your email in settings before sending a DRF.', 400);
+      return;
+    }
+    await sendDRFEmail(oemTo, {
+      drfNumber,
+      version:           attempt.attemptNumber,
+      companyName:       lead.companyName,
+      contactName:       (lead as any).contactPersonName || (lead as any).contactName || '',
+      oemName:           lead.oemName || '',
+      salesName:         sender?.name || 'ZIEOS Sales',
+      salesEmail:        sender?.email || '',
+      address:           (lead as any).address || '',
+      website:           (lead as any).website || '',
+      annualTurnover:    (lead as any).annualTurnover || '',
+      designation:       (lead as any).designation || '',
+      contactNo:         (lead as any).phone || (lead as any).contactNo || '',
+      email:             lead.email || '',
+      channelPartner:    (lead as any).channelPartner || 'ZIEOS',
+      interestedModules: (lead as any).interestedModules || lead.oemName || '',
+      expectedClosure:   (lead as any).expectedClosure || '',
+    }, senderSmtp);
     sendSuccess(res, attempt, 'OEM request submitted', 201);
-  } catch { sendError(res, 'Failed to create OEM attempt', 500); }
+  } catch (e: any) {
+    if (!res.headersSent) sendError(res, e?.message || 'Failed to create OEM attempt', 500);
+  }
 };
 
 export const approveAttempt = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -104,7 +138,7 @@ export const rejectAttempt = async (req: AuthRequest, res: Response): Promise<vo
     await attempt.save();
     const lead = await Lead.findByIdAndUpdate(attempt.leadId, { stage: 'OEM Rejected' }, { new: true });
     if (lead) {
-      const senderSmtp = await getUserSmtp(req.user!.id);
+      const senderSmtp = await getUserSmtpWithFallback(req.user!.id);
       await sendOEMRejectionNotification(lead.email, lead.companyName, reason, attempt.attemptNumber, senderSmtp);
     }
     sendSuccess(res, attempt, 'OEM rejected');
@@ -137,8 +171,18 @@ export const resendDRF = async (req: AuthRequest, res: Response): Promise<void> 
     await attempt.save();
     await Lead.findByIdAndUpdate(attempt.leadId, { stage: 'OEM Submitted' });
 
-    const oemTo = lead.oemEmail || lead.email;
-    const senderSmtp = await getUserSmtp(req.user!.id);
+    const oemTo = lead.oemEmail;
+    if (!oemTo) {
+      sendError(res, 'OEM Email is not set on this lead. Please edit the lead and add the OEM Email before resending.', 400);
+      return;
+    }
+    let senderSmtp;
+    try {
+      senderSmtp = await getUserSmtp(req.user!.id, true);
+    } catch (smtpErr: any) {
+      sendError(res, smtpErr.message || 'Your personal email is not configured. Please set up your email in settings before sending a DRF.', 400);
+      return;
+    }
     const sender = await User.findById(req.user!.id).select('name email');
     await sendDRFEmail(oemTo, {
       drfNumber,
@@ -146,7 +190,7 @@ export const resendDRF = async (req: AuthRequest, res: Response): Promise<void> 
       companyName: lead.companyName,
       contactName: (lead as any).contactPersonName || (lead as any).contactName || '',
       oemName: lead.oemName || '',
-      salesName: sender?.name || 'Telled Sales',
+      salesName: sender?.name || 'ZIEOS Sales',
       salesEmail: sender?.email || '',
       address: (lead as any).address || '',
       website: (lead as any).website || '',
@@ -160,7 +204,9 @@ export const resendDRF = async (req: AuthRequest, res: Response): Promise<void> 
     }, senderSmtp);
 
     sendSuccess(res, attempt, 'DRF email resent successfully');
-  } catch { sendError(res, 'Failed to resend DRF', 500); }
+  } catch (e: any) {
+    if (!res.headersSent) sendError(res, e?.message || 'Failed to resend DRF', 500);
+  }
 };
 
 export const resetToPending = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -195,26 +241,67 @@ export const extendExpiry = async (req: AuthRequest, res: Response): Promise<voi
 // POST /api/oem/sync-emails  — reads logged-in user's inbox and auto-approves/rejects Pending DRFs
 export const syncDRFEmails = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    let creds: ImapCredentials | undefined;
-    const user = await User.findById(req.user!.id).select('smtpHost smtpPort smtpUser smtpPass');
-    if (user?.smtpUser && user?.smtpPass) {
-      try {
-        const smtpHost = user.smtpHost || 'smtp.hostinger.com';
-        const imapHost = smtpHost.includes('office365') || smtpHost.includes('outlook')
-          ? 'imap-mail.outlook.com'
-          : smtpHost.replace(/^smtp\./, 'imap.');
-        creds = {
-          host: imapHost,
-          port: 993,
-          user: user.smtpUser,
-          pass: decryptText(user.smtpPass),
-        };
-      } catch { /* decryption failed — fall back to env vars */ }
+    const user = await User.findById(req.user!.id)
+      .select('smtpHost smtpPort smtpUser smtpPass msRefreshToken email');
+
+    // ── Personal Outlook/Hotmail with OAuth → use Graph delegated sync ──────────
+    if ((user as any)?.msRefreshToken) {
+      const { syncEmailsForDRFViaGraph } = await import('../services/emailInbox.service');
+      const result = await syncEmailsForDRFViaGraph((user as any).msRefreshToken, user!.email);
+      sendSuccess(res, result, `Sync complete — ${result.processed} DRFs updated`);
+      return;
     }
+
+    // ── SMTP/IMAP user (Gmail, Zoho, Hostinger, GoDaddy, Yahoo, iCloud…) ────────
+    if (!user?.smtpUser || !user?.smtpPass) {
+      sendError(res, 'Your email is not configured. Please log out and log in again to set up your email.', 400);
+      return;
+    }
+
+    let imapPass: string;
+    try {
+      imapPass = decryptText(user.smtpPass);
+    } catch {
+      sendError(res, 'Could not read your email credentials. Please log out and log in again.', 400);
+      return;
+    }
+
+    const smtpHost = user.smtpHost || '';
+    let imapHost: string;
+    if (smtpHost.includes('gmail')) {
+      imapHost = 'imap.gmail.com';
+    } else if (smtpHost.includes('office365') || smtpHost.includes('outlook')) {
+      imapHost = 'imap-mail.outlook.com';
+    } else if (smtpHost.includes('yahoo')) {
+      imapHost = 'imap.mail.yahoo.com';
+    } else if (smtpHost.includes('zoho')) {
+      imapHost = 'imap.zoho.com';
+    } else if (smtpHost.includes('hostinger')) {
+      imapHost = 'imap.hostinger.com';
+    } else if (smtpHost.includes('godaddy') || smtpHost.includes('secureserver')) {
+      imapHost = 'imap.secureserver.net';
+    } else if (smtpHost.includes('titan')) {
+      imapHost = 'imap.titan.email';
+    } else if (smtpHost.includes('fastmail')) {
+      imapHost = 'imap.fastmail.com';
+    } else if (smtpHost.includes('icloud') || smtpHost.includes('me.com')) {
+      imapHost = 'imap.mail.me.com';
+    } else {
+      // Generic fallback: swap smtp. prefix for imap.
+      imapHost = smtpHost.replace(/^smtp\./, 'imap.');
+    }
+
+    const creds: ImapCredentials = {
+      host: imapHost,
+      port: 993,
+      user: user.smtpUser,
+      pass: imapPass,
+    };
+
     const result = await syncEmailsForDRF(creds);
     sendSuccess(res, result, `Sync complete — ${result.processed} DRFs updated`);
-  } catch (err) {
-    sendError(res, 'Email sync failed', 500);
+  } catch (err: any) {
+    sendError(res, err?.message || 'Email sync failed', 500);
   }
 };
 
@@ -228,13 +315,17 @@ export const requestExtension = async (req: AuthRequest, res: Response): Promise
     await attempt.save();
 
     const lead = attempt.leadId as any;
-    const oemTo = lead?.oemEmail || lead?.email;
+    const oemTo = req.body?.toEmail || lead?.oemEmail || lead?.email;
+
     if (oemTo && attempt.expiryDate) {
       const d = new Date(attempt.sentDate);
       const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
       const drfNumber = `DRF-${dateStr}-${String(attempt.attemptNumber).padStart(3, '0')}`;
+
+      // getUserSmtp without required=true so it falls back to system SMTP instead of throwing
       const senderSmtp = await getUserSmtp(req.user!.id);
       const sender = await User.findById(req.user!.id).select('name email');
+
       await sendOEMExtensionRequest(oemTo, {
         drfNumber,
         companyName: lead.companyName,
@@ -242,11 +333,18 @@ export const requestExtension = async (req: AuthRequest, res: Response): Promise
         expiryDate: attempt.expiryDate.toISOString(),
         salesName: sender?.name || 'ZIEOS',
         salesEmail: sender?.email || '',
+        // Custom fields from composer modal
+        customSubject:     req.body?.customSubject,
+        customMessage:     req.body?.customMessage,
+        toName:            req.body?.toName,
+        requestedNewExpiry: req.body?.requestedNewExpiry,
       }, senderSmtp);
     }
 
-    sendSuccess(res, attempt, 'Extension requested');
-  } catch { sendError(res, 'Failed to request extension', 500); }
+    sendSuccess(res, attempt, 'Extension email sent');
+  } catch (e: any) {
+    sendError(res, e?.message || 'Failed to request extension', 500);
+  }
 };
 
 // PATCH /api/oem/:id/reassign  — admin transfers DRF ownership to another sales person
@@ -281,4 +379,18 @@ export const deleteDRF = async (req: AuthRequest, res: Response): Promise<void> 
     await attempt.deleteOne();
     sendSuccess(res, null, 'DRF deleted');
   } catch { sendError(res, 'Failed to delete DRF', 500); }
+};
+
+export const updateProspectStatus = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { prospectStatus } = req.body;
+    if (!prospectStatus) { sendError(res, 'prospectStatus is required', 400); return; }
+    const attempt = await OEMApprovalAttempt.findByIdAndUpdate(
+      req.params.id,
+      { prospectStatus },
+      { new: true }
+    );
+    if (!attempt) { sendError(res, 'DRF not found', 404); return; }
+    sendSuccess(res, attempt, 'Prospect status updated');
+  } catch { sendError(res, 'Failed to update prospect status', 500); }
 };

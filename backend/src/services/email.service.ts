@@ -10,10 +10,19 @@ const appUrl = () => process.env.APP_URL || (process.env.FRONTEND_URL || 'http:/
 const GRAPH_CLIENT_ID     = process.env.GRAPH_CLIENT_ID     || '';
 const GRAPH_CLIENT_SECRET = process.env.GRAPH_CLIENT_SECRET || '';
 const GRAPH_TENANT_ID     = process.env.GRAPH_TENANT_ID     || '';
+const M365_DOMAINS        = (process.env.M365_DOMAINS || '')
+  .split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
 
+// Returns true ONLY for custom M365 business domains (not personal @outlook.com/@hotmail.com).
+// Personal Microsoft accounts cannot use Graph API sendMail — they must use SMTP.
 function isOutlookEmail(email: string): boolean {
   const d = email.split('@')[1]?.toLowerCase() || '';
-  return d.includes('outlook') || d.includes('hotmail') || d.includes('live') || d.includes('office365') || d.includes('microsoft');
+  // Personal consumer domains → must use SMTP, not Graph API
+  const personalDomains = ['outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'live.in', 'live.co.uk'];
+  if (personalDomains.includes(d)) return false;
+  // office365.com / microsoft.com are tenant domains → Graph API is fine
+  if (d.includes('office365') || d.includes('microsoft')) return true;
+  return M365_DOMAINS.includes(d);
 }
 
 // ── Google Workspace Domain-Wide Delegation sender ────────────────────────────
@@ -94,6 +103,81 @@ async function getGraphToken(): Promise<string> {
   });
   const res = await axios.post(url, params.toString(), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
   return res.data.access_token;
+}
+
+// Get a fresh access token using a user's stored OAuth2 refresh token (delegated flow)
+async function getGraphTokenDelegated(encryptedRefreshToken: string): Promise<string> {
+  const { decryptText } = await import('../utils/crypto');
+  const refreshToken = decryptText(encryptedRefreshToken);
+  const res = await axios.post(
+    'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+    new URLSearchParams({
+      grant_type:    'refresh_token',
+      client_id:     GRAPH_CLIENT_ID,
+      client_secret: GRAPH_CLIENT_SECRET,
+      refresh_token: refreshToken,
+      scope:         'offline_access Mail.Send Mail.Read Mail.ReadWrite User.Read',
+    }).toString(),
+    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+  );
+
+  // If we got a new refresh token, update it in DB (token rotation)
+  if (res.data.refresh_token && res.data.refresh_token !== refreshToken) {
+    const { encryptText } = await import('../utils/crypto');
+    const User = (await import('../models/User')).default;
+    await User.updateOne(
+      { msRefreshToken: encryptedRefreshToken },
+      { msRefreshToken: encryptText(res.data.refresh_token) }
+    );
+  }
+
+  return res.data.access_token;
+}
+
+// Send email using user's own delegated OAuth2 token (personal Outlook/Hotmail)
+async function sendViaGraphDelegated(
+  encryptedRefreshToken: string,
+  from: string,
+  fromName: string,
+  to: string,
+  subject: string,
+  html: string,
+  cc?: string,
+  attachments?: Array<{ filename: string; path?: string; content?: Buffer }>,
+): Promise<void> {
+  const token = await getGraphTokenDelegated(encryptedRefreshToken);
+
+  const toRecipients = to.split(',').map(e => ({ emailAddress: { address: e.trim() } }));
+  const ccRecipients = cc ? cc.split(',').map(e => ({ emailAddress: { address: e.trim() } })) : [];
+
+  const fs = await import('fs');
+  const graphAttachments = (attachments || []).map(a => ({
+    '@odata.type': '#microsoft.graph.fileAttachment',
+    name: a.filename,
+    contentBytes: (a.content ? a.content : fs.readFileSync(a.path!)).toString('base64'),
+  }));
+
+  try {
+    await axios.post(
+      'https://graph.microsoft.com/v1.0/me/sendMail',
+      {
+        message: {
+          subject,
+          body: { contentType: 'HTML', content: html },
+          toRecipients,
+          ...(ccRecipients.length ? { ccRecipients } : {}),
+          ...(graphAttachments.length ? { attachments: graphAttachments } : {}),
+        },
+        saveToSentItems: true,
+      },
+      { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
+    );
+    logger.info(`Email sent via delegated Graph FROM ${from} to ${to}: ${subject}`);
+  } catch (graphErr: any) {
+    const detail = graphErr?.response?.data?.error?.message || graphErr?.response?.data || graphErr?.message;
+    logger.error(`Graph sendMail failed FROM ${from}: ${JSON.stringify(detail)}`);
+    throw new Error(`Graph sendMail failed: ${JSON.stringify(detail)}`);
+  }
 }
 
 async function sendViaGraph(
@@ -201,6 +285,8 @@ export interface UserSmtpConfig {
   smtpSecure?: boolean;
   fromEmail: string;
   fromName: string;
+  useGraphApi?: boolean;    // M365 business tenant — client credentials Graph API
+  msRefreshToken?: string;  // personal Outlook/Hotmail — delegated OAuth2 refresh token (encrypted)
 }
 
 /** Send any email using user's own SMTP/Graph if available, fallback to system SMTP */
@@ -213,17 +299,26 @@ export const sendEmailWithUserSmtp = async (
   cc?: string,
 ): Promise<void> => {
   if (senderSmtp) {
-    // Google Workspace (company domain on Gmail) → use Gmail API domain-wide delegation
+    // ── Personal Outlook/Hotmail with delegated OAuth token ──────────────────
+    // msRefreshToken takes priority — it means the user connected via OAuth2
+    if (senderSmtp.msRefreshToken) {
+      await sendViaGraphDelegated(senderSmtp.msRefreshToken, senderSmtp.fromEmail, senderSmtp.fromName, to, subject, html, cc, attachments);
+      return;
+    }
+
+    // ── Google Workspace domain-wide delegation ───────────────────────────────
     if (isGoogleWorkspaceEmail(senderSmtp.fromEmail)) {
       await sendViaGoogleWorkspace(senderSmtp.fromEmail, senderSmtp.fromName, to, subject, html, cc, attachments);
       return;
     }
-    // Outlook/M365 users → use Graph API (bypasses SMTP AUTH requirement)
-    if (isOutlookEmail(senderSmtp.fromEmail) && GRAPH_CLIENT_ID && GRAPH_CLIENT_SECRET && GRAPH_TENANT_ID) {
+
+    // ── Microsoft 365 business tenant (client credentials) ───────────────────
+    if (senderSmtp.useGraphApi && GRAPH_CLIENT_ID && GRAPH_CLIENT_SECRET && GRAPH_TENANT_ID) {
       await sendViaGraph(senderSmtp.fromEmail, senderSmtp.fromName, to, subject, html, cc, attachments);
       return;
     }
-    // All other providers → SMTP
+
+    // ── All other providers (Gmail, Zoho, Hostinger, GoDaddy, Yahoo…) → SMTP ─
     const transporter = nodemailer.createTransport({
       host: senderSmtp.smtpHost,
       port: senderSmtp.smtpPort,
@@ -326,7 +421,7 @@ export const sendWelcomeEmail = async (data: {
   loginUrl: string;
 }) => {
   const roleLabel: Record<string, string> = {
-    admin: 'Admin', sales: 'Sales', engineer: 'Engineer', hr_finance: 'HR & Finance',
+    admin: 'Admin', manager: 'Manager', sales: 'Sales', engineer: 'Engineer', hr: 'HR', finance: 'Finance',
   };
   const displayRole = roleLabel[data.role] || data.role;
 
@@ -515,35 +610,71 @@ const sendViaHostinger = async (
   to: string,
   subject: string,
   html: string,
+  textContent?: string,
   attachments?: Array<{ filename: string; path: string }>
 ) => {
   const transporter = getHostingerTransporter();
+  const fromEmail = process.env.USER_EMAIL_FROM || '';
   await transporter.sendMail({
-    from: `"ZIEOS" <${process.env.USER_EMAIL_FROM}>`,
+    from: `"ZIEOS" <${fromEmail}>`,
+    replyTo: fromEmail,
     to,
     subject,
     html,
+    // Plain-text fallback reduces spam score significantly
+    text: textContent || html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(),
+    headers: {
+      // Proper headers that mail servers expect from transactional senders
+      'X-Mailer': 'ZIEOS Mailer',
+      'X-Priority': '3',
+      'Precedence': 'bulk',
+      'List-Unsubscribe': `<mailto:${fromEmail}?subject=unsubscribe>`,
+    },
     ...(attachments && attachments.length ? { attachments } : {}),
   });
 };
 
 export const sendOTPEmail = async (to: string, otp: string, context: 'registration' | 'login' = 'registration') => {
   const subject = context === 'login'
-    ? 'Your Sign-In OTP — ZIEOS'
-    : 'Your OTP for ZIEOS Registration';
-  const heading = context === 'login' ? 'Sign-In Verification' : 'Email Verification';
+    ? `${otp} is your ZIEOS sign-in code`
+    : `${otp} is your ZIEOS verification code`;
+  const heading = context === 'login' ? 'Sign-in verification code' : 'Email verification code';
   const desc = context === 'login'
-    ? 'Use the code below to complete your sign-in.'
-    : 'Use the OTP below to verify your email address.';
+    ? 'Use the code below to complete your sign-in. This code expires in 5 minutes.'
+    : 'Use the code below to verify your email address. This code expires in 5 minutes.';
 
-  await sendViaHostinger(to, subject, base(`
-    <h2 style="color:#4f2d7f">${heading}</h2>
-    <p>${desc}</p>
-    <div style="background:#f5f3ff;border:2px dashed #6b46c1;border-radius:8px;text-align:center;padding:24px;margin:20px 0">
-      <span style="font-size:40px;font-weight:bold;letter-spacing:10px;color:#4f2d7f">${otp}</span>
-    </div>
-    <p style="color:#666;font-size:13px">This code is valid for <strong>5 minutes</strong>. Do not share it with anyone.</p>
-  `, heading));
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f6f6f6;font-family:Arial,Helvetica,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f6f6f6;padding:32px 16px">
+<tr><td align="center">
+<table width="100%" style="max-width:480px;background:#ffffff;border-radius:8px;border:1px solid #e5e7eb">
+  <tr><td style="padding:28px 32px 0">
+    <p style="margin:0 0 4px;font-size:13px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">ZIEOS</p>
+    <h1 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#111827">${heading}</h1>
+    <p style="margin:0 0 24px;font-size:14px;color:#374151;line-height:1.6">${desc}</p>
+  </td></tr>
+  <tr><td style="padding:0 32px">
+    <table width="100%" cellpadding="0" cellspacing="0">
+    <tr><td align="center" style="background:#f3f4f6;border-radius:8px;padding:20px">
+      <span style="font-size:36px;font-weight:700;letter-spacing:12px;color:#111827;font-family:monospace">${otp}</span>
+    </td></tr>
+    </table>
+  </td></tr>
+  <tr><td style="padding:20px 32px 28px">
+    <p style="margin:0 0 12px;font-size:13px;color:#6b7280;line-height:1.5">If you did not request this code, you can safely ignore this email. Do not share this code with anyone.</p>
+    <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0">
+    <p style="margin:0;font-size:12px;color:#9ca3af">© ${new Date().getFullYear()} ZIEOS · Zaltix Solutions</p>
+  </td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`;
+
+  const text = `${heading}\n\nYour code: ${otp}\n\n${desc}\n\nDo not share this code with anyone.\n\n© ${new Date().getFullYear()} ZIEOS`;
+
+  await sendViaHostinger(to, subject, html, text);
 };
 
 // Notify admin team about a new application — with one-click Approve / Reject buttons
@@ -643,7 +774,7 @@ export const sendApplicationNotificationEmail = async (data: {
   }));
 
   const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.USER_EMAIL_FROM || '';
-  await sendViaHostinger(adminEmail, `🆕 Registration Application — ${data.orgName} [Action Required]`, html, attachments);
+  await sendViaHostinger(adminEmail, `🆕 Registration Application — ${data.orgName} [Action Required]`, html, undefined, attachments);
 };
 
 // Send approval email with credentials to the applicant
@@ -652,7 +783,6 @@ export const sendApprovalEmail = async (data: {
   contactName: string;
   orgName: string;
   loginEmail: string;
-  password: string;
 }) => {
   await sendViaHostinger(
     data.to,
@@ -661,15 +791,18 @@ export const sendApprovalEmail = async (data: {
       <h2 style="color:#059669">Application Approved!</h2>
       <p>Dear <strong>${data.contactName}</strong>,</p>
       <p>Congratulations! Your registration for <strong>${data.orgName}</strong> on ZIEOS has been reviewed and <strong style="color:#059669">approved</strong>.</p>
-      <p>Here are your login credentials:</p>
+      <p>You can now log in using the details below:</p>
       <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:20px;margin:16px 0">
         <table style="width:100%">
           <tr><td style="padding:6px;font-weight:bold;color:#374151">Login URL</td><td style="padding:6px"><a href="${appUrl()}/login">${appUrl()}/login</a></td></tr>
           <tr><td style="padding:6px;font-weight:bold;color:#374151">Email</td><td style="padding:6px">${data.loginEmail}</td></tr>
-          <tr><td style="padding:6px;font-weight:bold;color:#374151">Password</td><td style="padding:6px"><strong>${data.password}</strong></td></tr>
+          <tr><td style="padding:6px;font-weight:bold;color:#374151">Password</td><td style="padding:6px">Use your own email account password</td></tr>
         </table>
       </div>
-      <p style="color:#dc2626;font-size:13px"><strong>Important:</strong> Please change your password after your first login for security.</p>
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:14px;margin:16px 0;font-size:13px;color:#92400e">
+        <strong>How to login:</strong> Enter your email address and use the same password you use to access your email inbox (e.g. Gmail password, Outlook password, etc.).
+        If your provider requires an App Password for third-party apps, you will be guided to set it up after your first login.
+      </div>
       <p>If you have any questions, please contact us at <a href="mailto:${process.env.USER_EMAIL_FROM}">${process.env.USER_EMAIL_FROM}</a>.</p>
     `, 'Account Approved')
   );
@@ -945,7 +1078,7 @@ export const sendUserCredentialsEmail = async (
     admin:      'Admin',
     sales:      'Sales',
     engineer:   'Engineer',
-    hr_finance: 'HR & Finance',
+    hr: 'HR', finance: 'Finance',
   };
   const displayRole = role ? (roleLabel[role] || role) : 'Team Member';
   const loginUrl = `${appUrl()}/login`;
@@ -1017,7 +1150,7 @@ export const sendDRFExtensionEmail = async (data: {
   oemName: string;
   expiryDate: string;
   ownerName: string;
-}) => {
+}, senderSmtp?: UserSmtpConfig) => {
   // Recipients configured via env var: comma-separated email list
   const recipients = (process.env.DRF_EXTENSION_RECIPIENTS || '')
     .split(',')
@@ -1061,32 +1194,41 @@ export const sendDRFExtensionEmail = async (data: {
     </div>
   `;
 
-  await send(
-    recipients.join(','),
-    `DRF Extension Required — ${data.drfNumber} (${data.companyName}) expires ${expiry}`,
-    html
-  );
+  const subject = `DRF Extension Required — ${data.drfNumber} (${data.companyName}) expires ${expiry}`;
+  await sendEmailWithUserSmtp(recipients.join(','), subject, html, senderSmtp);
 };
 
 export const sendOEMExtensionRequest = async (
   to: string,
-  data: { drfNumber: string; companyName: string; oemName: string; expiryDate: string; salesName: string; salesEmail?: string },
+  data: {
+    drfNumber: string; companyName: string; oemName: string;
+    expiryDate: string; salesName: string; salesEmail?: string;
+    customSubject?: string; customMessage?: string;
+    toName?: string; requestedNewExpiry?: string;
+  },
   senderSmtp?: UserSmtpConfig
 ) => {
   const expiry = new Date(data.expiryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-  const subject = `DRF Extension Request — ${data.drfNumber} — ${data.companyName}`;
+  const subject = data.customSubject || `DRF Extension Request — ${data.drfNumber} — ${data.companyName}`;
+  const greeting = data.toName ? `Dear ${data.toName},` : 'Dear Sir/Madam,';
+  const customPara = data.customMessage
+    ? `<p style="color:#374151;white-space:pre-line">${data.customMessage}</p>`
+    : `<p>We are writing to request an extension for the DRF approval for <strong>${data.companyName}</strong>.</p>`;
+  const newExpiryRow = data.requestedNewExpiry
+    ? `<tr><td style="padding:8px 12px;border:1px solid #ddd;background:#f5f3ff;font-weight:bold;color:#059669">Requested New Expiry</td><td style="padding:8px 12px;border:1px solid #ddd;color:#059669;font-weight:bold">${new Date(data.requestedNewExpiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td></tr>`
+    : '';
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:20px">
-      <p>Dear Sir/Madam,</p>
-      <p>We are writing to request an extension for the DRF approval for <strong>${data.companyName}</strong>.</p>
+      <p>${greeting}</p>
+      ${customPara}
       <table style="border-collapse:collapse;width:100%;margin:16px 0">
         <tr><td style="padding:8px 12px;border:1px solid #ddd;background:#f5f3ff;font-weight:bold;width:45%">DRF Number</td><td style="padding:8px 12px;border:1px solid #ddd">${data.drfNumber}</td></tr>
         <tr><td style="padding:8px 12px;border:1px solid #ddd;background:#f5f3ff;font-weight:bold">Company</td><td style="padding:8px 12px;border:1px solid #ddd">${data.companyName}</td></tr>
         <tr><td style="padding:8px 12px;border:1px solid #ddd;background:#f5f3ff;font-weight:bold">OEM / Brand</td><td style="padding:8px 12px;border:1px solid #ddd">${data.oemName || '—'}</td></tr>
         <tr><td style="padding:8px 12px;border:1px solid #ddd;background:#f5f3ff;font-weight:bold;color:#dc2626">Current Expiry</td><td style="padding:8px 12px;border:1px solid #ddd;color:#dc2626;font-weight:bold">${expiry}</td></tr>
+        ${newExpiryRow}
       </table>
-      <p>Kindly reply to this email with the new <strong>valid until date</strong> for the extension.</p>
-      <p>Please keep the DRF number <strong>${data.drfNumber}</strong> in your reply so it can be automatically processed.</p>
+      <p>Kindly reply to this email with the new <strong>valid until date</strong> for the extension, keeping DRF number <strong>${data.drfNumber}</strong> in your reply.</p>
       <p>Regards,<br/><strong>${data.salesName}</strong>${data.salesEmail ? `<br/>${data.salesEmail}` : ''}</p>
     </div>
   `;
