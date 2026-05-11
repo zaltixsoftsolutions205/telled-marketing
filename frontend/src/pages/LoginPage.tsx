@@ -165,6 +165,7 @@ export default function LoginPage() {
   // MS OAuth
   const [oauthLoading, setOauthLoading] = useState(false);
   const [oauthError, setOauthError] = useState('');
+  const [isM365Business, setIsM365Business] = useState(false);
 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -186,6 +187,7 @@ export default function LoginPage() {
     setAppPassword('');
     setSmtpHost('');
     setError('');
+    setIsM365Business(false);
   };
 
   const handleCredentials = async (e: React.FormEvent) => {
@@ -279,9 +281,10 @@ export default function LoginPage() {
         setUserId(data.userId);
         setDeviceToken(dt);
 
-        // Outlook personal — needs MS OAuth
-        if (isOutlook) {
-          await handleMicrosoftOAuth();
+        // Outlook personal OR M365 business — needs MS OAuth
+        if (isOutlook || data.isPersonal) {
+          setIsM365Business(!isOutlook && !!data.isPersonal);
+          // Don't auto-launch popup — just show the Connect button in the OTP step
           return;
         }
 
@@ -527,11 +530,11 @@ export default function LoginPage() {
                   </div>
                 )}
 
-                {/* Microsoft OAuth — inline for Outlook/Hotmail */}
-                {isOutlook && emailDomain && (
+                {/* Microsoft OAuth — inline for Outlook/Hotmail and M365 business */}
+                {(isOutlook || isM365Business) && emailDomain && (
                   <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 space-y-2">
                     <p className="text-[11px] text-blue-800 font-medium">
-                      Personal Outlook/Hotmail — connect Microsoft to enable email sending.
+                      {isM365Business ? 'Microsoft 365 account — connect Microsoft to enable email sending & reading.' : 'Personal Outlook/Hotmail — connect Microsoft to enable email sending.'}
                     </p>
                     <button
                       type="button"
@@ -668,9 +671,11 @@ export default function LoginPage() {
                   <p className="text-[11px] text-gray-400 mt-0.5">Check your inbox — valid for 5 minutes.</p>
                 </div>
 
-                {isOutlook && (
+                {(isOutlook || isM365Business) && (
                   <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 space-y-2">
-                    <p className="text-[11px] text-blue-800 font-medium">Connect Microsoft to enable email sending</p>
+                    <p className="text-[11px] text-blue-800 font-medium">
+                      {isM365Business ? 'Microsoft 365 account — connect to enable email sending & reading' : 'Connect Microsoft to enable email sending'}
+                    </p>
                     <button
                       type="button" onClick={handleMicrosoftOAuth} disabled={oauthLoading}
                       className="w-full py-2 rounded-lg font-semibold text-white flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 text-xs"
