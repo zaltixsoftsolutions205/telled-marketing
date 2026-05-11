@@ -24,6 +24,7 @@ export const getMicrosoftAuthUrl = async (req: Request, res: Response) => {
     const userId = (req.query.userId as string) || (req as any).user?.id;
     if (!userId) return sendError(res, 'userId is required', 400);
     const redirectUri = getRedirectUri();
+    if (!redirectUri) return sendError(res, 'Microsoft OAuth redirect URI is not configured on the server. Set GRAPH_REDIRECT_URI_PROD env variable.', 500);
 
     // Encode userId in the state param so we can identify the user in the callback
     const state = Buffer.from(JSON.stringify({ userId })).toString('base64url');
