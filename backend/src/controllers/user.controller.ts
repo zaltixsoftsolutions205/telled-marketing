@@ -82,7 +82,8 @@ export const createUser = async (req: AuthRequest, res: Response): Promise<void>
     const Organization = (await import('../models/Organization')).default;
     const org = await Organization.findById(req.user!.organizationId).select('name').lean();
     const orgName = org?.name || '';
-    const loginUrl = `${process.env.APP_URL || (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim()}/login`;
+    const baseUrl = (process.env.APP_URL || (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim()).replace(/\/$/, '');
+    const loginUrl = `${baseUrl}/zieos/login`;
 
     // Load the logged-in user's SMTP config — welcome email falls back to system SMTP if needed
     const senderSmtp = await getUserSmtp(req.user!.id);

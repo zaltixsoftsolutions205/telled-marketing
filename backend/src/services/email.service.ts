@@ -4,7 +4,8 @@ import logger from '../utils/logger';
 import nodemailer from 'nodemailer';
 import axios from 'axios';
 
-const appUrl = () => process.env.APP_URL || (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
+const appUrl = () => (process.env.APP_URL || (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim()).replace(/\/$/, '');
+const loginUrl = () => `${appUrl()}/zieos/login`;
 
 // ── Microsoft Graph API sender (for Outlook/M365 users) ──────────────────────
 const GRAPH_CLIENT_ID     = process.env.GRAPH_CLIENT_ID     || '';
@@ -793,7 +794,7 @@ export const sendApprovalEmail = async (data: {
       <p>You can now log in using the details below:</p>
       <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:20px;margin:16px 0">
         <table style="width:100%">
-          <tr><td style="padding:6px;font-weight:bold;color:#374151">Login URL</td><td style="padding:6px"><a href="${appUrl()}/login">${appUrl()}/login</a></td></tr>
+          <tr><td style="padding:6px;font-weight:bold;color:#374151">Login URL</td><td style="padding:6px"><a href="${loginUrl()}">${loginUrl()}</a></td></tr>
           <tr><td style="padding:6px;font-weight:bold;color:#374151">Email</td><td style="padding:6px">${data.loginEmail}</td></tr>
           <tr><td style="padding:6px;font-weight:bold;color:#374151">Password</td><td style="padding:6px">Use your own email account password</td></tr>
         </table>
@@ -1073,7 +1074,7 @@ export const sendUserCredentialsEmail = async (
     hr: 'HR', finance: 'Finance',
   };
   const displayRole = role ? (roleLabel[role] || role) : 'Team Member';
-  const loginUrl = `${appUrl()}/login`;
+  const userLoginUrl = loginUrl();
 
   try {
     await sendViaHostinger(
@@ -1096,7 +1097,7 @@ export const sendUserCredentialsEmail = async (
         <table style="width:100%;border-collapse:collapse;font-size:14px">
           <tr>
             <td style="padding:8px 0;color:#6b7280;font-weight:600;width:40%">Login URL</td>
-            <td style="padding:8px 0"><a href="${loginUrl}" style="color:#7c3aed">${loginUrl}</a></td>
+            <td style="padding:8px 0"><a href="${userLoginUrl}" style="color:#7c3aed">${userLoginUrl}</a></td>
           </tr>
           <tr>
             <td style="padding:8px 0;color:#6b7280;font-weight:600;border-top:1px solid #ede9fe">Email</td>
@@ -1114,7 +1115,7 @@ export const sendUserCredentialsEmail = async (
       </div>
 
       <div style="text-align:center;margin-bottom:20px">
-        <a href="${loginUrl}" style="display:inline-block;background:#7c3aed;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;font-size:14px">Login Now →</a>
+        <a href="${userLoginUrl}" style="display:inline-block;background:#7c3aed;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;font-size:14px">Login Now →</a>
       </div>
 
       <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:12px;font-size:13px;color:#9a3412">
