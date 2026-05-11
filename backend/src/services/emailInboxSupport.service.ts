@@ -50,7 +50,8 @@ async function extractEmailBody(source: Buffer): Promise<string> {
     const parsed = await simpleParser(source);
     // Prefer plain text — it's always clean
     // Fall back to HTML with tags stripped
-    const text = parsed.text || parsed.html?.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>') || '';
+    const html = typeof parsed.html === 'string' ? parsed.html : '';
+    const text = parsed.text || html.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>') || '';
     // Strip quoted reply content ("> lines", "On ... wrote:", "--- Original Message ---")
     const lines = text.split(/\r?\n/);
     const fresh: string[] = [];
