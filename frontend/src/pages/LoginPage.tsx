@@ -164,6 +164,7 @@ export default function LoginPage() {
 
   // MS OAuth
   const [oauthLoading, setOauthLoading] = useState(false);
+  const [oauthError, setOauthError] = useState('');
 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -225,11 +226,11 @@ export default function LoginPage() {
 
   const handleMicrosoftOAuth = async () => {
     if (!userId) {
-      setError('Please sign in first to connect Microsoft.');
+      setOauthError('Please complete sign in first.');
       return;
     }
     setOauthLoading(true);
-    setError('');
+    setOauthError('');
     try {
       const authUrl = await microsoftOAuthApi.getAuthUrl(userId);
       const popup = window.open(authUrl, 'ms-oauth', 'width=500,height=650,scrollbars=yes');
@@ -241,7 +242,7 @@ export default function LoginPage() {
         } else if (event.data?.type === 'MS_OAUTH_ERROR') {
           window.removeEventListener('message', handler);
           setOauthLoading(false);
-          setError('Microsoft authorization failed: ' + (event.data.error || 'Unknown error'));
+          setOauthError('Microsoft authorization failed: ' + (event.data.error || 'Unknown error'));
           if (popup) popup.close();
         }
       };
@@ -255,7 +256,7 @@ export default function LoginPage() {
       }, 500);
     } catch (err: any) {
       setOauthLoading(false);
-      setError(err?.response?.data?.message || 'Failed to start Microsoft authorization');
+      setOauthError(err?.response?.data?.message || 'Failed to start Microsoft authorization');
     }
   };
 
@@ -286,6 +287,17 @@ export default function LoginPage() {
 
         // Business email (providerOnly) — already has password, just need provider selection
         if (data.providerOnly) {
+          // If user already picked a provider on credentials screen, save immediately
+          if (smtpHost) {
+            const saved = await authApi.saveAppPassword(
+              data.userId, password, email, dt,
+              smtpHost, smtpPort, smtpSecure,
+            );
+            if (saved.organizationName) setCompanyName(saved.organizationName);
+            setAuth(saved.user, saved.accessToken, saved.refreshToken);
+            navigate('/dashboard');
+            return;
+          }
           setProviderOnly(true);
           setNeedsProviderSetup(true);
           return;
@@ -339,7 +351,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const saved = await authApi.saveAppPassword(
-        userId, undefined, email, deviceToken,
+        userId, password, email, deviceToken,
         smtpHost, smtpPort, smtpSecure,
       );
       if (saved.organizationName) setCompanyName(saved.organizationName);
@@ -540,6 +552,7 @@ export default function LoginPage() {
                         </>
                       )}
                     </button>
+                    {oauthError && <p className="text-[10px] text-red-600">{oauthError}</p>}
                     <p className="text-[10px] text-blue-500">You can also skip and connect later from your profile.</p>
                   </div>
                 )}
@@ -585,10 +598,11 @@ export default function LoginPage() {
                   <label className="block text-xs font-medium text-gray-600 mb-1">Email Provider</label>
                   <select
                     className="input-field text-sm py-2" autoFocus
+                    value={smtpHost}
                     onChange={e => {
                       const found = BUSINESS_SMTP_PROVIDERS.find(p => p.host === e.target.value);
                       if (found) { setSmtpHost(found.host); setSmtpPort(found.port); setSmtpSecure(found.secure); }
-                      else setSmtpHost('');
+                      else setSmtpHost(e.target.value);
                     }}
                   >
                     <option value="">-- Select your provider --</option>
@@ -605,6 +619,16 @@ export default function LoginPage() {
                       onChange={e => setSmtpHost(e.target.value)} />
                   </div>
                 )}
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Email Password</label>
+                  <input
+                    type="password" className="input-field text-sm py-2"
+                    placeholder="Your email account password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                  />
+                </div>
 
                 <p className="text-[11px] text-gray-400">This is only asked once. You won't see this again after setup.</p>
 
@@ -664,6 +688,8 @@ export default function LoginPage() {
                         </>
                       )}
                     </button>
+                    {oauthError && <p className="text-[10px] text-red-600">{oauthError}</p>}
+                    <p className="text-[10px] text-blue-500">You can skip and connect later from Settings.</p>
                   </div>
                 )}
 

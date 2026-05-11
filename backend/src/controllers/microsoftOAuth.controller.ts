@@ -9,12 +9,8 @@ import { AuthRequest } from '../middleware/auth.middleware';
 const CLIENT_ID     = process.env.GRAPH_CLIENT_ID     || '';
 const CLIENT_SECRET = process.env.GRAPH_CLIENT_SECRET || '';
 
-// Use production redirect URI in production, local in dev
 function getRedirectUri(): string {
-  if (process.env.NODE_ENV === 'production') {
-    return process.env.GRAPH_REDIRECT_URI_PROD || process.env.GRAPH_REDIRECT_URI || '';
-  }
-  return process.env.GRAPH_REDIRECT_URI || 'http://localhost:5000/api/auth/microsoft/callback';
+  return process.env.GRAPH_REDIRECT_URI_PROD || process.env.GRAPH_REDIRECT_URI || 'http://localhost:5000/api/auth/microsoft/callback';
 }
 
 // GET /api/auth/microsoft/authorize?userId=xxx
@@ -54,7 +50,7 @@ export const microsoftCallback = async (req: Request, res: Response) => {
   try {
     const { code, state, error, error_description } = req.query as Record<string, string>;
 
-    const oauthResultBase = process.env.FRONTEND_OAUTH_RESULT_URL ||
+    const oauthResultBase = process.env.FRONTEND_OAUTH_RESULT_URL_PROD || process.env.FRONTEND_OAUTH_RESULT_URL ||
       `${(process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim()}/zieos/microsoft-oauth-result`;
 
     if (error) {
@@ -112,7 +108,7 @@ export const microsoftCallback = async (req: Request, res: Response) => {
     return res.redirect(`${oauthResultBase}?success=true&email=${encodeURIComponent(msEmail)}`);
   } catch (e: any) {
     console.error('Microsoft OAuth callback error:', e?.response?.data || e);
-    const oauthResultBase = process.env.FRONTEND_OAUTH_RESULT_URL ||
+    const oauthResultBase = process.env.FRONTEND_OAUTH_RESULT_URL_PROD || process.env.FRONTEND_OAUTH_RESULT_URL ||
       `${(process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim()}/zieos/microsoft-oauth-result`;
     return res.redirect(`${oauthResultBase}?success=false&error=${encodeURIComponent(e?.message || 'oauth_failed')}`);
   }

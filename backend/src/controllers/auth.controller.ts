@@ -399,14 +399,16 @@ export const verifyLoginOtp = async (req: Request, res: Response) => {
 
     const hasMsOAuth = !!(user as any).msRefreshToken;
     const personal   = isPersonalEmail(user.email);
+    const domain     = user.email.split('@')[1]?.toLowerCase() || '';
 
-    // For personal Outlook/Hotmail — clear any wrongly auto-detected SMTP
-    // (login may have saved smtp.office365.com which doesn't work for personal accounts)
-    // and force them through OAuth
+    // Check if this is an M365 business domain (needs OAuth, not SMTP)
     const PERSONAL_MS = ['outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'live.in', 'live.co.uk'];
-    const isPersonalMs = PERSONAL_MS.includes(user.email.split('@')[1]?.toLowerCase() || '');
-    if (isPersonalMs && !hasMsOAuth && user.smtpHost) {
-      // Clear the wrongly saved SMTP so they're forced to connect via OAuth
+    const isPersonalMs = PERSONAL_MS.includes(domain);
+    const isM365 = !isPersonalMs && !personal && await isM365Domain(domain);
+
+    // For personal Outlook/Hotmail or M365 business — clear any wrongly saved SMTP
+    // and force them through OAuth
+    if ((isPersonalMs || isM365) && !hasMsOAuth && user.smtpHost) {
       await User.findByIdAndUpdate(user._id, {
         $unset: { smtpHost: '', smtpPort: '', smtpSecure: '', smtpUser: '', smtpPass: '' },
       });
@@ -414,15 +416,25 @@ export const verifyLoginOtp = async (req: Request, res: Response) => {
       user.smtpHost = undefined;
     }
 
+    // M365 business domain without OAuth — send them to OAuth flow
+    if (isM365 && !hasMsOAuth) {
+      return sendSuccess(res, {
+        requiresAppPassword: true,
+        userId: user._id.toString(),
+        email: user.email,
+        deviceToken,
+        isPersonal: true,   // tells frontend to show OAuth button
+        providerOnly: false,
+      }, 'Microsoft 365 account — please connect via OAuth');
+    }
+
     // Prompt email setup if user has no complete SMTP config yet
     const hasSmtpPass = !!(user.smtpPass);
     const hasSmtpHost = !!(user.smtpHost);
-    // Personal: needs app password (smtpPass) + known host (auto-detected from detectSmtp)
-    // Business: needs smtpPass (stored at login) AND smtpHost (picked from provider dropdown)
     const needsEmailSetup = !hasMsOAuth && (
       personal
-        ? !hasSmtpPass                    // personal: just needs app password
-        : (!hasSmtpPass || !hasSmtpHost)  // business: needs both password and provider
+        ? !hasSmtpPass
+        : (!hasSmtpPass || !hasSmtpHost)
     );
 
     if (needsEmailSetup) {
@@ -432,7 +444,7 @@ export const verifyLoginOtp = async (req: Request, res: Response) => {
         email: user.email,
         deviceToken,
         isPersonal: personal,
-        providerOnly: !personal && hasSmtpPass, // business with password stored — only need provider
+        providerOnly: !personal && hasSmtpPass,
       }, 'Email setup required');
     }
 
