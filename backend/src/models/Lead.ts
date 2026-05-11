@@ -71,6 +71,7 @@ export interface ILead extends Document {
   drfNumber?: string;
   drfEmailSent?: boolean;
   drfEmailSentAt?: Date;
+  drfSentBy?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -98,6 +99,7 @@ const LeadSchema = new Schema<ILead>(
     drfNumber:      { type: String, index: true },
     drfEmailSent:   { type: Boolean, default: false },
     drfEmailSentAt: { type: Date },
+    drfSentBy:      { type: Schema.Types.ObjectId, ref: 'User' },
     stage: {
       type: String,
       enum: [

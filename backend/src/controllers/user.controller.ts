@@ -144,7 +144,8 @@ export const createUser = async (req: AuthRequest, res: Response): Promise<void>
 
     const subject = `Welcome to ZIEOS — You've been added to ${orgName}`;
 
-    // Try admin's own SMTP first, fall back to system SMTP so email always reaches the user
+    // Welcome email — send from admin's own email; system SMTP is the final fallback
+    // so new users always receive their welcome regardless of admin email config
     let emailSent = true;
     try {
       if (senderSmtp) {
@@ -154,11 +155,10 @@ export const createUser = async (req: AuthRequest, res: Response): Promise<void>
       }
     } catch {
       try {
-        // Final fallback: system SMTP
         await sendEmail(normalizedEmail, subject, html);
       } catch (finalErr: any) {
         emailSent = false;
-        console.error('[createUser] Welcome email failed even on system SMTP:', finalErr?.message);
+        console.error('[createUser] Welcome email failed:', finalErr?.message);
       }
     }
 

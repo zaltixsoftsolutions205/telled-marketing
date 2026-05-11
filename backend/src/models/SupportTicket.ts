@@ -6,6 +6,7 @@ export interface ISupportTicket extends Document {
   organizationId: mongoose.Types.ObjectId;
   accountId: mongoose.Types.ObjectId;
   ticketId: string;
+  sourceMessageId?: string;
   subject: string;
   description: string;
   priority: 'Low' | 'Medium' | 'High' | 'Critical';
@@ -14,6 +15,7 @@ export interface ISupportTicket extends Document {
   internalNotes: IInternalNote[];
   lastResponseAt: Date;
   resolvedAt?: Date;
+  resolvedBy?: string;
   closedAt?: Date;
   closedBy?: mongoose.Types.ObjectId;
   autoClosedAt?: Date;
@@ -39,6 +41,7 @@ const SupportTicketSchema = new Schema<ISupportTicket>(
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
     accountId: { type: Schema.Types.ObjectId, ref: 'Account', required: true },
     ticketId: { type: String, required: true, unique: true },
+    sourceMessageId: { type: String, index: true, sparse: true },
     subject: { type: String, required: true },
     description: { type: String, required: true },
     priority: { type: String, enum: ['Low', 'Medium', 'High', 'Critical'], default: 'Medium' },
@@ -47,6 +50,7 @@ const SupportTicketSchema = new Schema<ISupportTicket>(
     internalNotes: { type: [NoteSchema], default: [] },
     lastResponseAt: { type: Date, default: Date.now },
     resolvedAt: { type: Date },
+    resolvedBy: { type: String, trim: true },
     closedAt: { type: Date },
     closedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     autoClosedAt: { type: Date },

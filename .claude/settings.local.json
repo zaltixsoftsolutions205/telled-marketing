@@ -26,7 +26,10 @@
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\anjali\\\\OneDrive\\\\Desktop\\\\telled-marketing\\\\backend\\\\src\" -Recurse -Directory)",
       "Bash(Select-Object -ExpandProperty FullName)",
       "Bash(grep -n 'unset.*smtpPass\\\\|$unset.*smtp' c:/Users/anjali/OneDrive/Desktop/telled-marketing/backend/src/controllers/auth.controller.ts)",
-      "Bash(awk '{print $6, $7, $8}')"
+      "Bash(awk '{print $6, $7, $8}')",
+      "Bash(Get-ChildItem -Recurse -Path .)",
+      "Bash(Select-Object -First 50)",
+      "Bash(Format-Table -Property FullName)"
     ]
   }
 }

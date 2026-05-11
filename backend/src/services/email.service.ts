@@ -298,46 +298,45 @@ export const sendEmailWithUserSmtp = async (
   attachments?: Array<{ filename: string; path?: string; content?: Buffer }>,
   cc?: string,
 ): Promise<void> => {
-  if (senderSmtp) {
-    // ── Personal Outlook/Hotmail with delegated OAuth token ──────────────────
-    // msRefreshToken takes priority — it means the user connected via OAuth2
-    if (senderSmtp.msRefreshToken) {
-      await sendViaGraphDelegated(senderSmtp.msRefreshToken, senderSmtp.fromEmail, senderSmtp.fromName, to, subject, html, cc, attachments);
-      return;
-    }
-
-    // ── Google Workspace domain-wide delegation ───────────────────────────────
-    if (isGoogleWorkspaceEmail(senderSmtp.fromEmail)) {
-      await sendViaGoogleWorkspace(senderSmtp.fromEmail, senderSmtp.fromName, to, subject, html, cc, attachments);
-      return;
-    }
-
-    // ── Microsoft 365 business tenant (client credentials) ───────────────────
-    if (senderSmtp.useGraphApi && GRAPH_CLIENT_ID && GRAPH_CLIENT_SECRET && GRAPH_TENANT_ID) {
-      await sendViaGraph(senderSmtp.fromEmail, senderSmtp.fromName, to, subject, html, cc, attachments);
-      return;
-    }
-
-    // ── All other providers (Gmail, Zoho, Hostinger, GoDaddy, Yahoo…) → SMTP ─
-    const transporter = nodemailer.createTransport({
-      host: senderSmtp.smtpHost,
-      port: senderSmtp.smtpPort,
-      secure: senderSmtp.smtpSecure ?? (senderSmtp.smtpPort === 465),
-      auth: { user: senderSmtp.smtpUser, pass: senderSmtp.smtpPass },
-    });
-    await transporter.sendMail({
-      from: `"${senderSmtp.fromName}" <${senderSmtp.fromEmail}>`,
-      to,
-      subject,
-      html,
-      replyTo: senderSmtp.fromEmail,
-      ...(cc ? { cc } : {}),
-      ...(attachments?.length ? { attachments } : {}),
-    });
-    logger.info(`Email sent FROM ${senderSmtp.fromEmail} to ${to}: ${subject}`);
-  } else {
-    await send(to, subject, html, attachments, cc);
+  if (!senderSmtp) {
+    throw new Error('No sender email configured. User must be logged in with their own email to send emails.');
   }
+
+  // ── Personal Outlook/Hotmail with delegated OAuth token ──────────────────
+  if (senderSmtp.msRefreshToken) {
+    await sendViaGraphDelegated(senderSmtp.msRefreshToken, senderSmtp.fromEmail, senderSmtp.fromName, to, subject, html, cc, attachments);
+    return;
+  }
+
+  // ── Google Workspace domain-wide delegation ───────────────────────────────
+  if (isGoogleWorkspaceEmail(senderSmtp.fromEmail)) {
+    await sendViaGoogleWorkspace(senderSmtp.fromEmail, senderSmtp.fromName, to, subject, html, cc, attachments);
+    return;
+  }
+
+  // ── Microsoft 365 business tenant (client credentials) ───────────────────
+  if (senderSmtp.useGraphApi && GRAPH_CLIENT_ID && GRAPH_CLIENT_SECRET && GRAPH_TENANT_ID) {
+    await sendViaGraph(senderSmtp.fromEmail, senderSmtp.fromName, to, subject, html, cc, attachments);
+    return;
+  }
+
+  // ── All other providers: Gmail app password, Yahoo, Zoho, Hostinger, GoDaddy, any domain ─
+  const transporter = nodemailer.createTransport({
+    host: senderSmtp.smtpHost,
+    port: senderSmtp.smtpPort,
+    secure: senderSmtp.smtpSecure ?? (senderSmtp.smtpPort === 465),
+    auth: { user: senderSmtp.smtpUser, pass: senderSmtp.smtpPass },
+  });
+  await transporter.sendMail({
+    from: `"${senderSmtp.fromName}" <${senderSmtp.fromEmail}>`,
+    to,
+    subject,
+    html,
+    replyTo: senderSmtp.fromEmail,
+    ...(cc ? { cc } : {}),
+    ...(attachments?.length ? { attachments } : {}),
+  });
+  logger.info(`Email sent FROM ${senderSmtp.fromEmail} to ${to}: ${subject}`);
 };
 
 export const sendDRFEmail = async (
@@ -891,8 +890,7 @@ export const sendFeedbackRequestEmail = async (
 ) => {
   const html = supportEmailWrapper(`
     <p style="margin:0 0 16px;font-size:15px;color:#222">Dear <strong>${companyName}</strong>,</p>
-    <p style="margin:0 0 12px;font-size:14px;color:#555;line-height:1.7">We are pleased to inform you that your ticket has been <strong>Resolved</strong>.</p>
-    <p style="margin:0 0 24px;font-size:14px;color:#555;line-height:1.7">If the issue persists or you need further assistance, please reply to this message — we are happy to help.<br><br>Thank you for choosing our support services.</p>
+    <p style="margin:0 0 12px;font-size:14px;color:#555;line-height:1.7">We are pleased to inform you that your support ticket has been <strong style="color:#15803d">Resolved</strong>. Thank you for your patience.</p>
 
     <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;margin-bottom:20px">
       <tr><td style="padding:10px 16px;color:#6b7280;font-size:13px;font-weight:500;width:40%;border-bottom:1px dashed #ddd6fe">Ticket ID</td><td style="padding:10px 16px;color:#111;font-size:13px;font-weight:600;border-bottom:1px dashed #ddd6fe">${ticketId}</td></tr>
@@ -900,22 +898,16 @@ export const sendFeedbackRequestEmail = async (
       <tr><td style="padding:10px 16px;color:#6b7280;font-size:13px;font-weight:500">Status</td><td style="padding:10px 16px"><span style="background:#10b981;color:#fff;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">Resolved</span></td></tr>
     </table>
 
-    ${feedbackUrl ? `
-    <!-- Feedback form CTA -->
-    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:20px 24px;margin-bottom:20px;text-align:center">
-      <p style="margin:0 0 6px;font-size:15px;font-weight:700;color:#15803d">Share Your Feedback</p>
-      <p style="margin:0 0 16px;font-size:13px;color:#374151;line-height:1.6">We value your experience. Please take a moment to let us know how we did — it helps us serve you better.</p>
-      <table cellpadding="0" cellspacing="0" border="0" style="margin:0 auto">
-        <tr><td style="background:#16a34a;border-radius:8px">
-          <a href="${feedbackUrl}" style="display:inline-block;padding:12px 28px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;letter-spacing:.3px">Submit Feedback &rarr;</a>
-        </td></tr>
-      </table>
-      <p style="margin:12px 0 0;font-size:11px;color:#9ca3af">Or copy this link: <a href="${feedbackUrl}" style="color:#16a34a;word-break:break-all">${feedbackUrl}</a></p>
+    <!-- Prominent feedback request -->
+    <div style="background:#f0fdf4;border:2px solid #16a34a;border-radius:10px;padding:20px 24px;margin-bottom:20px">
+      <p style="margin:0 0 8px;font-size:16px;font-weight:700;color:#15803d">⭐ We'd love your feedback!</p>
+      <p style="margin:0;font-size:13px;color:#374151;line-height:1.7">
+        Was your issue fully resolved? Simply <strong>reply to this email</strong> with your feedback — it helps us serve you better.
+      </p>
     </div>
-    ` : ''}
 
     <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;font-size:13px;color:#92400e">
-      <strong>Note:</strong> This ticket will be automatically closed after <strong>3 days</strong> if no feedback is received.
+      <strong>Note:</strong> If the issue is not resolved or persists, please reply to this email and we will reopen your ticket immediately. This ticket will be automatically closed after <strong>3 days</strong> if no feedback is received.
     </div>
   `);
   await sendEmailWithUserSmtp(to, `Support Ticket Resolved — ${ticketId}`, html, senderSmtp);

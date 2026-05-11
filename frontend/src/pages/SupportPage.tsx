@@ -1,11 +1,12 @@
 // frontend/src/pages/SupportPage.tsx
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, Search, MessageSquarePlus, Eye, CheckCircle, XCircle, Clock, RotateCcw, ThumbsUp, AlertTriangle, RefreshCw, Mail } from 'lucide-react';
+import { Plus, Search, MessageSquarePlus, Eye, CheckCircle, XCircle, Clock, RotateCcw, ThumbsUp, AlertTriangle, RefreshCw, Mail, ArrowRightLeft } from 'lucide-react';
 import ExcelImportButton from '@/components/common/ExcelImportButton';
 import { supportApi } from '@/api/support';
 import { accountsApi } from '@/api/accounts';
 import { useAuthStore } from '@/store/authStore';
 import api from '@/api/axios';
+import { mockUsers } from '@/mock/store';
 import StatusBadge from '@/components/common/StatusBadge';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
@@ -42,6 +43,7 @@ export default function SupportPage() {
   const [showResolve, setShowResolve] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [showReopen, setShowReopen] = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
 
   const [selected, setSelected] = useState<SupportTicket | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -50,8 +52,11 @@ export default function SupportPage() {
   const [note, setNote] = useState('');
   const [statusUpdateNote, setStatusUpdateNote] = useState('');
   const [resolveNote, setResolveNote] = useState('');
+  const [resolvedBy, setResolvedBy] = useState('');
   const [feedbackText, setFeedbackText] = useState('');
   const [reopenReason, setReopenReason] = useState('');
+  const [transferEngineerId, setTransferEngineerId] = useState('');
+  const [transferNote, setTransferNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{ createdTickets: string[]; scanned: number; errors: string[] } | null>(null);
@@ -77,37 +82,62 @@ export default function SupportPage() {
   useEffect(() => { loadTickets(); }, [loadTickets]);
 
   useEffect(() => {
-    if (user?.role !== 'admin' && user?.role !== 'engineer') return;
-    const silentSync = async () => {
-      try {
-        const { data } = await api.post('/support-email/sync');
-        if (data.data?.createdTickets?.length > 0) loadTickets();
-      } catch {}
-    };
-    silentSync();
-    const interval = setInterval(silentSync, 30000);
-    return () => clearInterval(interval);
+    // Email sync only works when connected to real backend — skip in mock/demo mode
   }, [user]);
 
   const loadAccounts = async () => {
     try { const res = await accountsApi.getAll({ limit: 100 }); setAccounts(res.data || []); } catch {}
   };
   const loadEngineers = async () => {
-    try { const { data } = await api.get('/users', { params: { role: 'engineer', limit: 100 } }); setEngineers(data.data || []); } catch {}
+    try {
+      const list = await mockUsers.getEngineers();
+      setEngineers(list || []);
+    } catch {
+      try { const { data } = await api.get('/users', { params: { role: 'engineer', limit: 100 } }); setEngineers(data.data || []); } catch {}
+    }
   };
 
   const openCreate = async () => { await Promise.all([loadAccounts(), loadEngineers()]); setShowCreate(true); };
+
+  const openTransfer = async (ticket: SupportTicket) => {
+    setSelected(ticket);
+    setTransferEngineerId('');
+    setTransferNote('');
+    if (!engineers.length) await loadEngineers();
+    setShowTransfer(true);
+  };
+
+  const handleTransfer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selected || !transferEngineerId) return;
+    setSaving(true);
+    try {
+      await supportApi.transfer(selected._id, transferEngineerId, transferNote, user?._id || '');
+      setShowTransfer(false);
+      setTransferEngineerId('');
+      setTransferNote('');
+      loadTickets();
+      const eng = engineers.find(e => e._id === transferEngineerId);
+      showMessage(`Ticket ${selected.ticketId} transferred to ${eng?.name || 'engineer'}`, 'success');
+    } catch {
+      showMessage('Failed to transfer ticket', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleSyncEmails = async () => {
     setSyncing(true);
     setSyncResult(null);
     try {
+      // In production this calls the real backend IMAP sync
       const { data } = await api.post('/support-email/sync');
       const result = data.data || {};
       setSyncResult({ createdTickets: result.createdTickets || [], scanned: result.scanned ?? 0, errors: [] });
       if (result.createdTickets?.length > 0) loadTickets();
-    } catch (err: any) {
-      setSyncResult({ createdTickets: [], scanned: 0, errors: [err?.response?.data?.message || 'Sync failed'] });
+    } catch {
+      // Backend not available (demo/mock mode)
+      setSyncResult({ createdTickets: [], scanned: -1, errors: [] });
     } finally {
       setSyncing(false);
     }
@@ -174,8 +204,8 @@ export default function SupportPage() {
     if (!selected) return;
     setSaving(true);
     try {
-      await supportApi.resolve(selected._id, resolveNote);
-      setShowResolve(false); setResolveNote('');
+      await supportApi.resolve(selected._id, resolveNote, resolvedBy);
+      setShowResolve(false); setResolveNote(''); setResolvedBy('');
       loadTickets(); showMessage('Ticket resolved. Customer notified for feedback.', 'success');
     } catch (err: any) {
       showMessage(err?.response?.data?.message || 'Failed to resolve', 'error');
@@ -299,13 +329,14 @@ export default function SupportPage() {
           <Mail size={16} className="mt-0.5 flex-shrink-0" />
           <div className="flex-1">
             <p className="font-semibold">
-              {syncResult.errors.length ? 'Sync error' : `Scanned ${syncResult.scanned} email${syncResult.scanned !== 1 ? 's' : ''}`}
+              {syncResult.errors.length ? 'Sync error' : syncResult.scanned === -1 ? 'Email sync runs on the server' : `Scanned ${syncResult.scanned} email${syncResult.scanned !== 1 ? 's' : ''}`}
             </p>
             {syncResult.errors.length > 0 && <p className="text-xs mt-0.5">{syncResult.errors[0]}</p>}
+            {syncResult.scanned === -1 && <p className="text-xs mt-0.5 text-gray-500">New support emails are picked up automatically every 5 minutes from each engineer's inbox.</p>}
             {syncResult.createdTickets.length > 0 && (
               <p className="text-xs mt-0.5 text-emerald-700 font-medium">✓ {syncResult.createdTickets.length} new ticket{syncResult.createdTickets.length !== 1 ? 's' : ''} created</p>
             )}
-            {syncResult.createdTickets.length === 0 && !syncResult.errors.length && (
+            {syncResult.scanned >= 0 && syncResult.createdTickets.length === 0 && !syncResult.errors.length && (
               <p className="text-xs mt-0.5 text-gray-500">No new support emails found.</p>
             )}
           </div>
@@ -408,7 +439,10 @@ export default function SupportPage() {
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-sm">{(ticket.assignedEngineer as User)?.name || (ticket.assignedTo as User)?.name || 'Unassigned'}</td>
+                      <td className="px-4 py-3 text-sm">
+                        <div>{(ticket.assignedEngineer as User)?.name || (ticket.assignedTo as User)?.name || 'Unassigned'}</div>
+                        {(ticket as any).resolvedBy && <div className="text-xs text-green-600 mt-0.5">Solved by: {(ticket as any).resolvedBy}</div>}
+                      </td>
                       <td className="px-4 py-3 text-sm text-gray-500">{formatDateTime(ticket.createdAt)}</td>
                       <td className="px-4 py-3">
                         <div className="flex gap-1.5 items-center flex-wrap">
@@ -420,6 +454,12 @@ export default function SupportPage() {
                             className="p-1.5 text-gray-400 hover:text-violet-600 transition-colors rounded" title="View details">
                             <Eye size={15} />
                           </button>
+                          {(user?.role === 'admin' || user?.role === 'engineer') && !['Closed'].includes(ticket.status) && (
+                            <button onClick={() => openTransfer(ticket)}
+                              className="p-1.5 text-gray-400 hover:text-indigo-600 transition-colors rounded" title="Transfer to another engineer">
+                              <ArrowRightLeft size={15} />
+                            </button>
+                          )}
                           {canResolve(ticket) && (
                             <button onClick={() => { setSelected(ticket); setShowResolve(true); }}
                               className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 font-medium" title="Mark resolved">
@@ -494,6 +534,9 @@ export default function SupportPage() {
                   {((ticket.assignedEngineer as User)?.name || (ticket.assignedTo as User)?.name) && (
                     <p><span className="text-gray-400">Assigned:</span> {(ticket.assignedEngineer as User)?.name || (ticket.assignedTo as User)?.name}</p>
                   )}
+                  {(ticket as any).resolvedBy && (
+                    <p><span className="text-green-500">Solved by:</span> <span className="text-green-700 font-medium">{(ticket as any).resolvedBy}</span></p>
+                  )}
                 </div>
                 {(resolvedDaysLeft !== null || reopenedDaysLeft !== null || (reopenDaysLeft !== null && reopenDaysLeft > 0)) && (
                   <div className="text-xs space-y-0.5">
@@ -523,6 +566,12 @@ export default function SupportPage() {
                     className="p-1.5 text-gray-400 hover:text-violet-600 rounded" title="View details">
                     <Eye size={14} />
                   </button>
+                  {(user?.role === 'admin' || user?.role === 'engineer') && !['Closed'].includes(ticket.status) && (
+                    <button onClick={() => openTransfer(ticket)}
+                      className="p-1.5 text-gray-400 hover:text-indigo-600 rounded" title="Transfer to engineer">
+                      <ArrowRightLeft size={14} />
+                    </button>
+                  )}
                   {(user?.role === 'engineer' || user?.role === 'admin') && !['Closed', 'Resolved'].includes(ticket.status) && (
                     <select value={ticket.status}
                       onChange={(e) => { if (ticket.status !== e.target.value) openStatusUpdateModal(ticket, e.target.value); }}
@@ -660,8 +709,19 @@ export default function SupportPage() {
             Marking as Resolved will email the customer requesting feedback. Ticket auto-closes after <strong>3 days</strong> if no feedback.
           </div>
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Resolved By <span className="text-red-500">*</span></label>
+            <input
+              type="text"
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
+              value={resolvedBy}
+              onChange={(e) => setResolvedBy(e.target.value)}
+              placeholder="Name of person who resolved this issue"
+            />
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Resolution Note (optional)</label>
-            <textarea rows={4} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
+            <textarea rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
               value={resolveNote} onChange={(e) => setResolveNote(e.target.value)}
               placeholder="Describe how the issue was resolved..." />
           </div>
@@ -719,6 +779,64 @@ export default function SupportPage() {
         </form>
       </Modal>
 
+      {/* Transfer Ticket Modal */}
+      <Modal isOpen={showTransfer} onClose={() => setShowTransfer(false)} title={`Transfer Ticket — ${selected?.ticketId}`} size="md">
+        <form onSubmit={handleTransfer} className="space-y-4">
+          {/* Ticket summary */}
+          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-1">
+            <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">Ticket Details</p>
+            <p className="text-sm font-medium text-gray-800">{selected?.subject}</p>
+            <div className="flex items-center gap-3 text-xs text-gray-500">
+              <span className="font-mono text-indigo-600">{selected?.ticketId}</span>
+              <span>·</span>
+              <span>{(selected?.accountId as Account)?.accountName || '—'}</span>
+              <span>·</span>
+              <span>Currently: <span className="font-medium text-gray-700">{(selected?.assignedEngineer as User)?.name || (selected?.assignedTo as User)?.name || 'Unassigned'}</span></span>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Transfer To *</label>
+            <select
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              value={transferEngineerId}
+              onChange={(e) => setTransferEngineerId(e.target.value)}
+            >
+              <option value="">Select engineer</option>
+              {engineers
+                .filter(e => e._id !== ((selected?.assignedEngineer as User)?._id || (selected?.assignedTo as User)?._id))
+                .map(e => <option key={e._id} value={e._id}>{e.name}</option>)
+              }
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Transfer Note (sent in mail)</label>
+            <textarea
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              value={transferNote}
+              onChange={(e) => setTransferNote(e.target.value)}
+              placeholder="Reason for transfer or additional context for the new engineer…"
+            />
+          </div>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 flex items-start gap-2">
+            <Mail size={13} className="mt-0.5 shrink-0" />
+            <span>A transfer notification email will be sent to the new engineer with the ticket ID <strong>{selected?.ticketId}</strong> and the original query.</span>
+          </div>
+
+          <div className="flex gap-3 justify-end pt-1">
+            <button type="button" onClick={() => setShowTransfer(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+            <button type="submit" disabled={saving || !transferEngineerId} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+              <ArrowRightLeft size={14} />
+              {saving ? 'Transferring…' : 'Transfer Ticket'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
       {/* Ticket Detail Modal */}
       {selected && (
         <Modal isOpen={showDetail} onClose={() => setShowDetail(false)} title={`Ticket: ${selected.ticketId}`} size="lg">
@@ -745,6 +863,7 @@ export default function SupportPage() {
                 <div><p className="text-gray-500">Account</p><p className="font-medium">{(selected.accountId as Account)?.accountName || '—'}</p></div>
                 <div><p className="text-gray-500">Assigned Engineer</p><p className="font-medium">{(selected.assignedEngineer as User)?.name || (selected.assignedTo as User)?.name || 'Unassigned'}</p></div>
                 <div><p className="text-gray-500">Created</p><p className="font-medium">{formatDateTime(selected.createdAt)}</p></div>
+                {(selected as any).resolvedBy && <div><p className="text-gray-500">Resolved By</p><p className="font-medium text-green-700">{(selected as any).resolvedBy}</p></div>}
                 {selected.resolvedAt && <div><p className="text-gray-500">Resolved At</p><p className="font-medium">{formatDateTime(selected.resolvedAt)}</p></div>}
                 {selected.closedAt && <div><p className="text-gray-500">Closed At</p><p className="font-medium">{formatDateTime(selected.closedAt)}</p></div>}
                 {selected.reopenedAt && <div><p className="text-gray-500">Reopened At</p><p className="font-medium">{formatDateTime(selected.reopenedAt)}</p></div>}

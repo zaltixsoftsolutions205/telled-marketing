@@ -199,6 +199,7 @@ export const resolveTicket = async (req: AuthRequest, res: Response): Promise<vo
     const oldStatus = ticket.status;
     ticket.status = 'Resolved';
     ticket.resolvedAt = new Date();
+    ticket.resolvedBy = req.body.resolvedBy?.trim() || req.user?.name || '';
     ticket.lastResponseAt = new Date();
     // Generate a unique token for the public feedback form link
     ticket.feedbackToken = crypto.randomBytes(32).toString('hex');
@@ -211,12 +212,9 @@ export const resolveTicket = async (req: AuthRequest, res: Response): Promise<vo
     if (account?.contactEmail) {
       const senderSmtp = await getUserSmtpWithFallback(req.user!.id);
       const feedbackUrl = `${appUrl()}/feedback/${ticket.feedbackToken}`;
+      // Single email — includes resolved status + feedback request + reply instruction
       await sendFeedbackRequestEmail(account.contactEmail, ticket.ticketId, ticket.subject, account.companyName || 'Customer', senderSmtp, feedbackUrl)
         .catch(e => logger.error('Failed to send feedback request email:', e));
-      if (oldStatus !== 'Resolved') {
-        await sendTicketStatusUpdate(account.contactEmail, ticket.ticketId, ticket.subject, oldStatus, 'Resolved', req.user?.name || 'System', req.body.note, senderSmtp, account.companyName || 'Customer')
-          .catch(e => logger.error('Failed to send status update:', e));
-      }
     }
 
     sendSuccess(res, ticket, 'Ticket marked as resolved. Customer notified to provide feedback.');

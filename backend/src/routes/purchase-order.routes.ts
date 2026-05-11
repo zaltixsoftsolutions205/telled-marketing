@@ -12,27 +12,11 @@ import User from '../models/User';
 import { decryptText } from '../utils/crypto';
 import logger from '../utils/logger';
 import multer from 'multer';
+import { getUserSmtp } from '../utils/getUserSmtp';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 const router = Router();
 router.use(authenticate);
-
-async function getUserSmtp(userId: string): Promise<UserSmtpConfig | undefined> {
-  try {
-    const user = await User.findById(userId).select('name email smtpHost smtpPort smtpUser smtpPass smtpSecure useGraphApi');
-    if (!user?.smtpHost || !user?.smtpUser || !user?.smtpPass) return undefined;
-    return {
-      smtpHost: user.smtpHost,
-      smtpPort: user.smtpPort || 465,
-      smtpUser: user.smtpUser,
-      smtpPass: decryptText(user.smtpPass),
-      smtpSecure: user.smtpSecure,
-      fromEmail: user.email,
-      fromName: user.name,
-      useGraphApi: user.useGraphApi,
-    };
-  } catch { return undefined; }
-}
 
 function computeCurrentStep(po: any): number {
   if (po.step8FinalInvoiceSent) return 8;
@@ -186,8 +170,9 @@ router.post('/:id/step2-forward-to-ark', authorize('admin', 'manager', 'sales', 
 
     const lead = po.leadId as any;
     const senderSmtp = await getUserSmtp(req.user!.id);
-    const senderName = senderSmtp?.fromName || 'ZIEOS';
-    const senderEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || '';
+    if (!senderSmtp) { sendError(res, 'Your email is not configured. Please log out and log in again to set up your email.', 400); return; }
+    const senderName = senderSmtp?.fromName || '';
+    const senderEmail = senderSmtp?.fromEmail || '';
     const docName = (req as any).file?.originalname || req.body.docName || '';
 
     const html = `<p>Dear Team,</p>
@@ -263,8 +248,9 @@ router.post('/:id/step4-send-docs-to-customer', authorize('admin', 'manager', 's
 
     const lead = po.leadId as any;
     const senderSmtp = await getUserSmtp(req.user!.id);
-    const senderName = senderSmtp?.fromName || 'ZIEOS';
-    const senderEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || '';
+    if (!senderSmtp) { sendError(res, 'Your email is not configured. Please log out and log in again to set up your email.', 400); return; }
+    const senderName = senderSmtp?.fromName || '';
+    const senderEmail = senderSmtp?.fromEmail || '';
 
     const html = `<p>Dear ${lead?.contactPersonName || lead?.companyName || 'Customer'},</p>
 
@@ -317,8 +303,9 @@ router.post('/:id/step5-invoice-to-ark', authorize('admin', 'manager', 'sales', 
 
     const lead = po.leadId as any;
     const senderSmtp = await getUserSmtp(req.user!.id);
-    const senderName = senderSmtp?.fromName || 'ZIEOS';
-    const senderEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || '';
+    if (!senderSmtp) { sendError(res, 'Your email is not configured. Please log out and log in again to set up your email.', 400); return; }
+    const senderName = senderSmtp?.fromName || '';
+    const senderEmail = senderSmtp?.fromEmail || '';
     const docName = (req as any).file?.originalname || req.body.docName || '';
 
     const html = `<p>Dear Team,</p>
@@ -389,8 +376,9 @@ router.post('/:id/step6-send-docs-to-ark', authorize('admin', 'manager', 'sales'
 
     const lead = po.leadId as any;
     const senderSmtp = await getUserSmtp(req.user!.id);
-    const senderName = senderSmtp?.fromName || 'ZIEOS';
-    const senderEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || '';
+    if (!senderSmtp) { sendError(res, 'Your email is not configured. Please log out and log in again to set up your email.', 400); return; }
+    const senderName = senderSmtp?.fromName || '';
+    const senderEmail = senderSmtp?.fromEmail || '';
 
     const html = `<p>Dear Team,</p>
 
@@ -453,8 +441,9 @@ router.post('/:id/step8-final-invoice', authorize('admin', 'manager', 'sales', '
 
     const lead = po.leadId as any;
     const senderSmtp = await getUserSmtp(req.user!.id);
-    const senderName = senderSmtp?.fromName || 'ZIEOS';
-    const senderEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || '';
+    if (!senderSmtp) { sendError(res, 'Your email is not configured. Please log out and log in again to set up your email.', 400); return; }
+    const senderName = senderSmtp?.fromName || '';
+    const senderEmail = senderSmtp?.fromEmail || '';
     const invoiceAmount = req.body.amount ? Number(req.body.amount) : po.amount;
     const invNumber = `INV-${new Date().getFullYear()}-${String(Math.floor(1000 + Math.random() * 9000))}`;
 

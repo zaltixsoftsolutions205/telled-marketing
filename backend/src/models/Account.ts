@@ -48,6 +48,7 @@ const AccountSchema = new Schema<IAccount>(
 AccountSchema.index({ organizationId: 1 });
 AccountSchema.index({ assignedEngineer: 1 });
 AccountSchema.index({ assignedSales: 1 });
+AccountSchema.index({ contactEmail: 1 });
 AccountSchema.index({ companyName: 'text', contactName: 'text' });
 
 // Virtual: frontend uses "accountName" — alias for companyName

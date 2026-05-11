@@ -32,7 +32,7 @@ export const getLeads = async (req: AuthRequest, res: Response): Promise<void> =
       { email:        { $regex: sanitizeQuery(search as string), $options: 'i' } },
     ];
     const [leads, total] = await Promise.all([
-      Lead.find(filter).populate('assignedTo', 'name email').sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Lead.find(filter).populate('assignedTo', 'name email').populate('drfSentBy', 'name').sort({ createdAt: -1 }).skip(skip).limit(limit),
       Lead.countDocuments(filter),
     ]);
     sendPaginated(res, leads, total, page, limit);
@@ -126,23 +126,34 @@ export const importLeads = async (req: AuthRequest, res: Response): Promise<void
     const rows: Array<Record<string, string>> = req.body.rows || [];
     if (!rows.length) { sendError(res, 'No rows provided', 400); return; }
     const docs = rows.map(r => ({
+      organizationId:    req.user!.organizationId,
       companyName:       r.companyName       || r['Company Name']    || '',
-      contactName:       r.contactPersonName || r.contactName        || r['Contact Person'] || '',
+      contactName:       r.contactPersonName || r.contactName        || r['Contact Person'] || r.companyName || r['Company Name'] || '',
       contactPersonName: r.contactPersonName || r['Contact Person']  || '',
-      email:             r.email || r['Email'] || '',
-      phone:             r.phone || r['Phone'] || '',
-      oemName:           r.oemName || r['OEM Name'] || '',
-      source:            r.source || r['Source'] || undefined,
-      city:              r.city || r['City'] || undefined,
-      state:             r.state || r['State'] || undefined,
-      notes:             r.notes || r['Notes'] || undefined,
+      email:             r.email             || r['Email']           || '',
+      phone:             r.phone             || r['Phone']           || 'N/A',
+      oemName:           r.oemName           || r['OEM Name']        || '',
+      source:            r.source            || r['Source']          || 'Import',
+      city:              r.city              || r['City']            || undefined,
+      state:             r.state             || r['State']           || undefined,
+      notes:             r.notes             || r['Notes']           || undefined,
+      website:           r.website           || r['Website']         || undefined,
+      annualTurnover:    r.annualTurnover    || r['Annual Turnover'] || undefined,
+      designation:       r.designation       || r['Designation']     || undefined,
+      expectedClosure:   r.expectedClosure   || r['Expected Closure']|| undefined,
       assignedTo:        req.user!.id,
       status:            'New',
       stage:             'New',
-    })).filter(d => d.companyName && d.email);
-    await Lead.insertMany(docs, { ordered: false });
-    sendSuccess(res, { imported: docs.length }, `${docs.length} leads imported`);
-  } catch { sendError(res, 'Import failed', 500); }
+    })).filter(d => d.companyName);
+    if (!docs.length) { sendError(res, 'No valid rows found. Company Name is required.', 400); return; }
+    const result = await Lead.insertMany(docs, { ordered: false });
+    sendSuccess(res, { imported: result.length }, `${result.length} leads imported`);
+  } catch (e: any) {
+    const inserted = e?.result?.nInserted ?? 0;
+    if (inserted > 0) { sendSuccess(res, { imported: inserted }, `${inserted} leads imported`); return; }
+    logger.error('Import leads error:', e);
+    sendError(res, 'Import failed', 500);
+  }
 };
 
 export const archiveLead = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -182,9 +193,15 @@ export const sendDRFExtension = async (req: AuthRequest, res: Response): Promise
 export const sendDRF = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
 
-    const lead = await Lead.findById(req.params.id).populate('assignedTo', 'name email');
+    const lead = await Lead.findById(req.params.id).populate('assignedTo', 'name email').populate('drfSentBy', 'name');
     if (!lead) { sendError(res, 'Lead not found', 404); return; }
     if (lead.status !== 'Qualified') { sendError(res, 'Lead must be Qualified to send DRF', 400); return; }
+
+    if (lead.drfEmailSent) {
+      const sentByName = (lead.drfSentBy as any)?.name || 'another sales person';
+      sendError(res, `DRF already sent for this lead by ${sentByName}`, 400);
+      return;
+    }
 
     const {
       accountName, address, website, annualTurnover,
@@ -209,7 +226,7 @@ export const sendDRF = async (req: AuthRequest, res: Response): Promise<void> =>
       createdBy: req.user!.id,
     }).save();
 
-    await Lead.findByIdAndUpdate(lead._id, { drfNumber, drfEmailSent: true, drfEmailSentAt: new Date() });
+    await Lead.findByIdAndUpdate(lead._id, { drfNumber, drfEmailSent: true, drfEmailSentAt: new Date(), drfSentBy: req.user!.id });
 
     let senderSmtp;
     try {

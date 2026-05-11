@@ -215,8 +215,6 @@ export default function LeadsPage() {
   const [importing, setImporting] = useState(false);
   const [importDone, setImportDone] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [importedLeads, setImportedLeads] = useState<Lead[]>([]);
-  const [updatingImportedStatus, setUpdatingImportedStatus] = useState<string | null>(null);
 
   const downloadTemplate = () => {
     const headers = [
@@ -236,14 +234,6 @@ export default function LeadsPage() {
     XLSX.writeFile(wb, 'leads_template.xlsx');
   };
 
-  const handleImportedStatusChange = async (leadId: string, newStatus: LeadStatus) => {
-    setUpdatingImportedStatus(leadId);
-    try {
-      await leadsApi.update(leadId, { status: newStatus });
-      setImportedLeads(prev => prev.map(l => l._id === leadId ? { ...l, status: newStatus } : l));
-      setLeads(prev => prev.map(l => l._id === leadId ? { ...l, status: newStatus } : l));
-    } catch { } finally { setUpdatingImportedStatus(null); }
-  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -381,14 +371,16 @@ export default function LeadsPage() {
     if (!importRows.length) return;
     setImporting(true);
     try {
-      const res = await leadsApi.importLeads(importRows);
+      // Force status = New for all imported rows
+      const rowsWithNew = importRows.map(r => ({ ...r, status: 'New' }));
+      const res = await leadsApi.importLeads(rowsWithNew);
       setImportDone(res.imported);
-      notify('Leads Imported', `${res.imported} lead(s) imported from file.`, 'lead', '/leads');
+      setShowImport(false);
       setImportRows([]);
+      setStatusTab('All');
+      setPage(1);
+      notify('Leads Imported', `${res.imported} lead(s) imported successfully.`, 'lead', '/leads');
       await load();
-      // grab the freshly imported leads (first N from updated list)
-      const freshRes = await leadsApi.getAll({ limit: res.imported, page: 1 });
-      setImportedLeads(freshRes.data?.slice(0, res.imported) || []);
     } finally { setImporting(false); }
   };
 
@@ -500,8 +492,13 @@ export default function LeadsPage() {
                         <button onClick={() => openEditModal(lead)} title="Edit" className="p-1.5 rounded-md hover:bg-amber-100 hover:text-amber-600 text-gray-400 transition-colors"><Pencil size={13} /></button>
                         {lead.status === 'Qualified' && (
                           (lead as any).drfEmailSent
-                            ? <span title="DRF sent" className="p-1.5 text-green-500"><CheckCircle size={13} /></span>
-                            : <button onClick={() => openDrfModal(lead)} title="Send DRF" className="p-1.5 rounded-md hover:bg-blue-100 hover:text-blue-600 text-blue-400 transition-colors"><Send size={13} /></button>
+                            ? <span
+                                title={`DRF already sent by ${(lead as any).drfSentBy?.name || 'a sales person'}`}
+                                className="p-1.5 text-green-500 cursor-default"
+                              ><CheckCircle size={13} /></span>
+                            : (lead as any).drfSentBy
+                              ? <span title={`DRF already sent by ${(lead as any).drfSentBy?.name}`} className="p-1.5 text-amber-400 cursor-not-allowed"><CheckCircle size={13} /></span>
+                              : <button onClick={() => openDrfModal(lead)} title="Send DRF" className="p-1.5 rounded-md hover:bg-blue-100 hover:text-blue-600 text-blue-400 transition-colors"><Send size={13} /></button>
                         )}
                         <button onClick={() => setDeleteTarget(lead._id)} title="Delete" className="p-1.5 rounded-md hover:bg-red-100 hover:text-red-600 text-gray-400 transition-colors"><Trash2 size={13} /></button>
                       </div>
@@ -565,7 +562,10 @@ export default function LeadsPage() {
                   <button onClick={() => openEditModal(lead)} className="p-1.5 rounded-md hover:bg-amber-100 hover:text-amber-600 text-gray-400"><Pencil size={14} /></button>
                   {lead.status === 'Qualified' && (
                     (lead as any).drfEmailSent
-                      ? <span className="p-1.5 text-green-500"><CheckCircle size={14} /></span>
+                      ? <span
+                          title={`DRF already sent by ${(lead as any).drfSentBy?.name || 'a sales person'}`}
+                          className="p-1.5 text-green-500 cursor-default"
+                        ><CheckCircle size={14} /></span>
                       : <button onClick={() => openDrfModal(lead)} className="p-1.5 rounded-md hover:bg-blue-100 hover:text-blue-600 text-blue-400"><Send size={14} /></button>
                   )}
                   <button onClick={() => setDeleteTarget(lead._id)} className="p-1.5 rounded-md hover:bg-red-100 hover:text-red-600 text-gray-400"><Trash2 size={14} /></button>
@@ -579,76 +579,6 @@ export default function LeadsPage() {
         <div className="md:hidden text-center text-gray-400 py-16 glass-card">No leads found</div>
       )}
 
-      {/* ── Imported Leads Section ── */}
-      {importedLeads.length > 0 && (
-        <div className="glass-card !p-0 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-emerald-50">
-            <div className="flex items-center gap-2">
-              <CheckCircle size={16} className="text-emerald-600" />
-              <span className="text-sm font-semibold text-emerald-800">Recently Imported — {importedLeads.length} leads</span>
-              <span className="text-xs text-emerald-600">You can change status directly below</span>
-            </div>
-            <button onClick={() => setImportedLeads([])} className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1"><X size={12} /> Dismiss</button>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-100">
-                <tr>
-                  <th className="table-header">#</th>
-                  <th className="table-header">Company</th>
-                  <th className="table-header">Contact</th>
-                  <th className="table-header">Phone / Email</th>
-                  <th className="table-header">OEM</th>
-                  <th className="table-header">City</th>
-                  <th className="table-header">Status</th>
-                  <th className="table-header">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {importedLeads.map((lead, idx) => (
-                  <tr key={lead._id} className="hover:bg-violet-50/30 transition-colors">
-                    <td className="table-cell text-gray-400 text-xs">{idx + 1}</td>
-                    <td className="table-cell">
-                      <Link to={`/leads/${lead._id}`} className="font-semibold text-violet-700 hover:underline whitespace-nowrap">{lead.companyName}</Link>
-                    </td>
-                    <td className="table-cell">
-                      <p className="text-gray-700 whitespace-nowrap">{lead.contactPersonName || lead.contactName || '—'}</p>
-                      {(lead as any).designation && <p className="text-xs text-gray-400">{(lead as any).designation}</p>}
-                    </td>
-                    <td className="table-cell">
-                      <p className="text-gray-600 whitespace-nowrap">{lead.phone || '—'}</p>
-                      <p className="text-xs text-gray-400 truncate max-w-[160px]">{lead.email || '—'}</p>
-                    </td>
-                    <td className="table-cell text-gray-600">{lead.oemName || '—'}</td>
-                    <td className="table-cell text-gray-500 whitespace-nowrap">{lead.city || '—'}</td>
-                    <td className="table-cell">
-                      {updatingImportedStatus === lead._id ? (
-                        <span className="badge text-xs bg-violet-100 text-violet-600 animate-pulse">Updating…</span>
-                      ) : (
-                        <select
-                          value={lead.status || 'New'}
-                          onChange={(e) => handleImportedStatusChange(lead._id, e.target.value as LeadStatus)}
-                          className={`text-xs font-medium rounded-full px-2 py-1 border-0 cursor-pointer focus:ring-1 focus:ring-violet-400 ${STATUS_COLORS[lead.status as LeadStatus] || 'bg-gray-100 text-gray-600'}`}
-                        >
-                          {(['New', 'Contacted', 'Qualified', 'Not Qualified'] as LeadStatus[]).map(s => (
-                            <option key={s} value={s}>{s}</option>
-                          ))}
-                        </select>
-                      )}
-                    </td>
-                    <td className="table-cell">
-                      <div className="flex items-center gap-1">
-                        <Link to={`/leads/${lead._id}`} title="View" className="p-1.5 rounded-md hover:bg-violet-100 hover:text-violet-600 text-gray-400 transition-colors"><ExternalLink size={13} /></Link>
-                        <button onClick={() => openEditModal(lead)} title="Edit" className="p-1.5 rounded-md hover:bg-amber-100 hover:text-amber-600 text-gray-400 transition-colors"><Pencil size={13} /></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {/* ── New Lead Modal ── */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Add New Lead" size="lg">

@@ -1,11 +1,12 @@
 // backend/src/services/emailInboxSupport.service.ts
 import { ImapFlow } from 'imapflow';
+import { simpleParser } from 'mailparser';
 import SupportTicket from '../models/SupportTicket';
 import Account from '../models/Account';
 import User from '../models/User';
 import logger from '../utils/logger';
 import { generateTicketId } from '../utils/helpers';
-import { sendTicketAcknowledgement } from './email.service';
+import { sendTicketAcknowledgement, UserSmtpConfig } from './email.service';
 import mongoose from 'mongoose';
 
 export interface ImapCredentials {
@@ -14,13 +15,6 @@ export interface ImapCredentials {
   user: string;
   pass: string;
 }
-
-// Keywords to identify support emails
-const SUPPORT_KEYWORDS = [
-  'support', 'help', 'issue', 'problem', 'error', 'bug',
-  'not working', 'failed', 'crash', 'assistance', 'trouble',
-  'cannot', 'unable', 'urgent', 'login', 'machine', 'access'
-];
 
 // Priority detection
 const PRIORITY_KEYWORDS = {
@@ -51,57 +45,61 @@ function detectPriority(subject: string, body: string): 'Low' | 'Medium' | 'High
   return 'Medium';
 }
 
-function cleanEmailText(source: Buffer): string {
-  let text = source.toString('utf8');
-  // Remove quoted-printable encoding
-  text = text.replace(/=\r?\n/g, '');
-  text = text.replace(/=([0-9A-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
-  // Remove HTML tags
-  text = text.replace(/<[^>]+>/g, ' ');
-  // Remove extra whitespace
-  text = text.replace(/\s+/g, ' ');
-  return text;
-}
-
-function stripQuotedContent(text: string): string {
-  const lines = text.split(/\r?\n/);
-  const freshLines: string[] = [];
-  
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('>')) break;
-    if (/^On .{5,100} wrote:/i.test(trimmed)) break;
-    if (/^-{3,}\s*(Forwarded|Original)/i.test(trimmed)) break;
-    freshLines.push(line);
+async function extractEmailBody(source: Buffer): Promise<string> {
+  try {
+    const parsed = await simpleParser(source);
+    // Prefer plain text — it's always clean
+    // Fall back to HTML with tags stripped
+    const text = parsed.text || parsed.html?.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>') || '';
+    // Strip quoted reply content ("> lines", "On ... wrote:", "--- Original Message ---")
+    const lines = text.split(/\r?\n/);
+    const fresh: string[] = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('>')) break;
+      if (/^On .{5,100} wrote:/i.test(trimmed)) break;
+      if (/^-{3,}\s*(Forwarded|Original)/i.test(trimmed)) break;
+      fresh.push(line);
+    }
+    return fresh.join('\n').replace(/\s+/g, ' ').trim();
+  } catch {
+    return '';
   }
-  return freshLines.join(' ');
 }
 
 async function findAccountByEmail(email: string): Promise<any | null> {
-  const safeEmail = email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const normalizedEmail = email.trim().toLowerCase();
+  const safeEmail = normalizedEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const emailRegex = new RegExp(`^${safeEmail}$`, 'i');
 
-  // Try direct account contactEmail match first (most common path)
-  const account = await Account.findOne({
-    contactEmail: emailRegex,
-    isArchived: false,
-  });
+  // 1. Direct account contactEmail match
+  const account = await Account.findOne({ contactEmail: emailRegex, isArchived: false });
+  console.log(`   [lookup] contactEmail match for "${normalizedEmail}": ${account ? account.companyName : 'none'}`);
   if (account) return account;
 
-  // Try via Lead → Account relationship
+  // 2. Via Lead → Account
   const Lead = mongoose.model('Lead');
-  const lead = await Lead.findOne({
-    $or: [
-      { contactEmail: emailRegex },
-      { email: emailRegex },
-    ],
-    isArchived: false,
-  });
+  const lead = await Lead.findOne({ email: emailRegex });
+  console.log(`   [lookup] Lead.email match for "${normalizedEmail}": ${lead ? (lead as any).companyName : 'none'}`);
   if (lead) {
     const leadAccount = await Account.findOne({ leadId: lead._id, isArchived: false });
+    console.log(`   [lookup] Account via leadId: ${leadAccount ? leadAccount.companyName : 'none'}`);
     if (leadAccount) return leadAccount;
   }
 
+  // 3. Domain-based fallback — only for company domains, skip gmail/yahoo/outlook etc
+  const domain = normalizedEmail.split('@')[1];
+  const COMMON_DOMAINS = ['gmail.com','yahoo.com','yahoo.in','outlook.com','hotmail.com','live.com','icloud.com','rediffmail.com'];
+  if (domain && !COMMON_DOMAINS.includes(domain)) {
+    const domainAccount = await Account.findOne({
+      contactEmail: { $regex: `@${domain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
+      isArchived: false,
+    });
+    console.log(`   [lookup] domain fallback "@${domain}": ${domainAccount ? domainAccount.companyName : 'none'}`);
+    if (domainAccount) return domainAccount;
+  }
+
+  console.log(`   [lookup] no account found for "${normalizedEmail}"`);
   return null;
 }
 
@@ -137,14 +135,22 @@ async function getFirstEngineer(): Promise<any | null> {
   return engineer;
 }
 
-let _syncInProgress = false;
+const _syncInProgress = new Map<string, number>();
 
 export async function syncSupportEmails(creds?: ImapCredentials): Promise<SupportEmailSyncResult> {
-  if (_syncInProgress) {
-    logger.info('Support email sync already in progress — skipping concurrent run');
+  const lockKey = creds?.user || 'env';
+  const startedAt = _syncInProgress.get(lockKey) || 0;
+
+  // Auto-reset stuck flag if sync has been "in progress" for more than 3 minutes
+  if (startedAt && Date.now() - startedAt > 3 * 60 * 1000) {
+    logger.warn(`Support email sync flag was stuck for ${lockKey} — resetting`);
+    _syncInProgress.delete(lockKey);
+  }
+  if (_syncInProgress.has(lockKey)) {
+    logger.info(`Support email sync already in progress for ${lockKey} — skipping`);
     return { scanned: 0, processed: 0, created: [], failed: [], errors: [] };
   }
-  _syncInProgress = true;
+  _syncInProgress.set(lockKey, Date.now());
 
   const result: SupportEmailSyncResult = {
     scanned: 0,
@@ -163,6 +169,19 @@ export async function syncSupportEmails(creds?: ImapCredentials): Promise<Suppor
     result.errors.push('IMAP credentials not configured. Please set up your email in Email Configuration.');
     return result;
   }
+
+  // Build SMTP config from the same credentials so all outgoing emails (acknowledgements, updates)
+  // are sent from the engineer's own email — not the system SMTP
+  const smtpHost = imapHost.replace(/^imap[.-]/, 'smtp.');
+  const senderSmtp: UserSmtpConfig = {
+    smtpHost,
+    smtpPort: 465,
+    smtpSecure: true,
+    smtpUser: imapUser,
+    smtpPass: imapPass,
+    fromEmail: imapUser,
+    fromName: 'Support Team',
+  };
 
   const client = new ImapFlow({
     host: imapHost,
@@ -191,13 +210,14 @@ export async function syncSupportEmails(creds?: ImapCredentials): Promise<Suppor
 
     const lock = await client.getMailboxLock('INBOX');
     try {
-      // Get unread emails from last 24 hours
+      // Search all emails from last 7 days — read OR unread
+      // We track processed emails by Message-ID so we never duplicate tickets
       const since = new Date();
-      since.setHours(since.getHours() - 24);
-      
-      const uidsResult = await client.search({ seen: false }, { uid: true });
+      since.setDate(since.getDate() - 7);
+
+      const uidsResult = await client.search({ since }, { uid: true });
       const uids: number[] = Array.isArray(uidsResult) ? uidsResult : [];
-      console.log(`📧 Found ${uids.length} unread emails`);
+      console.log(`📧 Found ${uids.length} emails in last 7 days (read + unread)`);
 
       for (const uid of uids) {
         result.scanned++;
@@ -209,23 +229,16 @@ export async function syncSupportEmails(creds?: ImapCredentials): Promise<Suppor
           const subject = msg.envelope?.subject || '';
           const fromEmail = msg.envelope?.from?.[0]?.address || '';
           const fromName = msg.envelope?.from?.[0]?.name || '';
-          
+          const messageId = msg.envelope?.messageId || '';
+
           console.log(`\n📨 Processing: ${subject} (from: ${fromEmail})`);
 
           // Find account first — if it's a known customer, accept all their emails as support requests
           const account = await findAccountByEmail(fromEmail);
 
           if (!account) {
-            // Unknown sender — only create a ticket if it looks like a support email
-            const combined = (subject + ' ' + cleanEmailText(msg.source || Buffer.alloc(0))).toLowerCase();
-            const isSupport = SUPPORT_KEYWORDS.some(kw => combined.includes(kw));
-            if (!isSupport) {
-              console.log(`⏭️ Unknown sender ${fromEmail}, not a support email — skipping`);
-              await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true });
-              continue;
-            }
-            console.log(`❌ No account found for email: ${fromEmail}`);
-            result.failed.push(`${fromEmail}: No matching account`);
+            console.log(`⚠️ No account matched for sender: ${fromEmail} — skipping (not a known customer)`);
+            result.failed.push(`${fromEmail}: No matching account found`);
             await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true });
             continue;
           }
@@ -247,30 +260,27 @@ export async function syncSupportEmails(creds?: ImapCredentials): Promise<Suppor
             continue;
           }
 
-          // Extract email content
-          const freshText = stripQuotedContent(cleanEmailText(msg.source || Buffer.alloc(0)));
-          const description = freshText.slice(0, 2000);
+          // Extract clean body text using mailparser — handles all MIME, encoding, HTML
+          const description = (await extractEmailBody(msg.source || Buffer.alloc(0))).slice(0, 2000);
           
           // Detect priority
-          const priority = detectPriority(subject, freshText);
+          const priority = detectPriority(subject, description);
           
-          // Dedup: skip if a ticket for the same account+subject was created in the last 2 hours
-          const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
-          const duplicate = await SupportTicket.findOne({
-            accountId: account._id,
-            subject: subject.slice(0, 200),
-            createdAt: { $gte: twoHoursAgo },
-          }).lean();
-          if (duplicate) {
-            console.log(`⚠️ Duplicate ticket detected for "${subject}" — skipping`);
-            await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true });
-            continue;
+          // Dedup by Message-ID — never create two tickets for the same email
+          if (messageId) {
+            const duplicate = await SupportTicket.findOne({ sourceMessageId: messageId }).lean();
+            if (duplicate) {
+              console.log(`⚠️ Already processed message-id ${messageId} — skipping`);
+              continue;
+            }
           }
 
           // Create ticket
           const ticket = await new SupportTicket({
+            organizationId: account.organizationId,
             accountId: account._id,
             ticketId: generateTicketId(),
+            sourceMessageId: messageId || undefined,
             subject: subject.slice(0, 200),
             description: description || 'No description provided',
             priority,
@@ -278,7 +288,7 @@ export async function syncSupportEmails(creds?: ImapCredentials): Promise<Suppor
             assignedEngineer: engineer._id,
             createdBy: engineer._id,
             internalNotes: [{
-              note: `Auto-created from email from ${fromName} <${fromEmail}>\n\n${description.slice(0, 500)}`,
+              note: `Auto-created from email sent by ${fromName} <${fromEmail}>`,
               addedBy: engineer._id,
               addedAt: new Date()
             }],
@@ -289,12 +299,13 @@ export async function syncSupportEmails(creds?: ImapCredentials): Promise<Suppor
           result.created.push(ticket.ticketId);
           result.processed++;
 
-          // Send acknowledgement to customer
+          // Send acknowledgement from the engineer's own email
           await sendTicketAcknowledgement(
             fromEmail,
             fromName || account.companyName || 'Customer',
             ticket.ticketId,
             subject.slice(0, 200),
+            senderSmtp,
           ).catch(e => logger.error('Failed to send acknowledgement email:', e));
 
           // Mark as read
@@ -328,7 +339,7 @@ export async function syncSupportEmails(creds?: ImapCredentials): Promise<Suppor
     }
     try { client.close(); } catch (_) {}
   } finally {
-    _syncInProgress = false;
+    _syncInProgress.delete(lockKey);
   }
 
   // Patch ALL tickets that have no engineer — assign from account's assignedEngineer

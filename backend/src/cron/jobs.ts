@@ -75,16 +75,55 @@ function shouldSkipImap(email: string): boolean {
 
 async function syncSupportEmailsJob() {
   try {
-    const result = await syncSupportEmails();
-    if (result.created.length || result.failed.length) {
-      logger.info(`Support Email sync: ${result.created.length} tickets created, ${result.failed.length} failed, ${result.errors.length} errors`);
-      if (result.created.length) logger.info(`Created tickets from emails: ${result.created.join(', ')}`);
-      if (result.failed.length) logger.warn(`Failed to process emails: ${result.failed.join(', ')}`);
-      if (result.errors.length) logger.warn(`Support sync errors: ${result.errors.join(', ')}`);
+    const { decryptText } = await import('../utils/crypto');
+
+    // Sync each engineer's personal inbox — same pattern as sales DRF sync
+    const users = await User.find({
+      isActive: true,
+      role: 'engineer',
+      smtpUser: { $exists: true, $ne: '' },
+      smtpPass: { $exists: true, $ne: '' },
+    }).select('smtpHost smtpUser smtpPass email').lean();
+
+    if (users.length === 0) {
+      // No users with creds — fall through to env vars inside syncSupportEmails
+      const result = await syncSupportEmails();
+      if (result.created.length || result.errors.length) {
+        logger.info(`Support sync (env creds): created=${result.created.length} failed=${result.failed.length} errors=${result.errors.length}`);
+      }
+      return;
+    }
+
+    for (const u of users) {
+      if (shouldSkipImap(u.email || '')) continue;
+      try {
+        const smtpHost = u.smtpHost || 'smtp.hostinger.com';
+        const imapHost = smtpHost.includes('office365') || smtpHost.includes('outlook')
+          ? 'imap-mail.outlook.com'
+          : smtpHost.includes('gmail')
+          ? 'imap.gmail.com'
+          : smtpHost.includes('zoho')
+          ? 'imap.zoho.com'
+          : smtpHost.replace(/^smtp[.-]/, 'imap.');
+
+        const creds = { host: imapHost, port: 993, user: u.smtpUser!, pass: decryptText(u.smtpPass!) };
+        const result = await syncSupportEmails(creds);
+        if (result.created.length || result.failed.length || result.errors.length) {
+          logger.info(`Support sync (${u.email}): created=${result.created.length} failed=${result.failed.length} errors=${result.errors.length}`);
+          if (result.created.length) logger.info(`Created tickets: ${result.created.join(', ')}`);
+          if (result.errors.length) logger.warn(`Sync errors: ${result.errors.join(', ')}`);
+        }
+      } catch (e: any) {
+        if (isImapSocketError(e)) {
+          logger.warn(`Support IMAP connection issue for ${u.email} (server closed idle connection)`);
+        } else {
+          logger.error(`Support sync failed for ${u.email}:`, e);
+        }
+      }
     }
   } catch (e: any) {
     if (isImapSocketError(e)) {
-      logger.warn('Support IMAP connection issue (harmless — server may have closed idle connection)');
+      logger.warn('Support IMAP connection issue (harmless)');
     } else {
       logger.error('Support email sync cron error:', e);
     }

@@ -46,9 +46,7 @@ const salesNav: NavEntry[] = [
 const engineerNav: NavEntry[] = [
   { to: '/prospects',            label: 'Prospects',       icon: Target,       perm: 'leads' },
   { to: '/accounts',             label: 'Accounts',        icon: Building2,    perm: 'accounts' },
-  { to: '/installations',        label: 'Installations',   icon: Wrench,       perm: 'installations' },
   { to: '/support',              label: 'Support',         icon: Headphones,   perm: 'support' },
-  { to: '/training',             label: 'Training',        icon: GraduationCap },
   { to: '/visits-and-claims',    label: 'Visits & Claims', icon: CalendarCheck,perm: 'visits' },
   { to: '/engineer-performance', label: 'My Performance',  icon: TrendingUp },
   { to: '/attendance',           label: 'My Attendance',   icon: CalendarDays, perm: 'attendance' },

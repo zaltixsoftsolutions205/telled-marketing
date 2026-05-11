@@ -514,20 +514,14 @@ export const sendQuotationEmail = async (req: AuthRequest, res: Response): Promi
     }
 
     const lead = quotation.leadId as any;
-    // Try req.user SMTP → creator SMTP → system SMTP (never block the operation)
-    let senderSmtp = await getUserSmtpWithFallback(req.user!.id);
+    // Always use the logged-in user's own email — no fallback to system or other users
+    const senderSmtp = await getUserSmtp(req.user!.id, true);
     if (!senderSmtp) {
-      const creatorId = (quotation.createdBy as any)?._id?.toString() || (quotation.createdBy as any)?.toString();
-      if (creatorId && creatorId !== req.user!.id) {
-        senderSmtp = await getUserSmtpWithFallback(creatorId);
-      }
-    }
-    if (!senderSmtp) {
-      sendError(res, 'Email sending is not configured. Please contact admin.', 500);
+      sendError(res, 'Your email is not configured. Please log out and log in again to set up your email.', 400);
       return;
     }
     logger.info(`[sendQuotationEmail] Sending from ${senderSmtp.fromEmail} to ${req.body?.toEmail || lead?.email}`);
-    const senderContactEmail = senderSmtp?.fromEmail || process.env.EMAIL_FROM || 'sales@telled.com';
+    const senderContactEmail = senderSmtp.fromEmail;
 
     // Fetch organization name
     const senderUser = await User.findById(req.user!.id).select('organizationId name').lean();

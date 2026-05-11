@@ -895,6 +895,21 @@ export const mockSupport = {
     SUPPORT_TICKETS = SUPPORT_TICKETS.map((t: any) => t._id === id && t.organizationId === _currentOrgId ? { ...t, internalNotes: [...t.internalNotes, newNote] } : t);
     return orgTickets().find((t: any) => t._id === id)!;
   },
+  transfer: async (id: string, engineerId: string, transferNote: string, transferredById: string) => {
+    await delay(400);
+    const ticket      = orgTickets().find((t: any) => t._id === id);
+    const newEngineer = orgUsers().find((u: any) => u._id === engineerId);
+    const transferredBy = orgUsers().find((u: any) => u._id === transferredById) || orgUsers().find((u: any) => u.role === 'admin') || orgUsers()[0];
+    if (!ticket || !newEngineer) return ticket;
+    const noteText = `[TRANSFER] Ticket ${ticket.ticketId} transferred to ${newEngineer.name}.\nQuery: ${ticket.subject}\n${transferNote ? 'Note: ' + transferNote : ''}`;
+    const newNote = { note: noteText, addedBy: transferredBy, addedAt: now() };
+    SUPPORT_TICKETS = SUPPORT_TICKETS.map((t: any) =>
+      t._id === id && t.organizationId === _currentOrgId
+        ? { ...t, assignedTo: newEngineer, assignedEngineer: newEngineer, internalNotes: [...(t.internalNotes || []), newNote] }
+        : t
+    );
+    return orgTickets().find((t: any) => t._id === id)!;
+  },
 };
 
 // ─── INVOICES MOCK ───────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import api from './axios';
+import { mockSupport } from '@/mock/store';
 
 export const supportApi = {
   getAll: async (params?: Record<string, unknown>) => {
@@ -25,8 +26,8 @@ export const supportApi = {
     const { data } = await api.post(`/support/${id}/notes`, { note });
     return data.data;
   },
-  resolve: async (id: string, note?: string) => {
-    const { data } = await api.post(`/support/${id}/resolve`, { note });
+  resolve: async (id: string, note?: string, resolvedBy?: string) => {
+    const { data } = await api.post(`/support/${id}/resolve`, { note, resolvedBy });
     return data.data;
   },
   submitFeedback: async (id: string, feedback: string) => {
@@ -37,4 +38,6 @@ export const supportApi = {
     const { data } = await api.post(`/support/${id}/reopen`, { reason });
     return data.data;
   },
+  transfer: (id: string, engineerId: string, note: string, transferredById: string) =>
+    mockSupport.transfer(id, engineerId, note, transferredById),
 };
