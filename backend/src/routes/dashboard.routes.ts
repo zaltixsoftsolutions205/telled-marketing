@@ -8,5 +8,5 @@ router.use(authenticate);
 router.get('/admin',    authorize('admin', 'manager'),                    getAdminDashboard);
 router.get('/sales',    authorize('admin', 'manager', 'sales'),           getSalesDashboard);
 router.get('/engineer', authorize('admin', 'manager', 'engineer'),        getEngineerDashboard);
-router.get('/hr',       authorize('admin', 'manager', 'hr'),               getHRDashboard);
+router.get('/hr',       authorize('admin', 'manager', 'hr', 'finance'),    getHRDashboard);
 export default router;

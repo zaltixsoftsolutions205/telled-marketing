@@ -9,6 +9,7 @@ import PurchaseOrder from '../models/PurchaseOrder';
 import Salary from '../models/Salary';
 import EngineerVisit from '../models/EngineerVisit';
 import OEMApprovalAttempt from '../models/OEMApprovalAttempt';
+import User from '../models/User';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError } from '../utils/response';
 import mongoose from 'mongoose';
@@ -204,38 +205,118 @@ export const getEngineerDashboard = async (req: AuthRequest, res: Response): Pro
 export const getHRDashboard = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const orgId = new mongoose.Types.ObjectId(req.user!.organizationId);
+    const now = new Date();
+
+    // Last 6 months labels
+    const months6 = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
+      return { year: d.getFullYear(), month: d.getMonth() + 1, label: d.toLocaleString('default', { month: 'short' }) };
+    });
 
     const [
+      // Employees
+      allUsers,
+      // Attendance today
+      presentToday,
+      // Visit claims
+      totalVisits, pendingVisits, approvedVisits, rejectedVisits,
+      // Salary
+      salaryDocs, paidSalaryCount, pendingSalaryCount,
+      // Invoices
       paidRevenue, totalInvoices, unpaidCount, overdueCount, partialCount, paidCount,
-      totalVisits, pendingVisits, approvedVisits,
-      totalSalaries, paidSalaryCount, pendingSalaryCount, paidSalaryTotal,
-      allInvoices, recentVisitsList, recentSalaries,
+      // Lists
+      allInvoices, pendingVisitsList, recentSalaries,
+      // Payroll trend (last 6 months)
+      payrollTrendRaw,
+      // Visit trend (last 6 months)
+      visitTrendRaw,
+      // Role breakdown
+      roleBreakdown,
     ] = await Promise.all([
-      Invoice.aggregate([{ $match: { organizationId: orgId, status: 'Paid' } }, { $group: { _id: null, total: { $sum: '$paidAmount' } } }]),
-      Invoice.countDocuments({ organizationId: orgId }),
-      Invoice.countDocuments({ organizationId: orgId, status: 'Sent' }),
-      Invoice.countDocuments({ organizationId: orgId, status: 'Overdue' }),
-      Invoice.countDocuments({ organizationId: orgId, status: 'Partially Paid' }),
-      Invoice.countDocuments({ organizationId: orgId, status: 'Paid' }),
+      User.find({ organizationId: orgId }).select('role isActive').lean(),
+      User.countDocuments({ organizationId: orgId, isActive: true }), // proxy for present
       EngineerVisit.countDocuments({ organizationId: orgId, isArchived: false }),
       EngineerVisit.countDocuments({ organizationId: orgId, hrStatus: 'Pending', isArchived: false }),
       EngineerVisit.countDocuments({ organizationId: orgId, hrStatus: 'Approved', isArchived: false }),
-      Salary.countDocuments({ organizationId: orgId }),
+      EngineerVisit.countDocuments({ organizationId: orgId, hrStatus: 'Rejected', isArchived: false }),
+      Salary.find({ organizationId: orgId }).lean(),
       Salary.countDocuments({ organizationId: orgId, isPaid: true }),
       Salary.countDocuments({ organizationId: orgId, isPaid: false }),
-      Salary.aggregate([{ $match: { organizationId: orgId, isPaid: true } }, { $group: { _id: null, total: { $sum: '$finalSalary' } } }]),
-      Invoice.find({ organizationId: orgId }).sort({ createdAt: -1 }).limit(10).populate('accountId', 'companyName').lean(),
-      EngineerVisit.find({ organizationId: orgId, isArchived: false, status: 'Completed' }).sort({ visitDate: -1 }).limit(10).populate('engineerId', 'name').populate('accountId', 'companyName').lean(),
-      Salary.find({ organizationId: orgId }).sort({ createdAt: -1 }).limit(10).populate('employeeId', 'name role').lean(),
+      Invoice.aggregate([{ $match: { organizationId: orgId, status: 'Paid' } }, { $group: { _id: null, total: { $sum: '$paidAmount' } } }]),
+      Invoice.countDocuments({ organizationId: orgId }),
+      Invoice.countDocuments({ organizationId: orgId, status: { $in: ['Sent', 'Unpaid'] } }),
+      Invoice.countDocuments({ organizationId: orgId, status: 'Overdue' }),
+      Invoice.countDocuments({ organizationId: orgId, status: 'Partially Paid' }),
+      Invoice.countDocuments({ organizationId: orgId, status: 'Paid' }),
+      Invoice.find({ organizationId: orgId }).sort({ createdAt: -1 }).limit(10).populate('accountId', 'companyName accountName').lean(),
+      EngineerVisit.find({ organizationId: orgId, hrStatus: 'Pending', isArchived: false }).sort({ createdAt: -1 }).limit(8).populate('engineerId', 'name').populate('accountId', 'companyName').lean(),
+      Salary.find({ organizationId: orgId }).sort({ createdAt: -1 }).limit(10).populate('employeeId', 'name role'),
+      Salary.aggregate([
+        { $match: { organizationId: orgId } },
+        { $group: { _id: { year: '$year', month: '$month' }, total: { $sum: '$finalSalary' } } },
+      ]),
+      EngineerVisit.aggregate([
+        { $match: { organizationId: orgId, isArchived: false } },
+        { $group: { _id: { year: { $year: '$visitDate' }, month: { $month: '$visitDate' } }, count: { $sum: 1 } } },
+      ]),
+      User.aggregate([
+        { $match: { organizationId: orgId } },
+        { $group: { _id: '$role', count: { $sum: 1 } } },
+        { $project: { role: '$_id', count: 1, _id: 0 } },
+      ]),
     ]);
 
+    const totalEmployees = allUsers.length;
+    const activeEmployees = allUsers.filter((u: any) => u.isActive).length;
+    const inactiveEmployees = totalEmployees - activeEmployees;
+
+    const payrollThisMonth = salaryDocs
+      .filter((s: any) => s.month === now.getMonth() + 1 && s.year === now.getFullYear())
+      .reduce((sum: number, s: any) => sum + (s.finalSalary || 0), 0);
+
+    // Build 6-month trend arrays
+    const payrollTrend = months6.map(m => {
+      const found = payrollTrendRaw.find((r: any) => r._id.year === m.year && r._id.month === m.month);
+      return { label: m.label, total: found?.total || 0 };
+    });
+    const visitTrend = months6.map(m => {
+      const found = visitTrendRaw.find((r: any) => r._id.year === m.year && r._id.month === m.month);
+      return { label: m.label, count: found?.count || 0 };
+    });
+
     sendSuccess(res, {
-      invoices: { totalRevenue: paidRevenue[0]?.total || 0, total: totalInvoices, unpaid: unpaidCount, overdue: overdueCount, partialPaid: partialCount, paid: paidCount },
-      visits:   { total: totalVisits, pending: pendingVisits, approved: approvedVisits },
-      salaries: { count: totalSalaries, paid: paidSalaryCount, pending: pendingSalaryCount, totalPaid: paidSalaryTotal[0]?.total || 0 },
+      employees: {
+        total: totalEmployees,
+        active: activeEmployees,
+        inactive: inactiveEmployees,
+        presentToday,
+      },
+      payroll: {
+        thisMonth: payrollThisMonth,
+        paid: paidSalaryCount,
+        pending: pendingSalaryCount,
+      },
+      visitClaims: {
+        total: totalVisits,
+        pending: pendingVisits,
+        approved: approvedVisits,
+        rejected: rejectedVisits,
+      },
+      invoices: {
+        totalRevenue: paidRevenue[0]?.total || 0,
+        total: totalInvoices,
+        unpaid: unpaidCount,
+        overdue: overdueCount,
+        partialPaid: partialCount,
+        paid: paidCount,
+      },
+      salaries: { paid: paidSalaryCount, pending: pendingSalaryCount },
+      payrollTrend,
+      visitTrend,
+      roleBreakdown,
       allInvoices,
-      pendingVisitsList: recentVisitsList,
-      recentSalaries,
+      pendingVisitsList,
+      recentSalaries: recentSalaries.map((s: any) => ({ ...s.toObject(), status: s.isPaid ? 'Paid' : 'Calculated' })),
     });
   } catch (e) { console.error(e); sendError(res, 'Failed to get HR dashboard', 500); }
 };
