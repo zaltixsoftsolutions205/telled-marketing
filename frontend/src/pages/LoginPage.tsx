@@ -536,6 +536,15 @@ export default function LoginPage() {
                     <p className="text-[11px] text-blue-800 font-medium">
                       {isM365Business ? 'Microsoft 365 account — connect Microsoft to enable email sending & reading.' : 'Personal Outlook/Hotmail — connect Microsoft to enable email sending.'}
                     </p>
+                    {isM365Business && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 text-[10px] text-amber-800">
+                        <p className="font-bold mb-1">⚠ Your IT admin may need to approve ZIEOS once</p>
+                        <p>If you see "Need admin approval", share this link with your admin:</p>
+                        <p className="font-mono mt-1 break-all text-[9px] text-amber-700 select-all">
+                          {`https://login.microsoftonline.com/${emailDomain}/adminconsent?client_id=1d6d506e-40a4-4803-a8eb-328dfa019056`}
+                        </p>
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={handleMicrosoftOAuth}
@@ -676,6 +685,15 @@ export default function LoginPage() {
                     <p className="text-[11px] text-blue-800 font-medium">
                       {isM365Business ? 'Microsoft 365 account — connect to enable email sending & reading' : 'Connect Microsoft to enable email sending'}
                     </p>
+                    {isM365Business && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 text-[10px] text-amber-800">
+                        <p className="font-bold mb-1">⚠ Your IT admin may need to approve ZIEOS once</p>
+                        <p>If you see "Need admin approval", share this link with your admin:</p>
+                        <p className="font-mono mt-1 break-all text-[9px] text-amber-700 select-all">
+                          {`https://login.microsoftonline.com/${emailDomain}/adminconsent?client_id=1d6d506e-40a4-4803-a8eb-328dfa019056`}
+                        </p>
+                      </div>
+                    )}
                     <button
                       type="button" onClick={handleMicrosoftOAuth} disabled={oauthLoading}
                       className="w-full py-2 rounded-lg font-semibold text-white flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 text-xs"
