@@ -65,6 +65,7 @@ export interface ILead extends Document {
   channelPartner?: string;
   expectedClosure?: string;
   notes?: string;
+  remarks?: string;
   isArchived: boolean;
   archivedAt?: Date;
   archivedBy?: mongoose.Types.ObjectId;
@@ -119,6 +120,7 @@ const LeadSchema = new Schema<ILead>(
     channelPartner:  { type: String, default: 'ZIEOS' },
     expectedClosure: { type: String },
     notes:      { type: String },
+    remarks:    { type: String },
     isArchived: { type: Boolean, default: false },
     archivedAt: { type: Date },
     archivedBy: { type: Schema.Types.ObjectId, ref: 'User' },

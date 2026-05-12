@@ -230,7 +230,13 @@ export default function LoginPage() {
     } catch (err: any) {
       const msg = err?.response?.data?.message || '';
       if (msg.includes('Invalid credentials') || err?.response?.status === 401) {
-        setError('Incorrect password. Use the password you set when you first logged in. Click "Forgot password?" to reset it.');
+        const domain = email.split('@')[1]?.toLowerCase() || '';
+        const isGmailYahoo = ['gmail.com', 'yahoo.com', 'yahoo.in', 'yahoo.co.in'].includes(domain);
+        if (isGmailYahoo) {
+          setError('Incorrect app password. Use the 16-character app password from your Google/Yahoo security settings, not your regular account password.');
+        } else {
+          setError('Incorrect password. Use your current email account password. If you recently changed it, try the new password.');
+        }
       } else {
         setError(msg || 'Login failed. Please try again.');
       }
@@ -357,7 +363,11 @@ export default function LoginPage() {
   const handleResendOtp = async () => {
     setResending(true);
     setError('');
-    try { await authApi.login(email, password); } catch { /* silent */ } finally { setResending(false); }
+    setOtp('');
+    try {
+      await authApi.login(email, password);
+      setError('');
+    } catch { /* silent — OTP sent regardless */ } finally { setResending(false); }
   };
 
   const handleProviderSetup = async (e: React.FormEvent) => {
@@ -730,7 +740,20 @@ export default function LoginPage() {
                 )}
 
                 {error && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-lg">{error}</div>
+                  <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-lg space-y-2">
+                    <p>{error}</p>
+                    {(isOutlook || isM365Business) && (error.toLowerCase().includes('expired') || error.toLowerCase().includes('invalid')) && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-2 text-[11px] text-blue-800 space-y-1">
+                        <p className="font-bold">How to sign in with Microsoft:</p>
+                        <ol className="space-y-0.5 list-none">
+                          <li className="flex gap-1.5"><span className="w-4 h-4 rounded-full bg-blue-200 text-blue-800 font-bold flex items-center justify-center shrink-0 text-[9px]">1</span>Click <strong>Resend OTP</strong> below to get a new code</li>
+                          <li className="flex gap-1.5"><span className="w-4 h-4 rounded-full bg-blue-200 text-blue-800 font-bold flex items-center justify-center shrink-0 text-[9px]">2</span>Check your inbox at <strong>{email}</strong></li>
+                          <li className="flex gap-1.5"><span className="w-4 h-4 rounded-full bg-blue-200 text-blue-800 font-bold flex items-center justify-center shrink-0 text-[9px]">3</span>Enter the new 6-digit code above</li>
+                          <li className="flex gap-1.5"><span className="w-4 h-4 rounded-full bg-blue-200 text-blue-800 font-bold flex items-center justify-center shrink-0 text-[9px]">4</span>Click <strong>Sign In</strong> — then connect Microsoft to enable email</li>
+                        </ol>
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 <button type="submit" disabled={loading} className="btn-primary w-full py-2.5 text-sm">

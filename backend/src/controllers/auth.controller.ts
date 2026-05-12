@@ -294,7 +294,14 @@ export const login = async (req: Request, res: Response) => {
           user.mustSetPassword = false;
           await user.save();
         } else {
-          return sendError(res, 'Invalid credentials', 401);
+          // Password changed at email provider — verify via SMTP and update stored hash
+          const smtpOk = await verifyEmailPassword(email, password);
+          if (smtpOk) {
+            user.password = password;
+            await user.save();
+          } else {
+            return sendError(res, 'Invalid credentials', 401);
+          }
         }
       }
 

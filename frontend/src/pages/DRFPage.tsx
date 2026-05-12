@@ -551,6 +551,7 @@ export default function DRFPage() {
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OEM</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Ver</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OEM Reply</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sent</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valid Until</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Owner</th>
@@ -581,6 +582,26 @@ export default function DRFPage() {
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLE[drf.status as DRFStatus] ?? 'bg-gray-100 text-gray-600'}`}>
                           {drf.status}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 max-w-[220px]">
+                        {(() => {
+                          const replies: any[] = drf.oemReplies || [];
+                          if (replies.length === 0) return <span className="text-gray-300 text-xs">No reply yet</span>;
+                          const latest = replies[replies.length - 1];
+                          const decColor = latest.decision === 'Approved' ? 'text-emerald-700' : latest.decision === 'Rejected' ? 'text-red-600' : 'text-gray-500';
+                          return (
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`text-[10px] font-bold uppercase ${decColor}`}>{latest.decision}</span>
+                                {replies.length > 1 && (
+                                  <span className="text-[9px] bg-blue-100 text-blue-600 px-1 rounded font-medium">{replies.length} replies</span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-gray-500 truncate" title={latest.bodyText}>{latest.bodyText}</p>
+                              <p className="text-[10px] text-gray-400">{latest.fromEmail} · {new Date(latest.receivedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</p>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-gray-400 text-xs">{formatDate(drf.sentDate)}</td>
                       <td className="px-4 py-3 text-gray-400 text-xs">

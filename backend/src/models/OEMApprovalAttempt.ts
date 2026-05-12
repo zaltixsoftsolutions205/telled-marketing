@@ -8,6 +8,13 @@ export interface IExtensionHistory {
   reason?: string;
 }
 
+export interface IOEMReply {
+  receivedAt: Date;
+  fromEmail: string;
+  bodyText: string;
+  decision: 'Approved' | 'Rejected' | 'Unknown';
+}
+
 export interface IOEMApprovalAttempt extends Document {
   organizationId: mongoose.Types.ObjectId;
   leadId: mongoose.Types.ObjectId;
@@ -19,6 +26,7 @@ export interface IOEMApprovalAttempt extends Document {
   rejectionReason?: string;
   expiryDate?: Date;
   approvedBy?: string;
+  oemReplies: IOEMReply[];
   extensionCount: number;
   extensionHistory: IExtensionHistory[];
   extensionRequested?: boolean;
@@ -29,6 +37,13 @@ export interface IOEMApprovalAttempt extends Document {
   createdAt: Date;
   updatedAt: Date;
 }
+
+const OEMReplySchema = new Schema<IOEMReply>({
+  receivedAt: { type: Date, required: true },
+  fromEmail:  { type: String, required: true },
+  bodyText:   { type: String, required: true },
+  decision:   { type: String, enum: ['Approved', 'Rejected', 'Unknown'], required: true },
+}, { _id: false });
 
 const ExtHistSchema = new Schema<IExtensionHistory>({
   extendedAt: { type: Date, required: true },
@@ -50,6 +65,7 @@ const OEMSchema = new Schema<IOEMApprovalAttempt>(
     rejectionReason: { type: String },
     expiryDate: { type: Date },
     approvedBy: { type: String },
+    oemReplies: { type: [OEMReplySchema], default: [] },
     extensionCount: { type: Number, default: 0 },
     extensionHistory: { type: [ExtHistSchema], default: [] },
     extensionRequested: { type: Boolean, default: false },

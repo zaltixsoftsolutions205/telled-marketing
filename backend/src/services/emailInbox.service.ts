@@ -243,10 +243,8 @@ async function findAttemptByCompanyName(companyName: string, emailDate?: Date): 
       return { alreadyProcessed: true, status: 'stale', lead };
     }
 
-    if (latest.status === 'Pending') return { attempt: latest, lead };
-
-    // Already actioned in this cycle
-    return { alreadyProcessed: true, status: latest.status, lead };
+    // Return the attempt regardless of status so new replies can be appended
+    return { attempt: latest, lead };
   }
   return null;
 }
@@ -319,7 +317,7 @@ export async function syncEmailsForDRFViaGraph(
       if (!lead) continue;
       const companyName = lead.companyName;
 
-      // Find the most recent reply for this company after sentDate
+      // Find ALL replies for this company after sentDate, oldest first for history
       const sentDate = new Date(attempt.sentDate);
       const replies = drfMessages.filter(m => {
         const subj = m.subject || '';
@@ -327,47 +325,71 @@ export async function syncEmailsForDRFViaGraph(
         return msgDate > sentDate &&
           (subj.toLowerCase().includes(companyName.toLowerCase()) ||
            extractCompanyFromSubject(subj)?.toLowerCase() === companyName.toLowerCase());
-      }).sort((a, b) => new Date(b.receivedDateTime).getTime() - new Date(a.receivedDateTime).getTime());
+      }).sort((a, b) => new Date(a.receivedDateTime).getTime() - new Date(b.receivedDateTime).getTime());
 
       if (replies.length === 0) {
         result.skipped.push(`${companyName} — no reply found`);
         continue;
       }
 
-      const msg = replies[0];
-      const bodyText = msg.body?.content || msg.bodyPreview || '';
-      const emailDate = new Date(msg.receivedDateTime);
-      const fresh = stripQuotedContent(bodyText.replace(/<[^>]+>/g, ' '));
-      const fullText = fresh + ' ' + bodyText.replace(/<[^>]+>/g, ' ');
+      // Build reply history — skip already-stored entries
+      const existingTexts = new Set((attempt.oemReplies || []).map((r: any) => r.bodyText?.slice(0, 100)));
+      const newReplies: any[] = [];
+      for (const m of replies) {
+        const rawBody = (m.body?.content || m.bodyPreview || '').replace(/<[^>]+>/g, ' ');
+        const fresh = stripQuotedContent(rawBody);
+        const snippet = fresh.slice(0, 100);
+        if (existingTexts.has(snippet)) continue;
+        const dec = detectDecision(fresh) || detectDecision(rawBody);
+        newReplies.push({
+          receivedAt: new Date(m.receivedDateTime),
+          fromEmail:  m.from?.emailAddress?.address || 'unknown',
+          bodyText:   fresh.slice(0, 500),
+          decision:   dec || 'Unknown',
+        });
+      }
 
-      let decision = detectDecision(fresh);
-      if (!decision) decision = detectDecision(fullText);
+      // Most recent reply drives the final decision
+      const latest = replies[replies.length - 1];
+      const latestBody = (latest.body?.content || latest.bodyPreview || '').replace(/<[^>]+>/g, ' ');
+      const latestFresh = stripQuotedContent(latestBody);
+      const emailDate = new Date(latest.receivedDateTime);
+      const fromAddr = latest.from?.emailAddress?.address || 'OEM';
+
+      let decision = detectDecision(latestFresh);
+      if (!decision) decision = detectDecision(latestBody);
+
+      const pushUpdate: any = {};
+      if (newReplies.length > 0) pushUpdate.$push = { oemReplies: { $each: newReplies } };
 
       if (!decision) {
-        result.skipped.push(`${companyName} — reply found but no approval/rejection keyword`);
+        if (newReplies.length > 0) await OEMApprovalAttempt.findByIdAndUpdate(attempt._id, pushUpdate);
+        result.skipped.push(`${companyName} — ${replies.length} reply(s) found but no approval/rejection keyword`);
         continue;
       }
 
       if (decision === 'Approved') {
-        const expiryDate = extractExpiryDate(fresh) || extractExpiryDate(fullText);
+        const expiryDate = extractExpiryDate(latestFresh) || extractExpiryDate(latestBody);
         await OEMApprovalAttempt.findByIdAndUpdate(attempt._id, {
+          ...pushUpdate,
           status: 'Approved',
           approvedDate: emailDate,
-          approvedBy: msg.from?.emailAddress?.address || 'OEM',
+          approvedBy: fromAddr,
           ...(expiryDate ? { expiryDate } : {}),
         });
         await Lead.findByIdAndUpdate(lead._id, { stage: 'OEM Approved' });
         result.approved.push(companyName);
-        logger.info(`DRF Graph auto-approved: "${companyName}" from ${msg.from?.emailAddress?.address}`);
+        logger.info(`DRF Graph auto-approved: "${companyName}" from ${fromAddr}`);
       } else {
         await OEMApprovalAttempt.findByIdAndUpdate(attempt._id, {
+          ...pushUpdate,
           status: 'Rejected',
           rejectedDate: emailDate,
-          rejectionReason: `Auto (${msg.from?.emailAddress?.address}): ${fresh.slice(0, 300)}`,
+          rejectionReason: `Auto (${fromAddr}): ${latestFresh.slice(0, 300)}`,
         });
         await Lead.findByIdAndUpdate(lead._id, { stage: 'OEM Rejected' });
         result.rejected.push(companyName);
-        logger.info(`DRF Graph auto-rejected: "${companyName}" from ${msg.from?.emailAddress?.address}`);
+        logger.info(`DRF Graph auto-rejected: "${companyName}" from ${fromAddr}`);
       }
       result.processed++;
     }
@@ -483,7 +505,7 @@ export async function syncEmailsForDRF(creds?: ImapCredentials): Promise<EmailSy
       parsedEmails.push({ uid: msg.uid, subject, fromAddr, date, rawText });
     }
 
-    // Phase 3: for each pending DRF, find the best matching reply
+    // Phase 3: for each pending DRF, find all matching replies and store them all
     for (const attempt of pendingAttempts) {
       const lead = attempt.leadId as any;
       if (!lead) continue;
@@ -494,14 +516,14 @@ export async function syncEmailsForDRF(creds?: ImapCredentials): Promise<EmailSy
       const isSystem = (addr: string) => /mailer-daemon|postmaster|no-reply|noreply|bounce|delivery|mail-daemon/i.test(addr);
       const isBounce = (subj: string) => /undelivered|delivery.*(failed|failure)|bounce|returned mail|failure notice/i.test(subj);
 
-      // Find replies for this company that arrived after the DRF was sent
+      // Find ALL replies for this company that arrived after the DRF was sent
       const replies = parsedEmails.filter(e => {
         if (isSystem(e.fromAddr) || isBounce(e.subject)) return false;
         if (e.date <= sentDate) return false;
         const extracted = extractCompanyFromSubject(e.subject);
         return extracted?.toLowerCase() === companyName.toLowerCase() ||
           e.subject.toLowerCase().includes(companyName.toLowerCase());
-      }).sort((a, b) => b.date.getTime() - a.date.getTime()); // newest first
+      }).sort((a, b) => a.date.getTime() - b.date.getTime()); // oldest first for history
 
       if (replies.length === 0) {
         result.skipped.push(`${companyName} — no reply found`);
@@ -522,38 +544,61 @@ export async function syncEmailsForDRF(creds?: ImapCredentials): Promise<EmailSy
         continue;
       }
 
-      // Use most recent reply for approval/rejection decision
-      const reply = replies[0];
-      const freshText = stripQuotedContent(reply.rawText);
-      let decision = detectDecision(freshText);
-      if (!decision) decision = detectDecision(reply.rawText);
+      // Build the reply history entries for all new replies not already stored
+      const existingTexts = new Set((attempt.oemReplies || []).map((r: any) => r.bodyText?.slice(0, 100)));
+      const newReplies: any[] = [];
+      for (const r of replies) {
+        const freshText = stripQuotedContent(r.rawText);
+        const snippet = freshText.slice(0, 100);
+        if (existingTexts.has(snippet)) continue; // already stored
+        const dec = detectDecision(freshText) || detectDecision(r.rawText);
+        newReplies.push({
+          receivedAt: r.date,
+          fromEmail:  r.fromAddr,
+          bodyText:   freshText.slice(0, 500),
+          decision:   dec || 'Unknown',
+        });
+      }
+
+      // Use the most recent reply for the final decision
+      const latestReply = replies[replies.length - 1];
+      const latestFresh = stripQuotedContent(latestReply.rawText);
+      let decision = detectDecision(latestFresh);
+      if (!decision) decision = detectDecision(latestReply.rawText);
+
+      // Always push new replies into history
+      const pushUpdate: any = {};
+      if (newReplies.length > 0) pushUpdate.$push = { oemReplies: { $each: newReplies } };
 
       if (!decision) {
-        result.skipped.push(`${companyName} — reply found but no approval/rejection keyword`);
+        if (newReplies.length > 0) await OEMApprovalAttempt.findByIdAndUpdate(attempt._id, pushUpdate);
+        result.skipped.push(`${companyName} — ${replies.length} reply(s) found but no approval/rejection keyword`);
         continue;
       }
 
       const label = `${companyName}`;
       if (decision === 'Approved') {
-        const expiryDate = extractExpiryDate(freshText) || extractExpiryDate(reply.rawText);
+        const expiryDate = extractExpiryDate(latestFresh) || extractExpiryDate(latestReply.rawText);
         await OEMApprovalAttempt.findByIdAndUpdate(attempt._id, {
+          ...pushUpdate,
           status: 'Approved',
-          approvedDate: reply.date,
-          approvedBy: `Auto (${reply.fromAddr})`,
+          approvedDate: latestReply.date,
+          approvedBy: `Auto (${latestReply.fromAddr})`,
           ...(expiryDate ? { expiryDate } : {}),
         });
         await Lead.findByIdAndUpdate(lead._id, { stage: 'OEM Approved' });
         result.approved.push(label);
-        logger.info(`DRF auto-approved: "${companyName}" from ${reply.fromAddr}${expiryDate ? `, valid until ${expiryDate.toISOString()}` : ''}`);
+        logger.info(`DRF auto-approved: "${companyName}" from ${latestReply.fromAddr}${expiryDate ? `, valid until ${expiryDate.toISOString()}` : ''}`);
       } else {
         await OEMApprovalAttempt.findByIdAndUpdate(attempt._id, {
+          ...pushUpdate,
           status: 'Rejected',
-          rejectedDate: reply.date,
-          rejectionReason: `Auto (${reply.fromAddr}): ${freshText.slice(0, 300)}`,
+          rejectedDate: latestReply.date,
+          rejectionReason: `Auto (${latestReply.fromAddr}): ${latestFresh.slice(0, 300)}`,
         });
         await Lead.findByIdAndUpdate(lead._id, { stage: 'OEM Rejected' });
         result.rejected.push(label);
-        logger.info(`DRF auto-rejected: "${companyName}" from ${reply.fromAddr}`);
+        logger.info(`DRF auto-rejected: "${companyName}" from ${latestReply.fromAddr}`);
       }
       result.processed++;
     }
