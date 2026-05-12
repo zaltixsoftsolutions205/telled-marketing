@@ -1,7 +1,7 @@
+import api from './axios';
 import { useLogoStore } from '@/store/logoStore';
 import { useAuthStore } from '@/store/authStore';
 
-// Use import.meta.env.BASE_URL so it works under any base path (e.g. /zieos/)
 export const DEFAULT_LOGO = `${import.meta.env.BASE_URL}zaltix-logo.png`;
 
 function currentOrgId(): string | null {
@@ -10,36 +10,35 @@ function currentOrgId(): string | null {
 
 export const settingsApi = {
   getLogo: async (): Promise<string | null> => {
-    return useLogoStore.getState().logoUrl;
+    const { data } = await api.get('/settings/logo');
+    return data.data?.logoUrl ?? null;
   },
+
   uploadLogo: async (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const url = reader.result as string;
-        const orgId = currentOrgId();
-        if (orgId) {
-          useLogoStore.getState().saveForOrg(orgId, url);
-        } else {
-          useLogoStore.getState().setLogoUrl(url);
-        }
-        resolve(url);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
+    const formData = new FormData();
+    formData.append('logo', file);
+    const { data } = await api.post('/settings/logo', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
     });
-  },
-  deleteLogo: async (): Promise<void> => {
+    const logoUrl: string = data.data?.logoUrl ?? null;
     const orgId = currentOrgId();
-    if (orgId) {
-      useLogoStore.getState().saveForOrg(orgId, null);
-    } else {
-      useLogoStore.getState().setLogoUrl(null);
-    }
+    if (orgId) useLogoStore.getState().saveForOrg(orgId, logoUrl);
+    else useLogoStore.getState().setLogoUrl(logoUrl);
+    return logoUrl;
+  },
+
+  deleteLogo: async (): Promise<void> => {
+    await api.delete('/settings/logo');
+    const orgId = currentOrgId();
+    if (orgId) useLogoStore.getState().saveForOrg(orgId, null);
+    else useLogoStore.getState().setLogoUrl(null);
   },
 };
 
 export function resolveLogoUrl(logoUrl: string | null): string {
-  if (logoUrl) return logoUrl;
-  return DEFAULT_LOGO;
+  if (!logoUrl) return DEFAULT_LOGO;
+  if (logoUrl.startsWith('data:') || logoUrl.startsWith('http') || logoUrl.startsWith('/zieos')) return logoUrl;
+  // Backend returns paths like /uploads/filename.png — prefix with API base
+  const base = (import.meta.env.VITE_API_URL || '').replace('/api', '');
+  return `${base}${logoUrl}`;
 }

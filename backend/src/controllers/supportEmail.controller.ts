@@ -2,7 +2,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError } from '../utils/response';
-import { syncSupportEmails, patchUnassignedTickets, ImapCredentials } from '../services/emailInboxSupport.service';
+import { syncSupportEmails, syncSupportEmailsViaGraph, patchUnassignedTickets, ImapCredentials } from '../services/emailInboxSupport.service';
 import User from '../models/User';
 import Account from '../models/Account';
 import Lead from '../models/Lead';
@@ -15,26 +15,34 @@ export const syncSupportEmailsManually = async (req: AuthRequest, res: Response)
       return;
     }
 
-    // Use the logged-in user's own SMTP credentials — same email they log in with
-    const user = await User.findById(req.user!.id).select('smtpHost smtpUser smtpPass');
-    if (!user?.smtpUser || !user?.smtpPass) {
-      sendError(res, 'Your email is not configured. Please log out and log in again to set up your email.', 400);
-      return;
+    // Use the logged-in user's own credentials — IMAP or Microsoft OAuth
+    const user = await User.findById(req.user!.id).select('smtpHost smtpUser smtpPass msRefreshToken email');
+    if (!user) { sendError(res, 'User not found', 404); return; }
+
+    let result;
+
+    // Microsoft OAuth path
+    if ((user as any).msRefreshToken) {
+      console.log(`📧 Syncing Graph inbox for ${user.email}`);
+      result = await syncSupportEmailsViaGraph((user as any).msRefreshToken, user);
+    } else {
+      if (!user.smtpUser || !user.smtpPass) {
+        sendError(res, 'Your email is not configured. Please log out and log in again to set up your email.', 400);
+        return;
+      }
+      const smtpHost = user.smtpHost || 'smtp.hostinger.com';
+      const imapHost = smtpHost.includes('office365') || smtpHost.includes('outlook')
+        ? 'imap-mail.outlook.com'
+        : smtpHost.includes('gmail')
+        ? 'imap.gmail.com'
+        : smtpHost.includes('zoho')
+        ? 'imap.zoho.com'
+        : smtpHost.replace(/^smtp[.-]/, 'imap.');
+
+      const creds: ImapCredentials = { host: imapHost, port: 993, user: user.smtpUser, pass: decryptText(user.smtpPass) };
+      console.log(`📧 Syncing IMAP inbox for ${user.smtpUser}`);
+      result = await syncSupportEmails(creds);
     }
-
-    const smtpHost = user.smtpHost || 'smtp.hostinger.com';
-    const imapHost = smtpHost.includes('office365') || smtpHost.includes('outlook')
-      ? 'imap-mail.outlook.com'
-      : smtpHost.includes('gmail')
-      ? 'imap.gmail.com'
-      : smtpHost.includes('zoho')
-      ? 'imap.zoho.com'
-      : smtpHost.replace(/^smtp[.-]/, 'imap.');
-
-    const creds: ImapCredentials = { host: imapHost, port: 993, user: user.smtpUser, pass: decryptText(user.smtpPass) };
-    console.log(`📧 Syncing inbox for ${user.smtpUser}`);
-
-    const result = await syncSupportEmails(creds);
     
     sendSuccess(res, {
       summary: {

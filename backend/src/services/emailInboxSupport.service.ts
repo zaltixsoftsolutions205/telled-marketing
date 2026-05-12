@@ -72,35 +72,56 @@ async function findAccountByEmail(email: string): Promise<any | null> {
   const normalizedEmail = email.trim().toLowerCase();
   const safeEmail = normalizedEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const emailRegex = new RegExp(`^${safeEmail}$`, 'i');
+  const Lead = mongoose.model('Lead');
 
   // 1. Direct account contactEmail match
   const account = await Account.findOne({ contactEmail: emailRegex, isArchived: false });
-  console.log(`   [lookup] contactEmail match for "${normalizedEmail}": ${account ? account.companyName : 'none'}`);
   if (account) return account;
 
-  // 2. Via Lead → Account
-  const Lead = mongoose.model('Lead');
+  // 2. Via Lead.email → Account (lead was converted to account)
   const lead = await Lead.findOne({ email: emailRegex });
-  console.log(`   [lookup] Lead.email match for "${normalizedEmail}": ${lead ? (lead as any).companyName : 'none'}`);
   if (lead) {
     const leadAccount = await Account.findOne({ leadId: lead._id, isArchived: false });
-    console.log(`   [lookup] Account via leadId: ${leadAccount ? leadAccount.companyName : 'none'}`);
     if (leadAccount) return leadAccount;
   }
 
-  // 3. Domain-based fallback — only for company domains, skip gmail/yahoo/outlook etc
+  // 3. Domain-based fallback — only for company domains, skip common personal providers
   const domain = normalizedEmail.split('@')[1];
-  const COMMON_DOMAINS = ['gmail.com','yahoo.com','yahoo.in','outlook.com','hotmail.com','live.com','icloud.com','rediffmail.com'];
+  const COMMON_DOMAINS = [
+    'gmail.com','yahoo.com','yahoo.in','yahoo.co.in','outlook.com','hotmail.com',
+    'live.com','live.in','icloud.com','me.com','rediffmail.com','protonmail.com','proton.me',
+  ];
   if (domain && !COMMON_DOMAINS.includes(domain)) {
+    const safeDomain = domain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // 3a. Account.contactEmail domain match
     const domainAccount = await Account.findOne({
-      contactEmail: { $regex: `@${domain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
+      contactEmail: { $regex: `@${safeDomain}$`, $options: 'i' },
       isArchived: false,
     });
-    console.log(`   [lookup] domain fallback "@${domain}": ${domainAccount ? domainAccount.companyName : 'none'}`);
     if (domainAccount) return domainAccount;
+
+    // 3b. Lead.email domain match → find converted account
+    const domainLead = await Lead.findOne({
+      email: { $regex: `@${safeDomain}$`, $options: 'i' },
+    });
+    if (domainLead) {
+      const domainLeadAccount = await Account.findOne({ leadId: domainLead._id, isArchived: false });
+      if (domainLeadAccount) return domainLeadAccount;
+    }
+
+    // 3c. Account.phone or additional contacts if stored in companyName/notes domain
+    // Final check: any lead with this domain that has a converted account
+    const allDomainLeads = await Lead.find({
+      email: { $regex: `@${safeDomain}$`, $options: 'i' },
+    }).select('_id').lean();
+    if (allDomainLeads.length > 0) {
+      const leadIds = allDomainLeads.map((l: any) => l._id);
+      const anyAccount = await Account.findOne({ leadId: { $in: leadIds }, isArchived: false });
+      if (anyAccount) return anyAccount;
+    }
   }
 
-  console.log(`   [lookup] no account found for "${normalizedEmail}"`);
   return null;
 }
 
@@ -345,6 +366,133 @@ export async function syncSupportEmails(creds?: ImapCredentials): Promise<Suppor
 
   // Patch ALL tickets that have no engineer — assign from account's assignedEngineer
   await patchUnassignedTickets();
+
+  return result;
+}
+
+/**
+ * Sync support emails for a Microsoft OAuth engineer via Graph API.
+ * Called from cron when engineer has msRefreshToken instead of IMAP creds.
+ */
+export async function syncSupportEmailsViaGraph(
+  encryptedRefreshToken: string,
+  engineerUser: any,
+): Promise<SupportEmailSyncResult> {
+  const result: SupportEmailSyncResult = {
+    scanned: 0, processed: 0, created: [], failed: [], errors: [],
+  };
+
+  try {
+    const { decryptText, encryptText } = await import('../utils/crypto');
+    const axios = (await import('axios')).default;
+
+    const refreshToken = decryptText(encryptedRefreshToken);
+    const tokenRes = await axios.post(
+      'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+      new URLSearchParams({
+        grant_type:    'refresh_token',
+        client_id:     process.env.GRAPH_CLIENT_ID     || '',
+        client_secret: process.env.GRAPH_CLIENT_SECRET || '',
+        refresh_token: refreshToken,
+        scope:         'offline_access Mail.Read Mail.ReadWrite',
+      }).toString(),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+
+    const accessToken = tokenRes.data.access_token;
+
+    // Rotate refresh token if Microsoft issued a new one
+    if (tokenRes.data.refresh_token && tokenRes.data.refresh_token !== refreshToken) {
+      const UserModel = (await import('../models/User')).default;
+      await UserModel.updateOne(
+        { _id: engineerUser._id },
+        { msRefreshToken: encryptText(tokenRes.data.refresh_token) }
+      );
+    }
+
+    // Fetch last 7 days of inbox
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    let url = `https://graph.microsoft.com/v1.0/me/mailFolders/Inbox/messages?$filter=receivedDateTime ge ${since}&$select=id,subject,bodyPreview,body,receivedDateTime,from&$top=50&$orderby=receivedDateTime desc`;
+
+    const allMessages: any[] = [];
+    while (url) {
+      const res2 = await axios.get(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      allMessages.push(...(res2.data.value || []));
+      url = res2.data['@odata.nextLink'] || '';
+    }
+    result.scanned = allMessages.length;
+
+    for (const msg of allMessages) {
+      const fromEmail = msg.from?.emailAddress?.address?.toLowerCase() || '';
+      const fromName  = msg.from?.emailAddress?.name || '';
+      const subject   = msg.subject || '';
+      const messageId = msg.id; // Graph message ID used as dedup key
+
+      if (!fromEmail) continue;
+
+      // Dedup
+      const duplicate = await SupportTicket.findOne({ sourceMessageId: messageId }).lean();
+      if (duplicate) continue;
+
+      const account = await findAccountByEmail(fromEmail);
+      if (!account) {
+        result.failed.push(`${fromEmail}: No matching account found`);
+        continue;
+      }
+
+      let engineer = null;
+      if (account.assignedEngineer) engineer = await User.findById(account.assignedEngineer).lean();
+      if (!engineer) engineer = engineerUser;
+      if (!engineer) { result.failed.push('No engineer available'); continue; }
+
+      const bodyHtml = msg.body?.content || msg.bodyPreview || '';
+      const bodyText = bodyHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 2000);
+      const description = bodyText || 'No description provided';
+      const priority = detectPriority(subject, description);
+
+      const ticket = await new SupportTicket({
+        organizationId: account.organizationId,
+        accountId:      account._id,
+        ticketId:       generateTicketId(),
+        sourceMessageId: messageId,
+        subject:        subject.slice(0, 200),
+        description,
+        priority,
+        status:         'Open',
+        assignedEngineer: engineer._id,
+        createdBy:      engineer._id,
+        internalNotes: [{
+          note:    `Auto-created from email sent by ${fromName} <${fromEmail}>`,
+          addedBy: engineer._id,
+          addedAt: new Date(),
+        }],
+        lastResponseAt: new Date(),
+      }).save();
+
+      result.created.push(ticket.ticketId);
+      result.processed++;
+      logger.info(`Support Graph ticket created: ${ticket.ticketId} from ${fromEmail}`);
+
+      // Send acknowledgement via Graph (system SMTP fallback)
+      const senderSmtp: UserSmtpConfig = {
+        smtpHost:   'smtp.hostinger.com',
+        smtpPort:   465,
+        smtpSecure: true,
+        smtpUser:   engineerUser.email,
+        smtpPass:   '',
+        fromEmail:  engineerUser.email,
+        fromName:   'Support Team',
+      };
+      await sendTicketAcknowledgement(
+        fromEmail, fromName || account.companyName || 'Customer',
+        ticket.ticketId, subject.slice(0, 200), senderSmtp,
+      ).catch(() => {});
+    }
+  } catch (e: any) {
+    const msg = e?.response?.data?.error?.message || e?.message || String(e);
+    result.errors.push(`Graph support sync failed: ${msg}`);
+    logger.warn(`Support Graph sync error for ${engineerUser?.email}: ${msg}`);
+  }
 
   return result;
 }

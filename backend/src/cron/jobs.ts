@@ -12,7 +12,7 @@ import { OEM_EXPIRY_REMINDER_DAYS, TICKET_AUTO_CLOSE_DAYS, TICKET_RESOLVED_FORCE
 import User from '../models/User';
 import { syncEmailsForDRF, syncEmailsForDRFViaGraph, ImapCredentials } from '../services/emailInbox.service';
 import { syncPurchaseOrderEmails } from '../services/emailInboxPurchase.service';
-import { syncSupportEmails, patchUnassignedTickets } from '../services/emailInboxSupport.service';
+import { syncSupportEmails, syncSupportEmailsViaGraph, patchUnassignedTickets } from '../services/emailInboxSupport.service';
 import { generateTicketId } from '../utils/helpers';
 
 // Add this function before startCronJobs
@@ -77,25 +77,33 @@ async function syncSupportEmailsJob() {
   try {
     const { decryptText } = await import('../utils/crypto');
 
-    // Sync each engineer's personal inbox — same pattern as sales DRF sync
-    const users = await User.find({
+    // Fetch all active engineers — both IMAP and Microsoft OAuth
+    const allEngineers = await User.find({
       isActive: true,
       role: 'engineer',
-      smtpUser: { $exists: true, $ne: '' },
-      smtpPass: { $exists: true, $ne: '' },
-    }).select('smtpHost smtpUser smtpPass email').lean();
+    }).select('smtpHost smtpUser smtpPass msRefreshToken email').lean();
 
-    if (users.length === 0) {
-      // No users with creds — fall through to env vars inside syncSupportEmails
-      const result = await syncSupportEmails();
-      if (result.created.length || result.errors.length) {
-        logger.info(`Support sync (env creds): created=${result.created.length} failed=${result.failed.length} errors=${result.errors.length}`);
+    let synced = 0;
+
+    for (const u of allEngineers) {
+      // Microsoft OAuth engineer — use Graph API
+      if ((u as any).msRefreshToken) {
+        try {
+          const result = await syncSupportEmailsViaGraph((u as any).msRefreshToken, u);
+          if (result.created.length || result.failed.length || result.errors.length) {
+            logger.info(`Support Graph sync (${u.email}): created=${result.created.length} failed=${result.failed.length} errors=${result.errors.length}`);
+          }
+          synced++;
+        } catch (e: any) {
+          logger.error(`Support Graph sync failed for ${u.email}:`, e);
+        }
+        continue;
       }
-      return;
-    }
 
-    for (const u of users) {
+      // IMAP engineer — needs smtpUser + smtpPass
+      if (!u.smtpUser || !(u as any).smtpPass) continue;
       if (shouldSkipImap(u.email || '')) continue;
+
       try {
         const smtpHost = u.smtpHost || 'smtp.hostinger.com';
         const imapHost = smtpHost.includes('office365') || smtpHost.includes('outlook')
@@ -106,19 +114,28 @@ async function syncSupportEmailsJob() {
           ? 'imap.zoho.com'
           : smtpHost.replace(/^smtp[.-]/, 'imap.');
 
-        const creds = { host: imapHost, port: 993, user: u.smtpUser!, pass: decryptText(u.smtpPass!) };
+        const creds = { host: imapHost, port: 993, user: u.smtpUser!, pass: decryptText((u as any).smtpPass!) };
         const result = await syncSupportEmails(creds);
         if (result.created.length || result.failed.length || result.errors.length) {
           logger.info(`Support sync (${u.email}): created=${result.created.length} failed=${result.failed.length} errors=${result.errors.length}`);
           if (result.created.length) logger.info(`Created tickets: ${result.created.join(', ')}`);
           if (result.errors.length) logger.warn(`Sync errors: ${result.errors.join(', ')}`);
         }
+        synced++;
       } catch (e: any) {
         if (isImapSocketError(e)) {
           logger.warn(`Support IMAP connection issue for ${u.email} (server closed idle connection)`);
         } else {
           logger.error(`Support sync failed for ${u.email}:`, e);
         }
+      }
+    }
+
+    if (synced === 0) {
+      // No engineers with any creds — fall through to env vars
+      const result = await syncSupportEmails();
+      if (result.created.length || result.errors.length) {
+        logger.info(`Support sync (env creds): created=${result.created.length} failed=${result.failed.length} errors=${result.errors.length}`);
       }
     }
   } catch (e: any) {
