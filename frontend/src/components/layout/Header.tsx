@@ -58,7 +58,7 @@ function timeAgo(dateStr: string) {
 export default function Header({ title, onMenuClick }: Props) {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
-  const logout = useAuthStore((s) => s.logout);
+  const logoutStore = useAuthStore((s) => s.logout);
   const [open, setOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -246,7 +246,13 @@ export default function Header({ title, onMenuClick }: Props) {
               </button>
               <div className="border-t border-gray-100" />
               <button
-                onClick={() => { setProfileOpen(false); logout(); navigate('/login', { replace: true }); }}
+                onClick={async () => {
+                  setProfileOpen(false);
+                  const { authApi } = await import('@/api/auth');
+                  await authApi.logout();
+                  logoutStore();
+                  navigate('/login', { replace: true });
+                }}
                 className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors"
               >
                 <LogOut size={14} /> Logout

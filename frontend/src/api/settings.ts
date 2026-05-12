@@ -1,7 +1,12 @@
 import { useLogoStore } from '@/store/logoStore';
+import { useAuthStore } from '@/store/authStore';
 
 // Use import.meta.env.BASE_URL so it works under any base path (e.g. /zieos/)
 export const DEFAULT_LOGO = `${import.meta.env.BASE_URL}zaltix-logo.png`;
+
+function currentOrgId(): string | null {
+  return useAuthStore.getState().organizationId;
+}
 
 export const settingsApi = {
   getLogo: async (): Promise<string | null> => {
@@ -12,7 +17,12 @@ export const settingsApi = {
       const reader = new FileReader();
       reader.onload = () => {
         const url = reader.result as string;
-        useLogoStore.getState().setLogoUrl(url);
+        const orgId = currentOrgId();
+        if (orgId) {
+          useLogoStore.getState().saveForOrg(orgId, url);
+        } else {
+          useLogoStore.getState().setLogoUrl(url);
+        }
         resolve(url);
       };
       reader.onerror = reject;
@@ -20,13 +30,16 @@ export const settingsApi = {
     });
   },
   deleteLogo: async (): Promise<void> => {
-    useLogoStore.getState().setLogoUrl(null);
+    const orgId = currentOrgId();
+    if (orgId) {
+      useLogoStore.getState().saveForOrg(orgId, null);
+    } else {
+      useLogoStore.getState().setLogoUrl(null);
+    }
   },
 };
 
 export function resolveLogoUrl(logoUrl: string | null): string {
-  // Custom uploaded logo (base64 DataURL)
   if (logoUrl) return logoUrl;
-  // Default Zaltix logo from public folder
   return DEFAULT_LOGO;
 }

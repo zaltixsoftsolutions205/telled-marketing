@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User } from '@/types';
 import { setCurrentOrgId } from '@/mock/store';
+import { useLogoStore } from '@/store/logoStore';
 
 interface AuthState {
   user: User | null;
@@ -32,6 +33,8 @@ export const useAuthStore = create<AuthState>()(
       setToken: (token) => set({ token }),
       logout: () => {
         setCurrentOrgId(null);
+        useLogoStore.getState().setLogoUrl(null);
+        useLogoStore.getState().setCompanyName('ZIEOS');
         set({ user: null, token: null, refreshToken: null, organizationId: null });
       },
     }),
@@ -41,6 +44,7 @@ export const useAuthStore = create<AuthState>()(
       onRehydrateStorage: () => (state) => {
         if (state?.user?.organizationId) {
           setCurrentOrgId(state.user.organizationId);
+          useLogoStore.getState().loadForOrg(state.user.organizationId);
         }
       },
     }

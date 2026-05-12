@@ -3,8 +3,8 @@ import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { usePageTitleStore } from '@/store/pageTitleStore';
-import { settingsApi } from '@/api/settings';
 import { useLogoStore } from '@/store/logoStore';
+import { useAuthStore } from '@/store/authStore';
 
 const titleMap: Record<string, string> = {
   '/dashboard':       'Dashboard',
@@ -28,12 +28,13 @@ const titleMap: Record<string, string> = {
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
-  const setLogoUrl = useLogoStore((s) => s.setLogoUrl);
   const companyName = useLogoStore((s) => s.companyName);
+  const loadForOrg = useLogoStore((s) => s.loadForOrg);
+  const organizationId = useAuthStore((s) => s.organizationId);
 
   useEffect(() => {
-    settingsApi.getLogo().then(url => setLogoUrl(url)).catch(() => {});
-  }, []);
+    if (organizationId) loadForOrg(organizationId);
+  }, [organizationId]);
 
   // Auto-close sidebar on navigation (mobile)
   useEffect(() => {

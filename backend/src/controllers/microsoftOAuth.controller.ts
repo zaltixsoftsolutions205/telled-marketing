@@ -25,6 +25,11 @@ export const getMicrosoftAuthUrl = async (req: Request, res: Response) => {
     // Encode userId in the state param so we can identify the user in the callback
     const state = Buffer.from(JSON.stringify({ userId })).toString('base64url');
 
+    // Check if user already has a refresh token — if so, don't force consent/account picker again
+    const user = await (await import('../models/User')).default
+      .findById(userId).select('msRefreshToken email').lean();
+    const alreadyConnected = !!(user as any)?.msRefreshToken;
+
     const params = new URLSearchParams({
       client_id:     CLIENT_ID,
       response_type: 'code',
@@ -32,8 +37,10 @@ export const getMicrosoftAuthUrl = async (req: Request, res: Response) => {
       response_mode: 'query',
       scope:         'offline_access Mail.Send Mail.Read Mail.ReadWrite User.Read',
       state,
-      // 'common' allows both personal and work accounts
-      prompt:        'select_account',
+      // First time: show account picker. Already connected: let Microsoft reuse existing session silently.
+      ...(alreadyConnected
+        ? { login_hint: (user as any)?.email || '' }
+        : { prompt: 'select_account' }),
     });
 
     const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params.toString()}`;

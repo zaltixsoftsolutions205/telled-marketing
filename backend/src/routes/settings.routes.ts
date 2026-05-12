@@ -10,50 +10,55 @@ import path from 'path';
 const router = Router();
 router.use(authenticate);
 
-const SETTINGS_FILE = path.join(process.cwd(), 'uploads', 'settings.json');
+function settingsFile(orgId: string): string {
+  return path.join(process.cwd(), 'uploads', `settings_${orgId}.json`);
+}
 
-function readSettings(): Record<string, string> {
+function readSettings(orgId: string): Record<string, string> {
   try {
-    if (fs.existsSync(SETTINGS_FILE)) return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    const file = settingsFile(orgId);
+    if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch {}
   return {};
 }
 
-function writeSettings(data: Record<string, string>) {
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(data, null, 2));
+function writeSettings(orgId: string, data: Record<string, string>) {
+  fs.writeFileSync(settingsFile(orgId), JSON.stringify(data, null, 2));
 }
 
-// GET logo URL
-router.get('/logo', (_req: AuthRequest, res: Response) => {
-  const settings = readSettings();
+// GET logo URL — scoped to requesting user's organization
+router.get('/logo', (req: AuthRequest, res: Response) => {
+  const settings = readSettings(req.user!.organizationId);
   sendSuccess(res, { logoUrl: settings.logoUrl || null });
 });
 
-// Upload logo — admin only
+// Upload logo — admin only, scoped to org
 router.post('/logo', authorize('admin'), upload.single('logo'), (req: AuthRequest, res: Response) => {
   if (!req.file) { sendError(res, 'No file uploaded', 400); return; }
   const allowed = /\.(jpeg|jpg|png|gif|webp|svg)$/i;
   if (!allowed.test(req.file.originalname)) { sendError(res, 'Only image files allowed', 400); return; }
   const logoUrl = `/uploads/${req.file.filename}`;
-  const settings = readSettings();
+  const orgId = req.user!.organizationId;
+  const settings = readSettings(orgId);
   if (settings.logoUrl) {
     const oldPath = path.join(process.cwd(), settings.logoUrl);
     if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
   }
   settings.logoUrl = logoUrl;
-  writeSettings(settings);
+  writeSettings(orgId, settings);
   sendSuccess(res, { logoUrl }, 'Logo uploaded successfully');
 });
 
-// Delete logo — admin only
+// Delete logo — admin only, scoped to org
 router.delete('/logo', authorize('admin'), (req: AuthRequest, res: Response) => {
-  const settings = readSettings();
+  const orgId = req.user!.organizationId;
+  const settings = readSettings(orgId);
   if (settings.logoUrl) {
     const oldPath = path.join(process.cwd(), settings.logoUrl);
     if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
   }
   delete settings.logoUrl;
-  writeSettings(settings);
+  writeSettings(orgId, settings);
   sendSuccess(res, { logoUrl: null }, 'Logo removed');
 });
 

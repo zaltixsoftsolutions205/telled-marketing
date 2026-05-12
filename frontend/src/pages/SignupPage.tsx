@@ -20,7 +20,7 @@ export default function SignupPage() {
 
   const { setAuth } = useAuthStore();
   const navigate = useNavigate();
-  const setCompanyName = useLogoStore((s) => s.setCompanyName);
+  const saveNameForOrg = useLogoStore((s) => s.saveNameForOrg);
   const logoUrl = useLogoStore((s) => s.logoUrl);
   const resolvedLogo = resolveLogoUrl(logoUrl);
   const [otp, setOtp] = useState('');
@@ -90,7 +90,7 @@ export default function SignupPage() {
         otp // ✅ IMPORTANT
       );
       setAuth(data.user, data.accessToken);
-      setCompanyName(orgName.trim());
+      if (data.user?.organizationId) saveNameForOrg(data.user.organizationId, orgName.trim());
       navigate('/dashboard');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;

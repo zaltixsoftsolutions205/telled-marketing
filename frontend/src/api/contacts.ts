@@ -1,11 +1,28 @@
-import { mockContacts } from '@/mock/store';
-import { useAuthStore } from '@/store/authStore';
+import api from './axios';
 
 export const contactsApi = {
-  getAll: (params?: Record<string, unknown>) => mockContacts.getAll(params),
-  getById: (id: string) => mockContacts.getById(id),
-  getByAccount: (accountId: string) => mockContacts.getByAccount(accountId),
-  create: (body: unknown) => mockContacts.create(body as Record<string, unknown>, useAuthStore.getState().user),
-  update: (id: string, body: unknown) => mockContacts.update(id, body as Record<string, unknown>),
-  delete: (id: string) => mockContacts.delete(id),
+  getAll: async (params?: Record<string, unknown>) => {
+    const { data } = await api.get('/contacts', { params });
+    return { data: data.data, pagination: { total: data.meta?.total ?? 0 } };
+  },
+  getById: async (id: string) => {
+    const { data } = await api.get(`/contacts/${id}`);
+    return data.data;
+  },
+  getByAccount: async (accountId: string) => {
+    const { data } = await api.get(`/contacts/account/${accountId}`);
+    return data.data;
+  },
+  create: async (body: unknown) => {
+    const { data } = await api.post('/contacts', body);
+    return data.data;
+  },
+  update: async (id: string, body: unknown) => {
+    const { data } = await api.put(`/contacts/${id}`, body);
+    return data.data;
+  },
+  delete: async (id: string) => {
+    const { data } = await api.delete(`/contacts/${id}`);
+    return data.data;
+  },
 };

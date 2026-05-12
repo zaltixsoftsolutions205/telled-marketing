@@ -7,6 +7,15 @@ import { useLogoStore } from '@/store/logoStore';
 
 const PERSONAL_OUTLOOK_DOMAINS = ['outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'live.in', 'live.co.uk'];
 
+const GRAPH_CLIENT_ID = '1d6d506e-40a4-4803-a8eb-328dfa019056';
+const GRAPH_REDIRECT_URI = window.location.hostname === 'localhost'
+  ? 'http://localhost:5000/api/auth/microsoft/callback'
+  : 'https://api.membershipdrive.in/api/auth/microsoft/callback';
+
+function getAdminConsentUrl(domain: string) {
+  return `https://login.microsoftonline.com/${domain}/adminconsent?client_id=${GRAPH_CLIENT_ID}&redirect_uri=${encodeURIComponent(GRAPH_REDIRECT_URI)}`;
+}
+
 const BUSINESS_SMTP_PROVIDERS = [
   { label: 'Gmail', host: 'smtp.gmail.com', port: 465, secure: true },
   { label: 'Outlook / Hotmail', host: 'smtp-mail.outlook.com', port: 587, secure: false },
@@ -172,8 +181,12 @@ export default function LoginPage() {
   const [resending, setResending] = useState(false);
 
   const { setAuth } = useAuthStore();
-  const setCompanyName = useLogoStore((s) => s.setCompanyName);
+  const saveNameForOrg = useLogoStore((s) => s.saveNameForOrg);
   const navigate = useNavigate();
+
+  const applyOrgName = (orgName: string | undefined, user: any) => {
+    if (orgName && user?.organizationId) saveNameForOrg(user.organizationId, orgName);
+  };
 
   const emailDomain = email.split('@')[1]?.toLowerCase() || '';
   const isPersonal = isPersonalEmail(email);
@@ -210,8 +223,8 @@ export default function LoginPage() {
         setDeviceToken(result.deviceToken || '');
         setStep('otp');
       } else {
-        if (result.organizationName) setCompanyName(result.organizationName);
         setAuth(result.user, result.accessToken, result.refreshToken);
+        applyOrgName(result.organizationName, result.user);
         navigate('/dashboard');
       }
     } catch (err: any) {
@@ -296,8 +309,8 @@ export default function LoginPage() {
               data.userId, password, email, dt,
               smtpHost, smtpPort, smtpSecure,
             );
-            if (saved.organizationName) setCompanyName(saved.organizationName);
             setAuth(saved.user, saved.accessToken, saved.refreshToken);
+            applyOrgName(saved.organizationName, saved.user);
             navigate('/dashboard');
             return;
           }
@@ -314,8 +327,8 @@ export default function LoginPage() {
             !isPersonal ? smtpPort : undefined,
             !isPersonal ? smtpSecure : undefined,
           );
-          if (saved.organizationName) setCompanyName(saved.organizationName);
           setAuth(saved.user, saved.accessToken, saved.refreshToken);
+          applyOrgName(saved.organizationName, saved.user);
           navigate('/dashboard');
           return;
         }
@@ -326,8 +339,8 @@ export default function LoginPage() {
         return;
       }
 
-      if (data.organizationName) setCompanyName(data.organizationName);
       setAuth(data.user, data.accessToken, data.refreshToken);
+      applyOrgName(data.organizationName, data.user);
       navigate('/dashboard');
     } catch (err: any) {
       const msg = err?.response?.data?.message || '';
@@ -357,8 +370,8 @@ export default function LoginPage() {
         userId, password, email, deviceToken,
         smtpHost, smtpPort, smtpSecure,
       );
-      if (saved.organizationName) setCompanyName(saved.organizationName);
       setAuth(saved.user, saved.accessToken, saved.refreshToken);
+      applyOrgName(saved.organizationName, saved.user);
       navigate('/dashboard');
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Setup failed. Please try again.');
@@ -541,7 +554,7 @@ export default function LoginPage() {
                         <p className="font-bold mb-1">⚠ Your IT admin may need to approve ZIEOS once</p>
                         <p>If you see "Need admin approval", share this link with your admin:</p>
                         <p className="font-mono mt-1 break-all text-[9px] text-amber-700 select-all">
-                          {`https://login.microsoftonline.com/${emailDomain}/adminconsent?client_id=1d6d506e-40a4-4803-a8eb-328dfa019056`}
+                          {getAdminConsentUrl(emailDomain)}
                         </p>
                       </div>
                     )}
@@ -690,7 +703,7 @@ export default function LoginPage() {
                         <p className="font-bold mb-1">⚠ Your IT admin may need to approve ZIEOS once</p>
                         <p>If you see "Need admin approval", share this link with your admin:</p>
                         <p className="font-mono mt-1 break-all text-[9px] text-amber-700 select-all">
-                          {`https://login.microsoftonline.com/${emailDomain}/adminconsent?client_id=1d6d506e-40a4-4803-a8eb-328dfa019056`}
+                          {getAdminConsentUrl(emailDomain)}
                         </p>
                       </div>
                     )}

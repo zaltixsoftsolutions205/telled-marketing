@@ -3,9 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { CheckCircle, XCircle, Loader, ShieldAlert, Copy, Check } from 'lucide-react';
 
 const GRAPH_CLIENT_ID = '1d6d506e-40a4-4803-a8eb-328dfa019056';
+const REDIRECT_URI = window.location.hostname === 'localhost'
+  ? 'http://localhost:5000/api/auth/microsoft/callback'
+  : 'https://api.membershipdrive.in/api/auth/microsoft/callback';
 
 function getAdminConsentUrl(domain: string) {
-  return `https://login.microsoftonline.com/${domain}/adminconsent?client_id=${GRAPH_CLIENT_ID}`;
+  return `https://login.microsoftonline.com/${domain}/adminconsent?client_id=${GRAPH_CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
 }
 
 export default function MicrosoftOAuthResultPage() {
