@@ -20,12 +20,12 @@ export const settingsApi = {
     const { data } = await api.post('/settings/logo', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
-    const rawUrl: string = data.data?.logoUrl ?? null;
-    const resolved = rawUrl ? resolveLogoUrl(rawUrl) : null;
+    // Backend now returns full URL directly
+    const logoUrl: string = data.data?.logoUrl ?? null;
     const orgId = currentOrgId();
-    if (orgId) useLogoStore.getState().saveForOrg(orgId, resolved);
-    else useLogoStore.getState().setLogoUrl(resolved);
-    return rawUrl;
+    if (orgId) useLogoStore.getState().saveForOrg(orgId, logoUrl);
+    else useLogoStore.getState().setLogoUrl(logoUrl);
+    return logoUrl;
   },
 
   deleteLogo: async (): Promise<void> => {
@@ -36,11 +36,12 @@ export const settingsApi = {
   },
 };
 
-export function resolveLogoUrl(logoUrl: string | null): string {
+// Backend returns full URLs now — just return as-is
+// Only handle legacy relative paths as fallback
+export function resolveLogoUrl(logoUrl: string | null | undefined): string {
   if (!logoUrl) return DEFAULT_LOGO;
-  // Backend now returns full URLs (http://... or https://...)
-  if (logoUrl.startsWith('http') || logoUrl.startsWith('data:') || logoUrl.startsWith('/zieos')) return logoUrl;
-  // Fallback for any old relative paths still in the DB
+  if (logoUrl.startsWith('http') || logoUrl.startsWith('data:') || logoUrl.startsWith('blob:')) return logoUrl;
+  // Legacy fallback: relative path like /uploads/xxx.png
   const base = (import.meta.env.VITE_API_URL || '').replace(/\/api$/, '');
   return `${base}${logoUrl}`;
 }

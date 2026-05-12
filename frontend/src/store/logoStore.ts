@@ -20,16 +20,15 @@ export const useLogoStore = create<LogoState>((set) => ({
   setCompanyName: (name) => set({ companyName: name }),
 
   loadForOrg: (orgId) => {
-    // Load company name from localStorage
     const name = localStorage.getItem(orgNameKey(orgId)) ?? 'ZIEOS';
     set({ companyName: name });
-    // Clear any stale logo cache (old base64 or relative paths)
+    // Clear stale cache
     localStorage.removeItem(`org_logo_${orgId}`);
 
-    // Always fetch from backend so all org users see the same logo
-    import('../api/settings').then(({ settingsApi, resolveLogoUrl }) => {
+    // Fetch full URL from backend — no resolving needed, backend returns complete URL
+    import('../api/settings').then(({ settingsApi }) => {
       settingsApi.getLogo()
-        .then(rawUrl => set({ logoUrl: rawUrl ? resolveLogoUrl(rawUrl) : null }))
+        .then(logoUrl => set({ logoUrl }))
         .catch(() => set({ logoUrl: null }));
     });
   },

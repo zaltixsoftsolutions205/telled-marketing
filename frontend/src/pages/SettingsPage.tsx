@@ -1,12 +1,11 @@
 import { useRef, useState } from 'react';
 import { Upload, Trash2, Image } from 'lucide-react';
-import { settingsApi, resolveLogoUrl } from '@/api/settings';
+import { settingsApi, DEFAULT_LOGO } from '@/api/settings';
 import { useLogoStore } from '@/store/logoStore';
 
 export default function SettingsPage() {
   const logoUrl = useLogoStore((s) => s.logoUrl);
   const setLogoUrl = useLogoStore((s) => s.setLogoUrl);
-  const resolvedLogo = resolveLogoUrl(logoUrl);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -30,8 +29,8 @@ export default function SettingsPage() {
     if (!file) return;
     setUploading(true);
     try {
-      const url = await settingsApi.uploadLogo(file);
-      setLogoUrl(url);
+      // uploadLogo returns full URL and also updates the store automatically
+      await settingsApi.uploadLogo(file);
       setPreview(null);
       if (fileRef.current) fileRef.current.value = '';
       showToast('Logo uploaded successfully', true);
@@ -77,8 +76,13 @@ export default function SettingsPage() {
         {/* Current logo */}
         <div className="flex items-center gap-5 mb-6">
           <div className="w-24 h-24 rounded-2xl border-2 border-dashed border-gray-200 flex items-center justify-center bg-gray-50 overflow-hidden flex-shrink-0">
-            {resolvedLogo ? (
-              <img src={resolvedLogo} alt="Logo" className="w-full h-full object-contain p-2" />
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt="Logo"
+                className="w-full h-full object-contain p-2"
+                onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_LOGO; }}
+              />
             ) : preview ? (
               <img src={preview} alt="Preview" className="w-full h-full object-contain p-2" />
             ) : (
@@ -90,10 +94,10 @@ export default function SettingsPage() {
           </div>
           <div className="flex-1">
             <p className="text-sm text-gray-600 mb-3">
-              {resolvedLogo ? 'Logo is currently set.' : 'No logo uploaded yet. Upload a PNG, JPG, SVG, or WebP image.'}
+              {logoUrl ? 'Logo is currently set.' : 'No logo uploaded yet. Upload a PNG, JPG, SVG, or WebP image.'}
             </p>
             <div className="flex flex-wrap gap-2">
-              {resolvedLogo && (
+              {logoUrl && (
                 <button
                   onClick={handleRemove}
                   disabled={removing}

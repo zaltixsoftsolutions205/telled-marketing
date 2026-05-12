@@ -133,7 +133,7 @@ export default function Header({ title, onMenuClick }: Props) {
               title="Upload company logo"
             >
               {logoUrl ? (
-                <img src={resolveLogoUrl(logoUrl)} alt="logo" className="h-5 w-5 object-contain rounded" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_LOGO; }} />
+                <img src={logoUrl || DEFAULT_LOGO} alt="logo" className="h-5 w-5 object-contain rounded" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_LOGO; }} />
               ) : (
                 <ImagePlus size={14} />
               )}

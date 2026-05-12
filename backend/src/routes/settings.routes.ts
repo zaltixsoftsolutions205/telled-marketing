@@ -29,7 +29,13 @@ function writeSettings(orgId: string, data: Record<string, string>) {
 // GET logo URL — scoped to requesting user's organization
 router.get('/logo', (req: AuthRequest, res: Response) => {
   const settings = readSettings(req.user!.organizationId);
-  sendSuccess(res, { logoUrl: settings.logoUrl || null });
+  let logoUrl = settings.logoUrl || null;
+  // Upgrade old relative paths to full URLs
+  if (logoUrl && !logoUrl.startsWith('http')) {
+    const baseUrl = (process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 5000}`).replace(/\/$/, '');
+    logoUrl = `${baseUrl}${logoUrl}`;
+  }
+  sendSuccess(res, { logoUrl });
 });
 
 // Upload logo — admin only, scoped to org

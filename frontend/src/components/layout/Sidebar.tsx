@@ -188,7 +188,8 @@ export default function Sidebar() {
   const role = user?.role as Role;
   const logoUrl = useLogoStore((s) => s.logoUrl);
   const companyName = useLogoStore((s) => s.companyName);
-  const resolvedLogo = resolveLogoUrl(logoUrl);
+  // logoUrl from store is already a full URL from backend; use resolveLogoUrl only as fallback for null
+  const resolvedLogo = logoUrl || DEFAULT_LOGO;
 
   // permissions: if empty array it means "no permissions set yet" → show all for that role
   // if non-empty array, only show items whose perm is included (or item has no perm)
