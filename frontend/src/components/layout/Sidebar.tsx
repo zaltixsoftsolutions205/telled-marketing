@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useLogoStore } from '@/store/logoStore';
-import { resolveLogoUrl } from '@/api/settings';
+import { resolveLogoUrl, DEFAULT_LOGO } from '@/api/settings';
 import { authApi } from '@/api/auth';
 import type { Role } from '@/types';
 import { cn } from '@/utils/cn';
@@ -220,7 +220,7 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="py-4 px-4 border-b border-gray-100">
         <div className="flex flex-col items-center text-center gap-2">
-          <img src={resolvedLogo} alt="ZIEOS" className="h-10 w-auto object-contain" />
+          <img src={resolvedLogo} alt="ZIEOS" className="h-10 w-auto object-contain" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_LOGO; }} />
           <div>
             <p className="font-semibold text-gray-900 text-xs leading-tight">{companyName || 'ZIEOS'}</p>
             <p className="text-[10px] text-gray-400 mt-0.5">CRM & Operations</p>

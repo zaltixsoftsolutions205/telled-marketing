@@ -1,4 +1,5 @@
 $kind: http-request
+name: Get logo
 url: ""
 method: GET
-order: 4330128590449177
+order: 3636581564764593

@@ -38,8 +38,9 @@ export const settingsApi = {
 
 export function resolveLogoUrl(logoUrl: string | null): string {
   if (!logoUrl) return DEFAULT_LOGO;
-  if (logoUrl.startsWith('data:') || logoUrl.startsWith('http') || logoUrl.startsWith('/zieos')) return logoUrl;
-  // Backend returns paths like /uploads/filename.png — prefix with API base
-  const base = (import.meta.env.VITE_API_URL || '').replace('/api', '');
+  // Backend now returns full URLs (http://... or https://...)
+  if (logoUrl.startsWith('http') || logoUrl.startsWith('data:') || logoUrl.startsWith('/zieos')) return logoUrl;
+  // Fallback for any old relative paths still in the DB
+  const base = (import.meta.env.VITE_API_URL || '').replace(/\/api$/, '');
   return `${base}${logoUrl}`;
 }

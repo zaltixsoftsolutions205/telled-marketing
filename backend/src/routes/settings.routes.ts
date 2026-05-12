@@ -37,12 +37,18 @@ router.post('/logo', authorize('admin'), upload.single('logo'), (req: AuthReques
   if (!req.file) { sendError(res, 'No file uploaded', 400); return; }
   const allowed = /\.(jpeg|jpg|png|gif|webp|svg)$/i;
   if (!allowed.test(req.file.originalname)) { sendError(res, 'Only image files allowed', 400); return; }
-  const logoUrl = `/uploads/${req.file.filename}`;
+  const relativePath = `/uploads/${req.file.filename}`;
+  const baseUrl = (process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 5000}`).replace(/\/$/, '');
+  const logoUrl = `${baseUrl}${relativePath}`;
   const orgId = req.user!.organizationId;
   const settings = readSettings(orgId);
   if (settings.logoUrl) {
-    const oldPath = path.join(process.cwd(), settings.logoUrl);
-    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    // extract relative path from stored full URL to delete old file
+    try {
+      const oldRelative = new URL(settings.logoUrl).pathname;
+      const oldPath = path.join(process.cwd(), oldRelative);
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    } catch { /* ignore if stored value is already a relative path */ }
   }
   settings.logoUrl = logoUrl;
   writeSettings(orgId, settings);
