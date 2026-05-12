@@ -38,7 +38,7 @@ router.post('/logo', authorize('admin'), upload.single('logo'), (req: AuthReques
   const allowed = /\.(jpeg|jpg|png|gif|webp|svg)$/i;
   if (!allowed.test(req.file.originalname)) { sendError(res, 'Only image files allowed', 400); return; }
   const relativePath = `/uploads/${req.file.filename}`;
-  const baseUrl = (process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 5000}`).replace(/\/$/, '');
+  const baseUrl = (process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 5000}`).replace(/\/$/, '');
   const logoUrl = `${baseUrl}${relativePath}`;
   const orgId = req.user!.organizationId;
   const settings = readSettings(orgId);
