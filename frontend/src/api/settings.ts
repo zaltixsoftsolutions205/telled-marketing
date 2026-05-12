@@ -20,11 +20,12 @@ export const settingsApi = {
     const { data } = await api.post('/settings/logo', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
-    const logoUrl: string = data.data?.logoUrl ?? null;
+    const rawUrl: string = data.data?.logoUrl ?? null;
+    const resolved = rawUrl ? resolveLogoUrl(rawUrl) : null;
     const orgId = currentOrgId();
-    if (orgId) useLogoStore.getState().saveForOrg(orgId, logoUrl);
-    else useLogoStore.getState().setLogoUrl(logoUrl);
-    return logoUrl;
+    if (orgId) useLogoStore.getState().saveForOrg(orgId, resolved);
+    else useLogoStore.getState().setLogoUrl(resolved);
+    return rawUrl;
   },
 
   deleteLogo: async (): Promise<void> => {

@@ -27,7 +27,7 @@ export const useLogoStore = create<LogoState>((set) => ({
     // Fetch logo from backend so all users in the org see the same logo
     import('../api/settings').then(({ settingsApi, resolveLogoUrl }) => {
       settingsApi.getLogo()
-        .then(logoUrl => set({ logoUrl: resolveLogoUrl(logoUrl) === resolveLogoUrl(null) ? null : logoUrl }))
+        .then(rawUrl => set({ logoUrl: rawUrl ? resolveLogoUrl(rawUrl) : null }))
         .catch(() => set({ logoUrl: null }));
     });
   },

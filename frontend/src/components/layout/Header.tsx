@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Bell, Menu, CheckCheck, Calendar, Wrench, Headphones, DollarSign, Info, ImagePlus, X, FileText, ShoppingCart, Users, Receipt, BookOpen, UserCheck, User, LogOut, UserCircle } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useNavigate } from 'react-router-dom';
-import { settingsApi } from '@/api/settings';
+import { settingsApi, resolveLogoUrl } from '@/api/settings';
 import { useLogoStore } from '@/store/logoStore';
 import { useNotificationStore, type NotifType } from '@/store/notificationStore';
 
@@ -133,7 +133,7 @@ export default function Header({ title, onMenuClick }: Props) {
               title="Upload company logo"
             >
               {logoUrl ? (
-                <img src={logoUrl} alt="logo" className="h-5 w-5 object-contain rounded" />
+                <img src={resolveLogoUrl(logoUrl)} alt="logo" className="h-5 w-5 object-contain rounded" />
               ) : (
                 <ImagePlus size={14} />
               )}
