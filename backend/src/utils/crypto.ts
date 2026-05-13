@@ -23,9 +23,13 @@ export const detectSmtp = (email: string): { host: string; port: number; secure:
   const domain = email.split('@')[1]?.toLowerCase() || '';
   if (domain.includes('gmail') || domain === 'googlemail.com')
     return { host: 'smtp.gmail.com', port: 465, secure: true };
-  if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('live') || domain.includes('msn') || M365_DOMAINS.includes(domain))
-    return { host: 'smtp-mail.outlook.com', port: 587, secure: false };
-  if (domain.includes('office365'))
+  // Personal Outlook/Hotmail/Live — SMTP AUTH being disabled by Microsoft.
+  // These should use Graph OAuth (msRefreshToken path). Return empty host so the
+  // caller is forced to prompt the user to connect via OAuth instead of SMTP.
+  if (domain === 'outlook.com' || domain === 'hotmail.com' || domain === 'live.com' || domain === 'msn.com')
+    return { host: '', port: 587, secure: false };
+  // M365 custom domains — SMTP AUTH still works but Graph is preferred; keep as fallback
+  if (domain.includes('office365') || M365_DOMAINS.includes(domain))
     return { host: 'smtp.office365.com', port: 587, secure: false };
   if (domain.includes('yahoo') || domain.includes('ymail'))
     return { host: 'smtp.mail.yahoo.com', port: 465, secure: true };
