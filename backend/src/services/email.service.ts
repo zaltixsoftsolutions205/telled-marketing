@@ -360,6 +360,7 @@ export const sendDRFEmail = async (
     channelPartner?: string;
     interestedModules?: string;
     expectedClosure?: string;
+    customEmailBody?: string;
   },
   senderSmtp?: UserSmtpConfig
 ) => {
@@ -369,10 +370,16 @@ export const sendDRFEmail = async (
       <td style="padding:8px 12px;border:1px solid #ddd;vertical-align:top">${value || '—'}</td>
     </tr>`;
 
+  const defaultBody = `<p>Dear Sir,</p>
+      <p>Please find the below account for DRF approval.</p>`;
+
+  const customBodyHtml = data.customEmailBody
+    ? data.customEmailBody.split('\n').map(l => `<p style="margin:4px 0">${l || '&nbsp;'}</p>`).join('')
+    : defaultBody;
+
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:20px">
-      <p>Dear Sir,</p>
-      <p>Please find the below account for DRF approval.</p>
+      ${customBodyHtml}
       <table style="border-collapse:collapse;width:100%;margin:16px 0">
         ${row('Account Name & Group Name', data.companyName)}
         ${row('Address & Location', data.address || '')}

@@ -35,8 +35,8 @@ export const drfApi = {
     const { data } = await api.patch(`/oem/${id}/reset`);
     return data;
   },
-  resend: async (id: string) => {
-    const { data } = await api.post(`/oem/${id}/resend`);
+  resend: async (id: string, body?: Record<string, string>) => {
+    const { data } = await api.post(`/oem/${id}/resend`, body || {});
     return data;
   },
   extend: async (id: string, body: { newExpiry: string; reason: string }) => {

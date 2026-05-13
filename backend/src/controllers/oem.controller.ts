@@ -184,23 +184,25 @@ export const resendDRF = async (req: AuthRequest, res: Response): Promise<void> 
       return;
     }
     const sender = await User.findById(req.user!.id).select('name email');
+    const b = req.body || {};
     await sendDRFEmail(oemTo, {
       drfNumber,
       version: attempt.attemptNumber,
-      companyName: lead.companyName,
-      contactName: (lead as any).contactPersonName || (lead as any).contactName || '',
-      oemName: lead.oemName || '',
-      salesName: sender?.name || 'ZIEOS Sales',
-      salesEmail: sender?.email || '',
-      address: (lead as any).address || '',
-      website: (lead as any).website || '',
-      annualTurnover: (lead as any).annualTurnover || '',
-      designation: (lead as any).designation || '',
-      contactNo: (lead as any).phone || (lead as any).contactNo || '',
-      email: lead.email || '',
-      channelPartner: (lead as any).channelPartner || '',
-      interestedModules: lead.oemName || '',
-      expectedClosure: (lead as any).expectedClosure || '',
+      companyName:       b.accountName       || lead.companyName,
+      contactName:       b.contactPerson      || (lead as any).contactPersonName || (lead as any).contactName || '',
+      oemName:           b.interestedModules  || lead.oemName || '',
+      salesName:         b.partnerSalesRep    || sender?.name || 'ZIEOS Sales',
+      salesEmail:        sender?.email || '',
+      address:           b.address            || (lead as any).address || '',
+      website:           b.website            || (lead as any).website || '',
+      annualTurnover:    b.annualTurnover     || (lead as any).annualTurnover || '',
+      designation:       b.designation        || (lead as any).designation || '',
+      contactNo:         b.contactNo          || (lead as any).phone || '',
+      email:             b.email              || lead.email || '',
+      channelPartner:    b.channelPartner     || (lead as any).channelPartner || '',
+      interestedModules: b.interestedModules  || lead.oemName || '',
+      expectedClosure:   b.expectedClosure    || (lead as any).expectedClosure || '',
+      customEmailBody:   b.customEmailBody    || '',
     }, senderSmtp);
 
     sendSuccess(res, attempt, 'DRF email resent successfully');

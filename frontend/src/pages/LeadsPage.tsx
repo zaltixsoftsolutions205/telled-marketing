@@ -690,7 +690,47 @@ export default function LeadsPage() {
 
       {/* ── Send DRF Modal ── */}
       <Modal isOpen={!!drfTarget} onClose={() => setDrfTarget(null)} title="Send DRF" size="lg">
-        {drfTarget && (
+        {drfTarget && (drfTarget as any).drfEmailSent ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-lg border border-amber-200">
+              <CheckCircle size={14} className="text-amber-600 flex-shrink-0" />
+              <p className="text-xs text-amber-700 font-medium">
+                DRF already sent by <strong>{(drfTarget as any).drfSentBy?.name || 'another sales person'}</strong>. A new DRF cannot be sent for this lead.
+              </p>
+            </div>
+            <div className="bg-gray-50 rounded-xl border border-gray-100 p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-xs text-gray-400 font-medium mb-0.5">Company Name</p>
+                  <p className="text-gray-800 font-semibold">{drfTarget.companyName}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 font-medium mb-0.5">Website</p>
+                  <p className="text-gray-800">{(drfTarget as any).website || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 font-medium mb-0.5">OEM Name</p>
+                  <p className="text-gray-800">{drfTarget.oemName || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 font-medium mb-0.5">OEM Email</p>
+                  <p className="text-gray-800">{(drfTarget as any).oemEmail || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 font-medium mb-0.5">DRF Number</p>
+                  <p className="text-gray-800 font-mono text-xs">{(drfTarget as any).drfNumber || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 font-medium mb-0.5">Sent On</p>
+                  <p className="text-gray-800">{(drfTarget as any).drfEmailSentAt ? new Date((drfTarget as any).drfEmailSentAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <button type="button" onClick={() => setDrfTarget(null)} className="btn-secondary">Close</button>
+            </div>
+          </div>
+        ) : drfTarget && (
           <form onSubmit={handleSendDrf} className="space-y-4">
             <div className="flex items-center gap-2 px-3 py-2 bg-violet-50 rounded-lg border border-violet-100">
               <Mail size={14} className="text-violet-600 flex-shrink-0" />
@@ -777,6 +817,7 @@ export default function LeadsPage() {
       </Modal>
 
       {/* ── Edit Lead Modal ── */}
+
       <Modal isOpen={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Lead" size="lg">
         {editTarget && (
           <form onSubmit={handleEdit} className="space-y-2 text-sm">
