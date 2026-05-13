@@ -121,37 +121,12 @@ export default function DRFPage() {
   const [resendTarget, setResendTarget] = useState<any>(null);
   const [resending, setResending] = useState(false);
   const [resendError, setResendError] = useState('');
-  const [resendForm, setResendForm] = useState<Record<string, string>>({});
-  const rf = (field: string, val: string) => setResendForm(p => ({ ...p, [field]: val }));
 
-  const openResend = (drf: any) => {
-    const lead = drf.leadId || {};
-    const cp = lead.contactPersonName || lead.contactName || '';
-    setResendForm({
-      accountName:       lead.companyName || '',
-      contactPerson:     cp,
-      designation:       lead.designation || '',
-      contactNo:         lead.phone || lead.contactNo || '',
-      email:             lead.email || '',
-      address:           lead.address || '',
-      website:           lead.website || '',
-      annualTurnover:    lead.annualTurnover || '',
-      interestedModules: lead.oemName || '',
-      channelPartner:    lead.channelPartner || 'ZIEOS',
-      expectedClosure:   lead.expectedClosure || '',
-      partnerSalesRep:   drf.createdBy?.name || '',
-      customEmailBody:   '',
-    });
-    setResendError('');
-    setResendTarget(drf);
-  };
-
-  const handleResend = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleResend = async () => {
     if (!resendTarget) return;
     setResending(true); setResendError('');
     try {
-      const updated = await drfApi.resend(resendTarget._id, resendForm);
+      const updated = await drfApi.resend(resendTarget._id);
       notify('DRF Resent', `DRF email resent for "${resendTarget.leadId?.companyName || 'lead'}".`, 'drf', '/drfs');
       setDRFs(prev => prev.map(d => d._id === resendTarget._id ? { ...d, ...updated, status: 'Pending' } : d));
       setResendTarget(null);
@@ -756,7 +731,7 @@ export default function DRFPage() {
                               </span>
                             ) : (
                               <button
-                                onClick={() => { openResend(drf); }}
+                                onClick={() => { setResendTarget(drf); setResendError(''); }}
                                 className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
                                 title="Resend DRF to OEM"
                               >
@@ -769,7 +744,7 @@ export default function DRFPage() {
                             return (
                               <>
                                 <button
-                                  onClick={() => { openResend(drf); }}
+                                  onClick={() => { setResendTarget(drf); setResendError(''); }}
                                   title={daysLeft > 0 ? `Auto-resend in ${daysLeft}d — or click to resend now` : 'Resend DRF email to OEM'}
                                   className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 cursor-pointer rounded-md transition-colors"
                                 >
@@ -879,7 +854,7 @@ export default function DRFPage() {
               </div>
               <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-gray-100">
                 {drf.status === 'Approved' && !drf.poReceived && (
-                  <button onClick={() => { openResend(drf); }}
+                  <button onClick={() => { setResendTarget(drf); setResendError(''); }}
                     className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-md hover:bg-blue-100">
                     <RefreshCw size={12} /> Resend DRF
                   </button>
@@ -890,7 +865,7 @@ export default function DRFPage() {
                   </span>
                 )}
                 {drf.status === 'Rejected' && (
-                  <button onClick={() => { openResend(drf); }}
+                  <button onClick={() => { setResendTarget(drf); setResendError(''); }}
                     className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-md hover:bg-blue-100">
                     <RefreshCw size={12} /> Resend
                   </button>
@@ -931,92 +906,32 @@ export default function DRFPage() {
         </div>
       )}
 
-      {/* Resend DRF Modal — full editable form */}
+      {/* Resend DRF Confirmation Modal */}
       <Modal
         isOpen={!!resendTarget}
         onClose={() => { setResendTarget(null); setResendError(''); }}
         title="Resend DRF Email"
-        size="lg"
+        size="sm"
       >
-        {resendTarget && (
-          <form onSubmit={handleResend} className="space-y-4">
-            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg border border-blue-100">
-              <RefreshCw size={13} className="text-blue-600 flex-shrink-0" />
-              <p className="text-xs text-blue-700">Edit the details if needed, add a custom message, then resend. DRF status will reset to <strong>Pending</strong>.</p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="sm:col-span-2">
-                <label className="label">Account Name & Group Name</label>
-                <input className="input-field" value={resendForm.accountName} onChange={e => rf('accountName', e.target.value)} />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="label">Address & Location</label>
-                <input className="input-field" value={resendForm.address} onChange={e => rf('address', e.target.value)} />
-              </div>
-              <div>
-                <label className="label">Web Site</label>
-                <input className="input-field" placeholder="https://" value={resendForm.website} onChange={e => rf('website', e.target.value)} />
-              </div>
-              <div>
-                <label className="label">Annual Turnover</label>
-                <input className="input-field" placeholder="e.g. 5 Crore" value={resendForm.annualTurnover} onChange={e => rf('annualTurnover', e.target.value)} />
-              </div>
-              <div>
-                <label className="label">Contact Person</label>
-                <input className="input-field" value={resendForm.contactPerson} onChange={e => rf('contactPerson', e.target.value)} />
-              </div>
-              <div>
-                <label className="label">Designation</label>
-                <input className="input-field" value={resendForm.designation} onChange={e => rf('designation', e.target.value)} />
-              </div>
-              <div>
-                <label className="label">Contact No.</label>
-                <input className="input-field" value={resendForm.contactNo} onChange={e => rf('contactNo', e.target.value)} />
-              </div>
-              <div>
-                <label className="label">E-mail</label>
-                <input type="email" className="input-field" value={resendForm.email} onChange={e => rf('email', e.target.value)} />
-              </div>
-              <div>
-                <label className="label">Partner Sales Rep</label>
-                <input className="input-field" value={resendForm.partnerSalesRep} onChange={e => rf('partnerSalesRep', e.target.value)} />
-              </div>
-              <div>
-                <label className="label">Channel Partner</label>
-                <input className="input-field" value={resendForm.channelPartner} onChange={e => rf('channelPartner', e.target.value)} />
-              </div>
-              <div>
-                <label className="label">Potential / Interested Modules</label>
-                <input className="input-field" value={resendForm.interestedModules} onChange={e => rf('interestedModules', e.target.value)} />
-              </div>
-              <div>
-                <label className="label">Expected Closure</label>
-                <input className="input-field" placeholder="e.g. Q2 2026" value={resendForm.expectedClosure} onChange={e => rf('expectedClosure', e.target.value)} />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="label">Custom Email Body <span className="text-gray-400 font-normal">(optional — leave blank to use default)</span></label>
-                <textarea
-                  className="input-field min-h-[100px] resize-y text-sm"
-                  placeholder={`Dear Sir,\n\nPlease find the below account for DRF approval.`}
-                  value={resendForm.customEmailBody}
-                  onChange={e => rf('customEmailBody', e.target.value)}
-                />
-                <p className="text-[10px] text-gray-400 mt-1">The DRF details table will always be included below your message.</p>
-              </div>
-            </div>
-
-            {resendError && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">{resendError}</p>}
-
-            <div className="flex gap-3 justify-end pt-1">
-              <button type="button" onClick={() => { setResendTarget(null); setResendError(''); }} className="btn-secondary">Cancel</button>
-              <button type="submit" disabled={resending} className="btn-primary flex items-center gap-2">
-                <RefreshCw size={14} className={resending ? 'animate-spin' : ''} />
-                {resending ? 'Sending…' : 'Resend DRF'}
-              </button>
-            </div>
-          </form>
-        )}
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            The OEM approval request email will be resent for{' '}
+            <strong>{resendTarget?.leadId?.companyName}</strong>.
+          </p>
+          <p className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-lg p-3">
+            The DRF status will reset to <strong>Pending</strong> while awaiting the new response.
+          </p>
+          {resendError && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">{resendError}</p>
+          )}
+          <div className="flex gap-3 justify-end">
+            <button onClick={() => { setResendTarget(null); setResendError(''); }} className="btn-secondary">Cancel</button>
+            <button onClick={handleResend} disabled={resending} className="btn-primary flex items-center gap-2">
+              <RefreshCw size={14} className={resending ? 'animate-spin' : ''} />
+              {resending ? 'Sending…' : 'Resend Email'}
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* Quick Approve / Reject / Reset Modal */}

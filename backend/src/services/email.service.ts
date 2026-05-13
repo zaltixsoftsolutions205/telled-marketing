@@ -286,11 +286,12 @@ export interface UserSmtpConfig {
   smtpSecure?: boolean;
   fromEmail: string;
   fromName: string;
-  useGraphApi?: boolean;    // M365 business tenant — client credentials Graph API
-  msRefreshToken?: string;  // personal Outlook/Hotmail — delegated OAuth2 refresh token (encrypted)
+  useGraphApi?: boolean;
+  msRefreshToken?: string;     // Microsoft 365 — delegated OAuth2 refresh token (encrypted)
+  googleRefreshToken?: string; // Gmail — OAuth2 refresh token (encrypted)
 }
 
-/** Send any email using user's own SMTP/Graph if available, fallback to system SMTP */
+/** Send any email using user's own configured provider (Graph API / Gmail API / SMTP) */
 export const sendEmailWithUserSmtp = async (
   to: string,
   subject: string,
@@ -303,41 +304,21 @@ export const sendEmailWithUserSmtp = async (
     throw new Error('No sender email configured. User must be logged in with their own email to send emails.');
   }
 
-  // ── Personal Outlook/Hotmail with delegated OAuth token ──────────────────
-  if (senderSmtp.msRefreshToken) {
-    await sendViaGraphDelegated(senderSmtp.msRefreshToken, senderSmtp.fromEmail, senderSmtp.fromName, to, subject, html, cc, attachments);
-    return;
-  }
-
-  // ── Google Workspace domain-wide delegation ───────────────────────────────
-  if (isGoogleWorkspaceEmail(senderSmtp.fromEmail)) {
-    await sendViaGoogleWorkspace(senderSmtp.fromEmail, senderSmtp.fromName, to, subject, html, cc, attachments);
-    return;
-  }
-
-  // ── Microsoft 365 business tenant (client credentials) ───────────────────
-  if (senderSmtp.useGraphApi && GRAPH_CLIENT_ID && GRAPH_CLIENT_SECRET && GRAPH_TENANT_ID) {
-    await sendViaGraph(senderSmtp.fromEmail, senderSmtp.fromName, to, subject, html, cc, attachments);
-    return;
-  }
-
-  // ── All other providers: Gmail app password, Yahoo, Zoho, Hostinger, GoDaddy, any domain ─
-  const transporter = nodemailer.createTransport({
-    host: senderSmtp.smtpHost,
-    port: senderSmtp.smtpPort,
-    secure: senderSmtp.smtpSecure ?? (senderSmtp.smtpPort === 465),
-    auth: { user: senderSmtp.smtpUser, pass: senderSmtp.smtpPass },
+  const { createEmailProvider } = await import('./providers/EmailProviderFactory');
+  const provider = createEmailProvider({
+    _id:               (senderSmtp as any).userId || '',
+    email:             senderSmtp.fromEmail,
+    name:              senderSmtp.fromName,
+    msRefreshToken:    senderSmtp.msRefreshToken,
+    googleRefreshToken:(senderSmtp as any).googleRefreshToken,
+    smtpHost:          senderSmtp.smtpHost,
+    smtpPort:          senderSmtp.smtpPort,
+    smtpSecure:        senderSmtp.smtpSecure,
+    smtpUser:          senderSmtp.smtpUser,
+    smtpPass:          senderSmtp.smtpPass,
   });
-  await transporter.sendMail({
-    from: `"${senderSmtp.fromName}" <${senderSmtp.fromEmail}>`,
-    to,
-    subject,
-    html,
-    replyTo: senderSmtp.fromEmail,
-    ...(cc ? { cc } : {}),
-    ...(attachments?.length ? { attachments } : {}),
-  });
-  logger.info(`Email sent FROM ${senderSmtp.fromEmail} to ${to}: ${subject}`);
+
+  await provider.send({ to, subject, html, cc, attachments, fromEmail: senderSmtp.fromEmail, fromName: senderSmtp.fromName });
 };
 
 export const sendDRFEmail = async (
@@ -360,7 +341,6 @@ export const sendDRFEmail = async (
     channelPartner?: string;
     interestedModules?: string;
     expectedClosure?: string;
-    customEmailBody?: string;
   },
   senderSmtp?: UserSmtpConfig
 ) => {
@@ -370,16 +350,10 @@ export const sendDRFEmail = async (
       <td style="padding:8px 12px;border:1px solid #ddd;vertical-align:top">${value || '—'}</td>
     </tr>`;
 
-  const defaultBody = `<p>Dear Sir,</p>
-      <p>Please find the below account for DRF approval.</p>`;
-
-  const customBodyHtml = data.customEmailBody
-    ? data.customEmailBody.split('\n').map(l => `<p style="margin:4px 0">${l || '&nbsp;'}</p>`).join('')
-    : defaultBody;
-
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:20px">
-      ${customBodyHtml}
+      <p>Dear Sir,</p>
+      <p>Please find the below account for DRF approval.</p>
       <table style="border-collapse:collapse;width:100%;margin:16px 0">
         ${row('Account Name & Group Name', data.companyName)}
         ${row('Address & Location', data.address || '')}

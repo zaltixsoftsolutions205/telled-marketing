@@ -106,10 +106,15 @@ export const microsoftCallback = async (req: Request, res: Response) => {
     const msEmail = (profileRes.data.mail || profileRes.data.userPrincipalName || '').toLowerCase();
 
     // Store encrypted refresh token on user
+    // Always save smtp.office365.com as the SMTP host for M365 users so that
+    // SMTP fallback works correctly without needing manual configuration.
     await User.findByIdAndUpdate(userId, {
       msRefreshToken: encryptText(refresh_token),
       useGraphApi: true,
       smtpUser: msEmail || undefined,
+      smtpHost: 'smtp.office365.com',
+      smtpPort: 587,
+      smtpSecure: false,
     });
 
     return res.redirect(`${oauthResultBase}?success=true&email=${encodeURIComponent(msEmail)}`);

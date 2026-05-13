@@ -1,6 +1,8 @@
 import User from '../models/User';
 import { decryptText } from './crypto';
 import { UserSmtpConfig } from '../services/email.service';
+import { createEmailProvider, UserEmailRecord } from '../services/providers/EmailProviderFactory';
+import { EmailProvider } from '../services/providers/EmailProvider';
 
 /**
  * Load the logged-in user's SMTP config from DB.
@@ -19,19 +21,20 @@ export async function getUserSmtp(userId: string, required = false): Promise<Use
       return undefined;
     }
 
-    // Personal Outlook/Hotmail with delegated OAuth — use msRefreshToken path
+    // M365/Outlook user — if they have SMTP credentials use those, otherwise fall back to Graph API
     if ((user as any).msRefreshToken) {
       return {
-        smtpHost:       '',
-        smtpPort:       587,
+        smtpHost:       (user as any).smtpHost || 'smtp.office365.com',
+        smtpPort:       (user as any).smtpPort || 587,
         smtpUser:       (user as any).smtpUser || user.email,
-        smtpPass:       '',
-        smtpSecure:     false,
+        smtpPass:       (user as any).smtpPass || '',
+        smtpSecure:     (user as any).smtpSecure ?? false,
         fromEmail:      (user as any).smtpUser || user.email,
         fromName:       user.name,
         useGraphApi:    false,
         msRefreshToken: (user as any).msRefreshToken,
-      };
+        userId:         userId,
+      } as any;
     }
 
     // User has smtpUser + smtpPass — works for ALL providers:
@@ -79,6 +82,32 @@ function deriveSmtpHost(email: string): string {
   if (domain === 'rediffmail.com') return 'smtp.rediffmail.com';
   // Business/custom domain — assume Hostinger or standard pattern
   return `smtp.${domain}`;
+}
+
+/**
+ * Returns the correct EmailProvider for a user.
+ * Auto-detects: Microsoft Graph → Gmail API → SMTP.
+ * Throws a user-friendly error if no email is configured.
+ */
+export async function getUserEmailProvider(userId: string): Promise<EmailProvider> {
+  const user = await User.findById(userId)
+    .select('name email smtpHost smtpPort smtpUser smtpPass smtpSecure msRefreshToken googleRefreshToken')
+    .lean();
+
+  if (!user) throw new Error('User not found');
+
+  return createEmailProvider({
+    _id:               (user as any)._id.toString(),
+    email:             user.email,
+    name:              user.name,
+    msRefreshToken:    (user as any).msRefreshToken,
+    googleRefreshToken:(user as any).googleRefreshToken,
+    smtpHost:          (user as any).smtpHost,
+    smtpPort:          (user as any).smtpPort,
+    smtpSecure:        (user as any).smtpSecure,
+    smtpUser:          (user as any).smtpUser,
+    smtpPass:          (user as any).smtpPass,
+  });
 }
 
 /** System SMTP — only used for system-level emails (user creation, OTP) — NOT for user operations */
