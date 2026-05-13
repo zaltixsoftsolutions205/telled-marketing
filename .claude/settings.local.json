@@ -32,7 +32,8 @@
       "Bash(Format-Table -Property FullName)",
       "Bash(nslookup -type=TXT _dmarc.fyndom.in 8.8.8.8)",
       "Bash(nslookup -type=CNAME selector1._domainkey.fyndom.in 8.8.8.8)",
-      "Bash(nslookup -type=CNAME selector2._domainkey.fyndom.in 8.8.8.8)"
+      "Bash(nslookup -type=CNAME selector2._domainkey.fyndom.in 8.8.8.8)",
+      "Bash(git status *)"
     ]
   }
 }
