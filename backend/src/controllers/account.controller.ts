@@ -103,8 +103,11 @@ export const sendWelcomeMail = async (req: AuthRequest, res: Response): Promise<
     if (!account) { sendError(res, 'Account not found', 404); return; }
 
     const engineer = account.assignedEngineer as any;
-    if (!engineer || String(engineer._id) !== String(req.user!.id)) {
-      sendError(res, 'Only the assigned engineer can send the welcome mail', 403); return;
+    const role = req.user!.role;
+    const isAssignedEngineer = engineer && String(engineer._id) === String(req.user!.id);
+    const isAdminOrManager = role === 'admin' || role === 'manager';
+    if (!isAssignedEngineer && !isAdminOrManager) {
+      sendError(res, 'Only the assigned engineer, admin or manager can send the welcome mail', 403); return;
     }
     if (!account.contactEmail) { sendError(res, 'Account has no customer email', 400); return; }
 
