@@ -53,6 +53,8 @@ export default function SupportPage() {
   const [statusUpdateNote, setStatusUpdateNote] = useState('');
   const [resolveNote, setResolveNote] = useState('');
   const [resolvedBy, setResolvedBy] = useState('');
+  const [queryType, setQueryType] = useState('');
+  const [editingSaving, setEditingSaving] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
   const [reopenReason, setReopenReason] = useState('');
   const [transferEngineerId, setTransferEngineerId] = useState('');
@@ -204,8 +206,8 @@ export default function SupportPage() {
     if (!selected) return;
     setSaving(true);
     try {
-      await supportApi.resolve(selected._id, resolveNote, resolvedBy);
-      setShowResolve(false); setResolveNote(''); setResolvedBy('');
+      await supportApi.resolve(selected._id, resolveNote, resolvedBy, queryType);
+      setShowResolve(false); setResolveNote(''); setResolvedBy(''); setQueryType('');
       loadTickets(); showMessage('Ticket resolved. Customer notified for feedback.', 'success');
     } catch (err: any) {
       showMessage(err?.response?.data?.message || 'Failed to resolve', 'error');
@@ -386,6 +388,8 @@ export default function SupportPage() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Account</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Resolved By</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase min-w-[120px]">Query Type</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Timer</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Assigned</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
@@ -422,6 +426,32 @@ export default function SupportPage() {
                           <StatusBadge status={ticket.status} />
                         )}
                       </td>
+                      <td className="px-4 py-3 text-sm text-gray-700 break-words">
+                        {(ticket as any).resolvedBy || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700 break-words">
+                        <input
+                          type="text"
+                          className="input-field text-sm min-w-[110px]"
+                          value={(ticket as any).queryType || ''}
+                          onChange={(e) => setTickets(prev => prev.map(t => t._id === ticket._id ? { ...(t as any), queryType: e.target.value } as SupportTicket : t))}
+                          onBlur={async (e) => {
+                            try {
+                              setEditingSaving(true);
+                              const newVal = ((tickets.find(t => t._id === ticket._id) as any)?.queryType || '').trim();
+                              await supportApi.update(ticket._id, { queryType: newVal });
+                              showMessage('Query type updated', 'success');
+                            } catch (err) {
+                              showMessage('Failed to update query type', 'error');
+                            } finally {
+                              setEditingSaving(false);
+                            }
+                          }}
+                          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                          disabled={editingSaving}
+                          placeholder="Type query type"
+                        />
+                      </td>
                       <td className="px-4 py-3 text-xs">
                         {resolvedDaysLeft !== null && (
                           <span className={`flex items-center gap-1 ${resolvedDaysLeft <= 1 ? 'text-red-600 font-semibold' : 'text-orange-500'}`}>
@@ -441,7 +471,6 @@ export default function SupportPage() {
                       </td>
                       <td className="px-4 py-3 text-sm">
                         <div>{(ticket.assignedEngineer as User)?.name || (ticket.assignedTo as User)?.name || 'Unassigned'}</div>
-                        {(ticket as any).resolvedBy && <div className="text-xs text-green-600 mt-0.5">Solved by: {(ticket as any).resolvedBy}</div>}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-500">{formatDateTime(ticket.createdAt)}</td>
                       <td className="px-4 py-3">
@@ -535,8 +564,30 @@ export default function SupportPage() {
                     <p><span className="text-gray-400">Assigned:</span> {(ticket.assignedEngineer as User)?.name || (ticket.assignedTo as User)?.name}</p>
                   )}
                   {(ticket as any).resolvedBy && (
-                    <p><span className="text-green-500">Solved by:</span> <span className="text-green-700 font-medium">{(ticket as any).resolvedBy}</span></p>
+                    <p><span className="text-green-500">Resolved By:</span> <span className="text-green-700 font-medium">{(ticket as any).resolvedBy}</span></p>
                   )}
+                  <div>
+                    <p className="text-gray-400">Query Type</p>
+                    <input
+                      type="text"
+                      className="input-field text-xs"
+                      value={(ticket as any).queryType || ''}
+                      onChange={(e) => setTickets(prev => prev.map(t => t._id === ticket._id ? { ...(t as any), queryType: e.target.value } as SupportTicket : t))}
+                      onBlur={async (e) => {
+                        try {
+                          setEditingSaving(true);
+                          const newVal = ((tickets.find(t => t._id === ticket._id) as any)?.queryType || '').trim();
+                          await supportApi.update(ticket._id, { queryType: newVal });
+                          showMessage('Query type updated', 'success');
+                        } catch (err) {
+                          showMessage('Failed to update query type', 'error');
+                        } finally { setEditingSaving(false); }
+                      }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                      disabled={editingSaving}
+                      placeholder="Type query type"
+                    />
+                  </div>
                 </div>
                 {(resolvedDaysLeft !== null || reopenedDaysLeft !== null || (reopenDaysLeft !== null && reopenDaysLeft > 0)) && (
                   <div className="text-xs space-y-0.5">
@@ -720,6 +771,16 @@ export default function SupportPage() {
             />
           </div>
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Query Type (optional)</label>
+            <input
+              type="text"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
+              value={queryType}
+              onChange={(e) => setQueryType(e.target.value)}
+              placeholder="Type of query e.g. Installation, Billing, Training"
+            />
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Resolution Note (optional)</label>
             <textarea rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
               value={resolveNote} onChange={(e) => setResolveNote(e.target.value)}
@@ -864,6 +925,7 @@ export default function SupportPage() {
                 <div><p className="text-gray-500">Assigned Engineer</p><p className="font-medium">{(selected.assignedEngineer as User)?.name || (selected.assignedTo as User)?.name || 'Unassigned'}</p></div>
                 <div><p className="text-gray-500">Created</p><p className="font-medium">{formatDateTime(selected.createdAt)}</p></div>
                 {(selected as any).resolvedBy && <div><p className="text-gray-500">Resolved By</p><p className="font-medium text-green-700">{(selected as any).resolvedBy}</p></div>}
+                {(selected as any).queryType && <div><p className="text-gray-500">Query Type</p><p className="font-medium">{(selected as any).queryType}</p></div>}
                 {selected.resolvedAt && <div><p className="text-gray-500">Resolved At</p><p className="font-medium">{formatDateTime(selected.resolvedAt)}</p></div>}
                 {selected.closedAt && <div><p className="text-gray-500">Closed At</p><p className="font-medium">{formatDateTime(selected.closedAt)}</p></div>}
                 {selected.reopenedAt && <div><p className="text-gray-500">Reopened At</p><p className="font-medium">{formatDateTime(selected.reopenedAt)}</p></div>}

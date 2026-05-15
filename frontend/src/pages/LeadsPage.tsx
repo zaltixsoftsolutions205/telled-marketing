@@ -118,6 +118,60 @@ function parseExcel(buffer: ArrayBuffer): Array<Record<string, string>> {
   });
 }
 
+type CustomFieldEntry = { label: string; value: string; includeInDrf: boolean };
+const emptyCustomField = (): CustomFieldEntry => ({ label: '', value: '', includeInDrf: false });
+
+// Multi-email input — primary email kept separate; this manages the additional list
+function MultiEmailInput({ emails, onChange }: { emails: string[]; onChange: (v: string[]) => void }) {
+  const [draft, setDraft] = useState('');
+  const [error, setError] = useState('');
+
+  const addEmail = (raw: string) => {
+    const val = raw.trim().toLowerCase();
+    if (!val) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) { setError('Invalid email'); return; }
+    if (emails.includes(val)) { setError('Already added'); return; }
+    onChange([...emails, val]);
+    setDraft('');
+    setError('');
+  };
+
+  const remove = (i: number) => onChange(emails.filter((_, j) => j !== i));
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex gap-1.5">
+        <input
+          type="email"
+          className="input-field py-1.5 text-sm flex-1"
+          placeholder="Add another email…"
+          value={draft}
+          onChange={e => { setDraft(e.target.value); setError(''); }}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addEmail(draft); } }}
+        />
+        <button
+          type="button"
+          onClick={() => addEmail(draft)}
+          className="btn-secondary text-xs px-3 py-1.5 whitespace-nowrap"
+        >+ Add</button>
+      </div>
+      {error && <p className="text-xs text-red-500">{error}</p>}
+      {emails.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {emails.map((em, i) => (
+            <span key={i} className="inline-flex items-center gap-1 bg-violet-50 border border-violet-200 text-violet-700 text-xs rounded-full px-2.5 py-1">
+              {em}
+              <button type="button" onClick={() => remove(i)} className="hover:text-red-500 ml-0.5">
+                <X size={11} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const emptyForm = {
   companyName: '', contactPersonPrefix: 'Mr.', contactPersonName: '',
   designation: '', email: '', phone: '',
@@ -149,6 +203,8 @@ export default function LeadsPage() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [salesUsers, setSalesUsers] = useState<User[]>([]);
   const [form, setForm] = useState({ ...emptyForm });
+  const [customFields, setCustomFields] = useState<CustomFieldEntry[]>([]);
+  const [additionalEmails, setAdditionalEmails] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
   const [updatingSalesStatus, setUpdatingSalesStatus] = useState<string | null>(null);
@@ -156,6 +212,8 @@ export default function LeadsPage() {
   // Edit modal
   const [editTarget, setEditTarget] = useState<Lead | null>(null);
   const [editForm, setEditForm] = useState({ ...emptyForm });
+  const [editCustomFields, setEditCustomFields] = useState<CustomFieldEntry[]>([]);
+  const [editAdditionalEmails, setEditAdditionalEmails] = useState<string[]>([]);
   const [editSaving, setEditSaving] = useState(false);
 
   const openEditModal = (lead: Lead) => {
@@ -184,6 +242,13 @@ export default function LeadsPage() {
       notes: lead.notes || '',
       remarks: (lead as any).remarks || '',
     });
+    const leadCustomFields: CustomFieldEntry[] = ((lead as any).customFields || []).map((f: any) => ({
+      label: f.label || '',
+      value: f.value || '',
+      includeInDrf: false,
+    }));
+    setEditCustomFields(leadCustomFields);
+    setEditAdditionalEmails((lead as any).additionalEmails || []);
     setEditTarget(lead);
   };
 
@@ -195,6 +260,8 @@ export default function LeadsPage() {
       const { contactPersonPrefix, ...rest } = editForm;
       const updated = await leadsApi.update(editTarget._id, {
         ...rest,
+        customFields: editCustomFields.map(({ label, value }) => ({ label, value })),
+        additionalEmails: editAdditionalEmails,
         contactPersonName: `${contactPersonPrefix} ${editForm.contactPersonName}`.trim(),
       });
       setLeads(prev => prev.map(l => l._id === editTarget._id ? { ...l, ...updated } : l));
@@ -206,6 +273,7 @@ export default function LeadsPage() {
   // Send DRF modal
   const [drfTarget, setDrfTarget] = useState<Lead | null>(null);
   const [drfForm, setDrfForm] = useState({ ...emptyDrfForm });
+  const [drfCustomFields, setDrfCustomFields] = useState<CustomFieldEntry[]>([]);
   const [drfSaving, setDrfSaving] = useState(false);
   const [drfError, setDrfError] = useState('');
 
@@ -220,12 +288,12 @@ export default function LeadsPage() {
     const headers = [
       'companyName', 'contactPersonName', 'designation', 'email', 'phone',
       'oemName', 'oemEmail', 'channelPartner', 'source', 'city', 'state',
-      'address', 'website', 'annualTurnover', 'expectedClosure', 'notes'
+      'address', 'website', 'annualTurnover', 'expectedClosure', 'notes', 'customField'
     ];
     const sample = [
       'Ashok Industries', 'Mr. Ashok Kumar', 'IT Manager', 'ashok@example.com', '9876543210',
       'Ansys', 'ansys@oem.com', 'ZIEOS', 'Cold Call', 'Hyderabad', 'Telangana',
-      'Plot 12, HITEC City', 'https://ashok.com', '10 Crore', 'Q3 2026', 'Interested in simulation'
+      'Plot 12, HITEC City', 'https://ashok.com', '10 Crore', 'Q3 2026', 'Interested in simulation', ''
     ];
     const ws = XLSX.utils.aoa_to_sheet([headers, sample]);
     ws['!cols'] = headers.map(() => ({ wch: 22 }));
@@ -261,10 +329,14 @@ export default function LeadsPage() {
       await leadsApi.create({
         ...rest,
         contactPersonName: `${contactPersonPrefix} ${form.contactPersonName}`.trim(),
+        customFields: customFields.filter(f => f.label || f.value).map(({ label, value }) => ({ label, value })),
+        additionalEmails,
       });
       notify('Lead Created', `New lead "${form.companyName}" added successfully.`, 'lead', '/leads');
       setShowModal(false);
       setForm({ ...emptyForm });
+      setCustomFields([]);
+      setAdditionalEmails([]);
       load();
     } finally { setSaving(false); }
   };
@@ -307,6 +379,10 @@ export default function LeadsPage() {
       expectedClosure: (lead as any).expectedClosure || '',
       partnerSalesRep: assignedUser?.name || user?.name || '',
     });
+    const leadCFs: CustomFieldEntry[] = ((lead as any).customFields || [])
+      .filter((f: any) => f.label || f.value)
+      .map((f: any) => ({ label: f.label || '', value: f.value || '', includeInDrf: false }));
+    setDrfCustomFields(leadCFs);
     setDrfError('');
     setDrfTarget(lead);
   };
@@ -316,6 +392,11 @@ export default function LeadsPage() {
     if (!drfTarget) return;
     if (!drfForm.oemEmail) { setDrfError('OEM Email is required'); return; }
     setDrfSaving(true); setDrfError('');
+    const extraFields = drfCustomFields
+      .filter(f => f.includeInDrf && (f.label || f.value))
+      .map(f => f.label ? `${f.label}: ${f.value}` : f.value);
+    const modules = [drfForm.interestedModules, ...extraFields].filter(Boolean).join(', ');
+
     const formData = {
       accountName:       drfForm.accountName,
       contactPerson:     `${drfForm.contactPersonPrefix} ${drfForm.contactPerson}`.trim(),
@@ -325,7 +406,7 @@ export default function LeadsPage() {
       address:           drfForm.address,
       website:           drfForm.website,
       annualTurnover:    drfForm.annualTurnover,
-      interestedModules: drfForm.interestedModules,
+      interestedModules: modules,
       oemEmail:          drfForm.oemEmail,
       channelPartner:    drfForm.channelPartner,
       expectedClosure:   drfForm.expectedClosure,
@@ -581,7 +662,7 @@ export default function LeadsPage() {
 
 
       {/* ── New Lead Modal ── */}
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Add New Lead" size="lg">
+      <Modal isOpen={showModal} onClose={() => { setShowModal(false); setCustomFields([]); setAdditionalEmails([]); }} title="Add New Lead" size="lg">
         <form onSubmit={handleCreate} className="space-y-2 text-sm">
           <div className="grid grid-cols-2 gap-2">
             <div className="col-span-2">
@@ -605,9 +686,11 @@ export default function LeadsPage() {
               <label className="label text-xs">Contact No. *</label>
               <input required className="input-field py-1.5 text-sm" value={form.phone} onChange={(e) => f('phone', e.target.value)} />
             </div>
-            <div>
+            <div className="col-span-2">
               <label className="label text-xs">E-mail *</label>
               <input required type="email" className="input-field py-1.5 text-sm" value={form.email} onChange={(e) => f('email', e.target.value)} />
+              <p className="text-[11px] text-gray-400 mt-1 mb-1">Additional email addresses:</p>
+              <MultiEmailInput emails={additionalEmails} onChange={setAdditionalEmails} />
             </div>
             <div className="col-span-2">
               <label className="label text-xs">Address & Location</label>
@@ -679,6 +762,33 @@ export default function LeadsPage() {
             <div className="col-span-2">
               <label className="label text-xs">Remarks</label>
               <textarea rows={2} className="input-field py-1.5 text-sm" placeholder="Internal remarks…" value={form.remarks} onChange={(e) => f('remarks', e.target.value)} />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="label text-xs mb-0">Custom Fields</label>
+                <button type="button" onClick={() => setCustomFields(p => [...p, emptyCustomField()])}
+                  className="text-xs text-violet-600 hover:underline font-medium">+ Add Field</button>
+              </div>
+              {customFields.map((cf, i) => (
+                <div key={i} className="flex gap-2 items-center">
+                  <input
+                    className="input-field py-1.5 text-sm w-32 flex-shrink-0"
+                    placeholder="Field name"
+                    value={cf.label}
+                    onChange={e => setCustomFields(p => p.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
+                  />
+                  <input
+                    className="input-field py-1.5 text-sm flex-1"
+                    placeholder="Value"
+                    value={cf.value}
+                    onChange={e => setCustomFields(p => p.map((x, j) => j === i ? { ...x, value: e.target.value } : x))}
+                  />
+                  <button type="button" onClick={() => setCustomFields(p => p.filter((_, j) => j !== i))}
+                    className="text-gray-400 hover:text-red-500 flex-shrink-0 p-1">
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
           <div className="flex gap-2 justify-end pt-1">
@@ -786,6 +896,27 @@ export default function LeadsPage() {
               <div>
                 <label className="label">Potential / Interested Modules</label>
                 <input className="input-field" value={drfForm.interestedModules} onChange={(e) => df('interestedModules', e.target.value)} />
+                {drfCustomFields.length > 0 && (
+                  <div className="mt-2 space-y-1.5 pl-1 border-l-2 border-violet-100">
+                    <p className="text-[11px] text-gray-400 font-medium uppercase tracking-wide">Include custom fields in DRF</p>
+                    {drfCustomFields.map((cf, i) => (
+                      <label key={i} className="flex items-center gap-2 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          checked={cf.includeInDrf}
+                          onChange={e => setDrfCustomFields(p => p.map((x, j) => j === i ? { ...x, includeInDrf: e.target.checked } : x))}
+                          className="w-4 h-4 accent-violet-600 flex-shrink-0"
+                        />
+                        <span className="text-xs text-gray-600 group-hover:text-gray-900 truncate">
+                          {cf.label
+                            ? <><span className="font-medium text-violet-700">{cf.label}</span>: {cf.value}</>
+                            : <span className="font-medium text-violet-700">{cf.value}</span>
+                          }
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="label">Expected Closure</label>
@@ -818,7 +949,7 @@ export default function LeadsPage() {
 
       {/* ── Edit Lead Modal ── */}
 
-      <Modal isOpen={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Lead" size="lg">
+      <Modal isOpen={!!editTarget} onClose={() => { setEditTarget(null); setEditCustomFields([]); setEditAdditionalEmails([]); }} title="Edit Lead" size="lg">
         {editTarget && (
           <form onSubmit={handleEdit} className="space-y-2 text-sm">
             <div className="grid grid-cols-2 gap-2">
@@ -843,9 +974,11 @@ export default function LeadsPage() {
                 <label className="label text-xs">Contact No. *</label>
                 <input required className="input-field py-1.5 text-sm" value={editForm.phone} onChange={(e) => ef('phone', e.target.value)} />
               </div>
-              <div>
+              <div className="col-span-2">
                 <label className="label text-xs">E-mail *</label>
                 <input required type="email" className="input-field py-1.5 text-sm" value={editForm.email} onChange={(e) => ef('email', e.target.value)} />
+                <p className="text-[11px] text-gray-400 mt-1 mb-1">Additional email addresses:</p>
+                <MultiEmailInput emails={editAdditionalEmails} onChange={setEditAdditionalEmails} />
               </div>
               <div className="col-span-2">
                 <label className="label text-xs">Address & Location</label>
@@ -917,6 +1050,33 @@ export default function LeadsPage() {
               <div className="col-span-2">
                 <label className="label text-xs">Remarks</label>
                 <textarea rows={2} className="input-field py-1.5 text-sm" placeholder="Internal remarks…" value={editForm.remarks} onChange={(e) => ef('remarks', e.target.value)} />
+              </div>
+              <div className="col-span-2 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="label text-xs mb-0">Custom Fields</label>
+                  <button type="button" onClick={() => setEditCustomFields(p => [...p, emptyCustomField()])}
+                    className="text-xs text-violet-600 hover:underline font-medium">+ Add Field</button>
+                </div>
+                {editCustomFields.map((cf, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <input
+                      className="input-field py-1.5 text-sm w-32 flex-shrink-0"
+                      placeholder="Field name"
+                      value={cf.label}
+                      onChange={e => setEditCustomFields(p => p.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
+                    />
+                    <input
+                      className="input-field py-1.5 text-sm flex-1"
+                      placeholder="Value"
+                      value={cf.value}
+                      onChange={e => setEditCustomFields(p => p.map((x, j) => j === i ? { ...x, value: e.target.value } : x))}
+                    />
+                    <button type="button" onClick={() => setEditCustomFields(p => p.filter((_, j) => j !== i))}
+                      className="text-gray-400 hover:text-red-500 flex-shrink-0 p-1">
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
             <div className="flex gap-2 justify-end pt-1">

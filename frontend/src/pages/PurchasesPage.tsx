@@ -531,18 +531,19 @@ export default function PurchasesPage() {
         </button>
       );
       case 7: return (
-        <button onClick={e => { e.stopPropagation(); setStep7Target(po); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
-          <Key size={11} />Mark License
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={e => { e.stopPropagation(); setStep7Target(po); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
+            <Key size={11} />Mark License
+          </button>
+          {(po.step7LicenseMailReceived && !po.converted && !po.step8FinalInvoiceSent) && (
+            <button onClick={e => { e.stopPropagation(); accountsApi.convert({ leadId: typeof po.leadId === 'string' ? po.leadId : (po.leadId as Lead)._id, accountName: (po.leadId as Lead)?.companyName || '' }).then(() => { showToast('Converted to account'); load(); }).catch(() => showToast('Failed', 'error')); }} className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
+              <Building2 size={11} />Convert to Account
+            </button>
+          )}
+        </div>
       );
       case 8: return po.step8FinalInvoiceSent ? (
-        !po.converted ? (
-          <button onClick={e => { e.stopPropagation(); accountsApi.convert({ leadId: typeof po.leadId === 'string' ? po.leadId : (po.leadId as Lead)._id, accountName: (po.leadId as Lead)?.companyName || '' }).then(() => { showToast('Converted to account'); load(); }).catch(() => showToast('Failed', 'error')); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
-            <Building2 size={11} />Convert to Account
-          </button>
-        ) : (
-          <span className="badge bg-emerald-100 text-emerald-700 text-xs px-2 py-1 whitespace-nowrap">✓ Completed</span>
-        )
+        <span className="badge bg-emerald-100 text-emerald-700 text-xs px-2 py-1 whitespace-nowrap">✓ Completed</span>
       ) : (
         <button onClick={e => { e.stopPropagation(); setStep8Target(po); setStep8Form({ customerEmail: (po.leadId as Lead)?.email || '', amount: String(po.amount), convertToAccount: false, accountName: (po.leadId as Lead)?.companyName || '' }); setStep8File(null); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
           <Receipt size={11} />Final Invoice

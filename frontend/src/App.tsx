@@ -70,12 +70,17 @@ function GuestRoute({ children }: { children: React.ReactNode }) {
 function RoleRoute({ children, roles, perm }: { children: React.ReactNode; roles: Role[]; perm?: string }) {
   const user = useAuthStore((s) => s.user);
   if (!user) return <Navigate to="/login" replace />;
-  if (!roles.includes(user.role as Role)) return <Navigate to="/dashboard" replace />;
-  // only admin bypasses permission checks; manager + all others are gated by their permissions array
+  // If a specific permission is required and the user has that permission, allow access regardless of their role.
   if (perm && user.role !== 'admin') {
     const perms: string[] = (user as any).permissions ?? [];
-    if (perms.length > 0 && !perms.includes(perm)) return <Navigate to="/dashboard" replace />;
+    if (perms.length > 0) {
+      if (perms.includes(perm)) return <>{children}</>;
+      // user has permissions array but doesn't include this perm — deny
+      return <Navigate to="/dashboard" replace />;
+    }
   }
+  // If no permission-based override occurred, ensure the user's role is allowed.
+  if (!roles.includes(user.role as Role)) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
@@ -110,7 +115,7 @@ export default function App() {
             <Route path="leads" element={<RoleRoute roles={['admin', 'manager', 'sales']} perm="leads"><LeadsPage /></RoleRoute>} />
             <Route path="leads/:id" element={<RoleRoute roles={['admin', 'manager', 'sales']} perm="leads"><LeadDetailPage /></RoleRoute>} />
             <Route path="drfs" element={<RoleRoute roles={['admin', 'manager', 'sales']} perm="leads"><DRFPage /></RoleRoute>} />
-            <Route path="prospects" element={<RoleRoute roles={['admin', 'manager', 'sales', 'engineer']} perm="leads"><ProspectsPage /></RoleRoute>} />
+            <Route path="prospects" element={<RoleRoute roles={['admin', 'manager', 'sales', 'engineer']} perm="prospects"><ProspectsPage /></RoleRoute>} />
             <Route path="quotations" element={<RoleRoute roles={['admin', 'manager', 'sales']} perm="quotations"><QuotationsPage /></RoleRoute>} />
             <Route path="purchases" element={<RoleRoute roles={['admin', 'manager', 'sales']} perm="purchases"><PurchasesPage /></RoleRoute>} />
 
@@ -121,7 +126,7 @@ export default function App() {
 
             {/* Engineer */}
             <Route path="installations" element={<RoleRoute roles={['admin', 'manager', 'engineer']} perm="installations"><InstallationsPage /></RoleRoute>} />
-            <Route path="training" element={<RoleRoute roles={['admin', 'manager', 'engineer']}><TrainingPage /></RoleRoute>} />
+            <Route path="training" element={<RoleRoute roles={['admin', 'manager', 'engineer']} perm="training"><TrainingPage /></RoleRoute>} />
 
             {/* Finance */}
             <Route path="invoices" element={<RoleRoute roles={['admin', 'manager', 'hr', 'finance']} perm="invoices"><InvoicesPage /></RoleRoute>} />

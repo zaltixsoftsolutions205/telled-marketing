@@ -1,204 +1,246 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   Plus, Search, ToggleLeft, ToggleRight, KeyRound, Eye, EyeOff,
-  Trash2, Mail, UserSquare2, User, Shield, FileText, Upload, X,
+  Trash2, UserSquare2, Shield, ChevronRight, ChevronLeft,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import ExcelImportButton from '@/components/common/ExcelImportButton';
 import { usersApi } from '@/api/users';
-import { employeesApi } from '@/api/employees';
 import StatusBadge from '@/components/common/StatusBadge';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
-import { formatDate } from '@/utils/formatters';
 import { useAuthStore } from '@/store/authStore';
-import type { User as UserType, Role } from '@/types';
+import type { User as UserType } from '@/types';
 
-// Roles admin can create (only managers)
-const ADMIN_CREATES: Role[] = ['manager'];
-// Roles manager can create (all employees, not admin/manager)
-const MANAGER_CREATES: Role[] = ['sales', 'engineer', 'hr', 'finance'];
-// HR can create non-admin, non-manager employees
-const HR_ROLES: Role[] = ['sales', 'engineer', 'hr', 'finance'];
+const PRESET_ROLES = ['manager', 'sales', 'engineer', 'hr', 'finance', 'operations'];
 
-const ROLE_LABEL: Record<Role, string> = {
-  admin: 'Admin', manager: 'Manager', sales: 'Sales', engineer: 'Engineer',
-  hr: 'HR', finance: 'Finance', platform_admin: 'Platform Admin',
-};
-const ROLE_COLOR: Record<Role, string> = {
+const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+
+const ROLE_COLOR: Record<string, string> = {
   admin:          'bg-violet-100  text-violet-800',
   manager:        'bg-purple-100  text-purple-800',
   sales:          'bg-blue-100    text-blue-800',
   engineer:       'bg-emerald-100 text-emerald-800',
   hr:             'bg-amber-100   text-amber-800',
   finance:        'bg-orange-100  text-orange-800',
+  operations:     'bg-teal-100    text-teal-800',
   platform_admin: 'bg-rose-100    text-rose-800',
 };
 
 const ALL_MODULES = [
-  { key: 'leads',         label: 'Leads & DRFs' },
+  { key: 'leads',         label: 'Leads & DRF Management' },
+  { key: 'prospects',     label: 'Prospects' },
   { key: 'quotations',    label: 'Quotations' },
   { key: 'purchases',     label: 'Purchase Orders' },
   { key: 'accounts',      label: 'Accounts' },
-  { key: 'support',       label: 'Support Tickets' },
   { key: 'installations', label: 'Installations' },
+  { key: 'support',       label: 'Support' },
+  { key: 'training',      label: 'Training' },
+  { key: 'visits',        label: 'Visits & Claims' },
   { key: 'invoices',      label: 'Invoices' },
   { key: 'payments',      label: 'Payments' },
   { key: 'salary',        label: 'Salary & Payroll' },
   { key: 'attendance',    label: 'Attendance' },
   { key: 'leaves',        label: 'Leave Management' },
-  { key: 'visits',        label: 'Visits & Claims' },
-  { key: 'contacts',      label: 'Contacts' },
   { key: 'timesheet',     label: 'Timesheet' },
+  { key: 'contacts',      label: 'Contacts' },
 ];
 
 const DEFAULT_PERMISSIONS: Record<string, string[]> = {
-  manager:  ALL_MODULES.map(m => m.key),
-  sales:    ['leads', 'quotations', 'purchases', 'accounts', 'contacts', 'timesheet', 'attendance', 'leaves'],
-  engineer: ['accounts', 'support', 'installations', 'visits', 'contacts', 'timesheet', 'attendance', 'leaves'],
-  hr:       ['salary', 'attendance', 'leaves', 'visits', 'contacts', 'timesheet'],
-  finance:  ['invoices', 'payments', 'accounts', 'contacts', 'timesheet'],
-  admin:    ALL_MODULES.map(m => m.key),
+  manager:    ALL_MODULES.map(m => m.key),
+  sales:      ['leads', 'prospects', 'quotations', 'purchases', 'accounts', 'contacts', 'timesheet', 'attendance', 'leaves'],
+  engineer:   ['prospects', 'accounts', 'support', 'installations', 'training', 'visits', 'contacts', 'timesheet', 'attendance', 'leaves'],
+  hr:         ['salary', 'attendance', 'leaves', 'visits', 'contacts', 'timesheet'],
+  finance:    ['invoices', 'payments', 'accounts', 'contacts', 'timesheet'],
+  operations: ['accounts', 'support', 'installations', 'visits', 'contacts', 'timesheet', 'attendance', 'leaves'],
+  admin:      ALL_MODULES.map(m => m.key),
 };
-
-const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
-
-const DOC_LABELS = [
-  'Aadhar Card', 'PAN Card', 'Resume / CV', 'Offer Letter',
-  'Appointment Letter', 'Experience Certificate', 'Education Certificate',
-  'Bank Account Details', 'Passport', 'Other',
-];
 
 type CreateForm = {
-  // Basic
-  name: string; email: string; role: Role;
-  department: string; phone: string; baseSalary: string;
-  joiningDate: string;
-  // Personal
-  bloodGroup: string; dateOfBirth: string; gender: string;
-  address: string; emergencyContact: string; emergencyPhone: string;
-  aadharNumber: string; panNumber: string;
-  bankAccount: string; ifscCode: string;
-  // Access
-  permissions: string[];
+  name: string;
+  phone: string;
+  email: string;
+  role: string;
+  customRole: string;
+  useCustomRole: boolean;
+  designation: string;
+  status: 'active' | 'inactive';
+  bloodGroup: string;
 };
 
-const makeEmptyForm = (defaultRole: Role): CreateForm => ({
-  name: '', email: '', role: defaultRole,
-  department: '', phone: '', baseSalary: '', joiningDate: '',
-  bloodGroup: '', dateOfBirth: '', gender: '',
-  address: '', emergencyContact: '', emergencyPhone: '',
-  aadharNumber: '', panNumber: '', bankAccount: '', ifscCode: '',
-  permissions: DEFAULT_PERMISSIONS[defaultRole] ?? [],
+const emptyForm = (): CreateForm => ({
+  name: '',
+  phone: '',
+  email: '',
+  role: 'manager',
+  customRole: '',
+  useCustomRole: false,
+  designation: '',
+  status: 'inactive',
+  bloodGroup: '',
 });
 
-type Tab = 'basic' | 'personal' | 'documents' | 'access';
+// Checkbox tile used in both step-2 and grant-access modals
+function ModuleTile({
+  label, active, color = 'violet', onClick,
+}: { label: string; active: boolean; color?: 'violet' | 'emerald'; onClick: () => void }) {
+  const on  = color === 'emerald'
+    ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+    : 'bg-violet-50  border-violet-300  text-violet-800';
+  const off = 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300';
+  const box = color === 'emerald'
+    ? 'bg-emerald-600 border-emerald-600'
+    : 'bg-violet-600  border-violet-600';
+  return (
+    <button type="button" onClick={onClick}
+      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${active ? on : off}`}>
+      <div className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${active ? box : 'border-gray-300 bg-white'}`}>
+        {active && (
+          <svg viewBox="0 0 10 8" className="w-2.5 h-2.5 fill-white">
+            <path d="M1 4l2.5 2.5L9 1" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </div>
+      {label}
+    </button>
+  );
+}
 
 export default function UsersPage() {
   const { user: currentUser } = useAuthStore();
   const navigate = useNavigate();
-  const isAdmin   = currentUser?.role === 'admin';
-  const isManager = currentUser?.role === 'manager';
+  const isAdmin = currentUser?.role === 'admin';
 
-  // Which roles can this user create?
-  const CREATABLE_ROLES: Role[] = isAdmin ? ADMIN_CREATES : isManager ? MANAGER_CREATES : HR_ROLES;
-  const defaultCreateRole: Role = isAdmin ? 'manager' : 'sales';
+  const permCeiling: string[] = isAdmin
+    ? ALL_MODULES.map(m => m.key)
+    : (currentUser?.assignablePermissions ?? []);
 
-  // Filter roles shown in the role dropdown when viewing the user list
-  const FILTER_ROLES: Role[] = isAdmin
-    ? ['manager']
-    : isManager
-    ? MANAGER_CREATES
-    : HR_ROLES;
+  const canCreate = isAdmin || currentUser?.canCreateUsers === true;
 
   const [users, setUsers]   = useState<UserType[]>([]);
   const [total, setTotal]   = useState(0);
   const [page, setPage]     = useState(1);
   const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // Create modal
-  const [showCreate, setShowCreate] = useState(false);
-  const [activeTab, setActiveTab]   = useState<Tab>('basic');
-  const [form, setForm]             = useState<CreateForm>(() => makeEmptyForm(isAdmin ? 'manager' : 'sales'));
-  const [saving, setSaving]         = useState(false);
+  // ── Create wizard ──────────────────────────────────────────────
+  const [showCreate, setShowCreate]   = useState(false);
+  const [wizardStep, setWizardStep]   = useState<1 | 2>(1);
+  const [form, setForm]               = useState<CreateForm>(emptyForm);
+  const [wizardPerms, setWizardPerms] = useState<string[]>([]);
+  const [wizardCanCreate, setWizardCanCreate] = useState(false);
+  const [wizardAssignable, setWizardAssignable] = useState<string[]>([]);
+  const [saving, setSaving]           = useState(false);
 
-  // Documents inside create modal
-  const [pendingDocs, setPendingDocs] = useState<{ label: string; file: File }[]>([]);
-  const [docLabel, setDocLabel]       = useState('Aadhar Card');
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  // Reset password
-  const [showReset, setShowReset]     = useState(false);
-  const [selected, setSelected]       = useState<UserType | null>(null);
-  const [newPassword, setNewPassword] = useState('');
+  // ── Reset password ─────────────────────────────────────────────
+  const [showReset, setShowReset]       = useState(false);
+  const [selected, setSelected]         = useState<UserType | null>(null);
+  const [newPassword, setNewPassword]   = useState('');
   const [showResetPwd, setShowResetPwd] = useState(false);
 
-  // Confirm dialogs
+  // ── Confirm dialogs ────────────────────────────────────────────
   const [toggleTarget, setToggleTarget] = useState<UserType | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<UserType | null>(null);
+
+  // ── Grant Access modal (for existing inactive users) ───────────
+  const [grantTarget, setGrantTarget]         = useState<{ _id: string; name: string; email: string; role: string; isActive?: boolean } | null>(null);
+  const [grantPerms, setGrantPerms]           = useState<string[]>([]);
+  const [grantCanCreate, setGrantCanCreate]   = useState(false);
+  const [grantAssignable, setGrantAssignable] = useState<string[]>([]);
+  const [activating, setActivating]           = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const params: Record<string, unknown> = { page, limit: 15 };
-      if (search)     params.search = search;
-      if (roleFilter) params.role   = roleFilter;
+      if (search) params.search = search;
       const res = await usersApi.getAll(params);
       setUsers(res.data || []);
       setTotal(res.pagination?.total ?? 0);
     } catch { setUsers([]); setTotal(0); }
     finally { setLoading(false); }
-  }, [page, search, roleFilter]);
+  }, [page, search]);
 
   useEffect(() => { load(); }, [load]);
 
-  const f = (k: keyof CreateForm, v: string) => setForm(prev => ({
-    ...prev, [k]: v,
-    ...(k === 'role' ? { permissions: DEFAULT_PERMISSIONS[v] ?? [] } : {}),
-  }));
+  const effectiveRole = form.useCustomRole ? form.customRole.trim() : form.role;
+  const setField = (k: keyof CreateForm, v: any) => setForm(prev => ({ ...prev, [k]: v }));
 
-  const togglePerm = (key: string) => setForm(prev => ({
-    ...prev,
-    permissions: prev.permissions.includes(key)
-      ? prev.permissions.filter(p => p !== key)
-      : [...prev.permissions, key],
-  }));
+  // Always show all modules — backend enforces the ceiling on save
+  const availableModules = ALL_MODULES;
 
-  const handleCreate = async (e: React.FormEvent) => {
+  // Step 1 → Step 2: seed default permissions then advance
+  const handleStep1Next = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!effectiveRole) { alert('Please enter a designation'); return; }
+    const defaults = DEFAULT_PERMISSIONS[effectiveRole] ?? [];
+    setWizardPerms(defaults);
+    setWizardCanCreate(false);
+    setWizardAssignable([]);
+    setWizardStep(2);
+  };
+
+  // Final submit from step 2
+  const handleCreate = async () => {
+    const roleToSubmit = effectiveRole;
+    if (!roleToSubmit) return;
     setSaving(true);
     try {
       const created = await usersApi.create({
-        ...form,
-        baseSalary: form.baseSalary ? Number(form.baseSalary) : 0,
+        name:                  form.name,
+        email:                 form.email,
+        phone:                 form.phone,
+        role:                  roleToSubmit,
+        designation:           form.designation,
+        bloodGroup:            form.bloodGroup || undefined,
+        permissions:           wizardPerms,
+        canCreateUsers:        wizardCanCreate,
+        assignablePermissions: wizardAssignable,
       });
-      // upload pending docs
-      for (const d of pendingDocs) {
-        try { await employeesApi.uploadDocument(created._id, d.file, d.label); } catch {}
+
+      // If status = active, auto-activate immediately
+      if (form.status === 'active') {
+        try {
+          const result = await usersApi.activate(created._id || created.id, {
+            permissions:           wizardPerms,
+            canCreateUsers:        wizardCanCreate,
+            assignablePermissions: wizardAssignable,
+          });
+          if (result?.emailSent === false) {
+            alert(`✅ "${form.name}" created and activated.\n\n⚠️ Welcome email could not be sent. Please inform them manually:\n→ https://zaltixsoftsolutions.com/zieos/login`);
+          }
+        } catch {
+          // activation failed silently — user still created; admin can activate manually
+        }
       }
+
       setShowCreate(false);
-      setForm(makeEmptyForm(defaultCreateRole));
-      setPendingDocs([]);
-      setActiveTab('basic');
+      setForm(emptyForm());
+      setWizardStep(1);
       load();
-      // If email failed, notify admin to inform the user manually
-      if (created.emailSent === false) {
-        alert(
-          `✅ User "${created.name}" created successfully.\n\n` +
-          `⚠️ Welcome email could not be sent (your email provider may not support SMTP).\n\n` +
-          `Please inform ${created.email} manually:\n` +
-          `→ Go to: ${window.location.origin}/login\n` +
-          `→ Enter their email address\n` +
-          `→ Use their own email account password to login`
-        );
+    } catch (err: unknown) {
+      alert((err as any)?.response?.data?.message || 'Failed to create user');
+    } finally { setSaving(false); }
+  };
+
+  const handleActivate = async () => {
+    if (!grantTarget) return;
+    setActivating(true);
+    try {
+      const wasActive = grantTarget.isActive;
+      const result = await usersApi.activate(grantTarget._id, {
+        permissions:           grantPerms,
+        canCreateUsers:        grantCanCreate,
+        assignablePermissions: grantAssignable,
+      });
+      setGrantTarget(null);
+      load();
+      if (!wasActive && result?.emailSent === false) {
+        alert(`✅ "${grantTarget.name}" is now active.\n\n⚠️ Welcome email could not be sent. Please inform them manually:\n→ https://zaltixsoftsolutions.com/zieos/login`);
       }
     } catch (err: unknown) {
-      const msg = (err as any)?.response?.data?.message;
-      alert(msg || 'Failed to create user');
-    } finally { setSaving(false); }
+      alert((err as any)?.response?.data?.message || 'Failed to activate user');
+    } finally { setActivating(false); }
   };
 
   const handleToggle = async () => {
@@ -226,72 +268,45 @@ export default function UsersPage() {
     } finally { setSaving(false); }
   };
 
-  const addPendingDoc = (file: File) => {
-    setPendingDocs(prev => [...prev, { label: docLabel, file }]);
+  const openCreate = () => {
+    setForm(emptyForm());
+    setWizardStep(1);
+    setWizardPerms([]);
+    setWizardCanCreate(false);
+    setWizardAssignable([]);
+    setShowCreate(true);
   };
-
-  const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
-    { id: 'basic',     label: 'Basic Info',     icon: User },
-    { id: 'personal',  label: 'Personal',        icon: FileText },
-    { id: 'documents', label: 'Documents',        icon: Upload },
-    { id: 'access',    label: 'Module Access',    icon: Shield },
-  ];
 
   return (
     <div className="space-y-6 animate-fade-in">
       {isAdmin && (
         <div className="flex items-start gap-3 bg-violet-50 border border-violet-200 rounded-xl px-4 py-3 text-sm text-violet-700">
           <Shield size={15} className="mt-0.5 flex-shrink-0" />
-          <span>As admin, you create <strong>Managers</strong> and assign their module access. Managers then create and manage all other employees.</span>
+          <span>As admin, you can create users with any role, define their module access, and decide whether they can create sub-users.</span>
         </div>
       )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="page-header">{isAdmin ? 'Managers & Access' : 'Users & Access'}</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {isAdmin ? `${total} manager${total !== 1 ? 's' : ''} in your organization` : `${total} employees in your organization`}
-          </p>
+          <h1 className="page-header">Users & Access</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{total} user{total !== 1 ? 's' : ''}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {!isAdmin && (
-            <ExcelImportButton
-              entityName="Users"
-              columnHint="name, email, role (sales/engineer/hr/finance), department, phone, baseSalary"
-              onImport={async (rows) => {
-                let imported = 0;
-                for (const row of rows) {
-                  const name = row.name || row.Name || '';
-                  const email = row.email || row.Email || '';
-                  if (!name || !email) continue;
-                  const role = (CREATABLE_ROLES.includes(row.role as Role) ? row.role : defaultCreateRole) as Role;
-                  try {
-                    await usersApi.create({ name, email, role, department: row.department || '', phone: row.phone || '', baseSalary: parseFloat(row.baseSalary || '0') || 0, password: 'Telled@123', permissions: DEFAULT_PERMISSIONS[role] ?? [] });
-                    imported++;
-                  } catch {}
-                }
-                load();
-                return { imported };
-              }}
-            />
+          {canCreate && (
+            <button onClick={openCreate} className="btn-primary flex items-center gap-2">
+              <Plus size={16} /> Add User
+            </button>
           )}
-          <button onClick={() => { setForm(makeEmptyForm(defaultCreateRole)); setActiveTab('basic'); setPendingDocs([]); setShowCreate(true); }}
-            className="btn-primary flex items-center gap-2">
-            <Plus size={16} /> {isAdmin ? 'Add Manager' : 'Add Employee'}
-          </button>
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Search */}
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-48">
           <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
           <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
             placeholder="Search users…" className="input-field pl-9" />
         </div>
-        <select value={roleFilter} onChange={e => { setRoleFilter(e.target.value); setPage(1); }} className="input-field w-auto">
-          <option value="">All Roles</option>
-          {FILTER_ROLES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-        </select>
       </div>
 
       {/* Desktop Table */}
@@ -307,8 +322,8 @@ export default function UsersPage() {
                   <th className="table-header">Email</th>
                   <th className="table-header">Role</th>
                   <th className="table-header">Department</th>
-                  <th className="table-header">Phone</th>
                   <th className="table-header">Access</th>
+                  <th className="table-header">Can Create Users</th>
                   <th className="table-header">Status</th>
                   <th className="table-header">Actions</th>
                 </tr>
@@ -319,36 +334,47 @@ export default function UsersPage() {
                     <td className="table-cell font-medium">{u.name}</td>
                     <td className="table-cell text-gray-500">{u.email}</td>
                     <td className="table-cell">
-                      <span className={`badge capitalize ${ROLE_COLOR[u.role as Role] || 'bg-gray-100 text-gray-600'}`}>
-                        {ROLE_LABEL[u.role as Role] || u.role}
+                      <span className={`badge capitalize ${ROLE_COLOR[u.role] || 'bg-gray-100 text-gray-600'}`}>
+                        {u.role}
                       </span>
                     </td>
                     <td className="table-cell text-gray-400">{u.department || '—'}</td>
-                    <td className="table-cell text-gray-400">{u.phone || '—'}</td>
                     <td className="table-cell">
-                      <span className="text-xs text-gray-400">
-                        {u.permissions?.length ?? DEFAULT_PERMISSIONS[u.role]?.length ?? 0} modules
-                      </span>
+                      <span className="text-xs text-gray-400">{u.permissions?.length ?? 0} modules</span>
+                    </td>
+                    <td className="table-cell">
+                      {u.canCreateUsers
+                        ? <span className="badge bg-green-100 text-green-700">Yes</span>
+                        : <span className="text-xs text-gray-400">No</span>}
                     </td>
                     <td className="table-cell"><StatusBadge status={u.isActive ? 'Active' : 'Inactive'} /></td>
                     <td className="table-cell">
                       <div className="flex items-center gap-2">
                         <button onClick={() => navigate(`/employees/${u._id}`)} title="View Profile"
-                          className="p-1 text-gray-400 hover:text-violet-600">
-                          <UserSquare2 size={15} />
-                        </button>
-                        <button onClick={() => setToggleTarget(u)} title={u.isActive ? 'Deactivate' : 'Activate'}
-                          className="p-1 text-gray-400 hover:text-violet-600">
-                          {u.isActive ? <ToggleRight size={18} className="text-green-500" /> : <ToggleLeft size={18} />}
-                        </button>
-                        <button onClick={() => { setSelected(u); setShowReset(true); }} title="Reset Password"
-                          className="p-1 text-gray-400 hover:text-violet-600">
-                          <KeyRound size={15} />
-                        </button>
-                        <button onClick={() => setDeleteTarget(u)} title="Delete User"
-                          className="p-1 text-gray-400 hover:text-red-600">
-                          <Trash2 size={15} />
-                        </button>
+                          className="p-1 text-gray-400 hover:text-violet-600"><UserSquare2 size={15} /></button>
+                        {(isAdmin || currentUser?.canCreateUsers) && (
+                          <button onClick={() => {
+                            setGrantPerms(u.permissions ?? []);
+                            setGrantCanCreate(u.canCreateUsers ?? false);
+                            setGrantAssignable(u.assignablePermissions ?? []);
+                            setGrantTarget({ _id: u._id, name: u.name, email: u.email, role: u.role, isActive: u.isActive });
+                          }} title={u.isActive ? 'Edit Access' : 'Grant Access'}
+                            className={`p-1 ${u.isActive ? 'text-violet-500 hover:text-violet-700' : 'text-amber-500 hover:text-amber-700'}`}>
+                            <Shield size={15} />
+                          </button>
+                        )}
+                        {(isAdmin || currentUser?.canCreateUsers) && (
+                          <>
+                            <button onClick={() => setToggleTarget(u)} title={u.isActive ? 'Deactivate' : 'Activate'}
+                              className="p-1 text-gray-400 hover:text-violet-600">
+                              {u.isActive ? <ToggleRight size={18} className="text-green-500" /> : <ToggleLeft size={18} />}
+                            </button>
+                            <button onClick={() => { setSelected(u); setShowReset(true); }} title="Reset Password"
+                              className="p-1 text-gray-400 hover:text-violet-600"><KeyRound size={15} /></button>
+                            <button onClick={() => setDeleteTarget(u)} title="Delete User"
+                              className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={15} /></button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -381,24 +407,34 @@ export default function UsersPage() {
                   <p className="text-xs text-gray-500 mt-0.5 truncate">{u.email}</p>
                 </div>
                 <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                  <span className={`badge text-xs capitalize ${ROLE_COLOR[u.role as Role] || 'bg-gray-100 text-gray-600'}`}>
-                    {ROLE_LABEL[u.role as Role] || u.role}
-                  </span>
+                  <span className={`badge text-xs capitalize ${ROLE_COLOR[u.role] || 'bg-gray-100 text-gray-600'}`}>{u.role}</span>
                   <StatusBadge status={u.isActive ? 'Active' : 'Inactive'} />
                 </div>
               </div>
               <div className="text-xs text-gray-500 space-y-0.5">
                 {u.department && <p><span className="text-gray-400">Dept:</span> {u.department}</p>}
-                {u.phone && <p><span className="text-gray-400">Phone:</span> {u.phone}</p>}
-                <p><span className="text-gray-400">Access:</span> {u.permissions?.length ?? DEFAULT_PERMISSIONS[u.role]?.length ?? 0} modules</p>
+                <p><span className="text-gray-400">Access:</span> {u.permissions?.length ?? 0} modules</p>
+                <p><span className="text-gray-400">Can create users:</span> {u.canCreateUsers ? 'Yes' : 'No'}</p>
               </div>
               <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
-                <button onClick={() => navigate(`/employees/${u._id}`)} title="View Profile" className="p-1.5 text-gray-400 hover:text-violet-600"><UserSquare2 size={15} /></button>
-                <button onClick={() => setToggleTarget(u)} title={u.isActive ? 'Deactivate' : 'Activate'} className="p-1.5 text-gray-400 hover:text-violet-600">
-                  {u.isActive ? <ToggleRight size={18} className="text-green-500" /> : <ToggleLeft size={18} />}
-                </button>
-                <button onClick={() => { setSelected(u); setShowReset(true); }} title="Reset Password" className="p-1.5 text-gray-400 hover:text-violet-600"><KeyRound size={15} /></button>
-                <button onClick={() => setDeleteTarget(u)} title="Delete" className="p-1.5 text-gray-400 hover:text-red-600"><Trash2 size={15} /></button>
+                <button onClick={() => navigate(`/employees/${u._id}`)} className="p-1.5 text-gray-400 hover:text-violet-600"><UserSquare2 size={15} /></button>
+                {(isAdmin || currentUser?.canCreateUsers) && (
+                  <>
+                    <button onClick={() => {
+                      setGrantPerms(u.permissions ?? []);
+                      setGrantCanCreate(u.canCreateUsers ?? false);
+                      setGrantAssignable(u.assignablePermissions ?? []);
+                      setGrantTarget({ _id: u._id, name: u.name, email: u.email, role: u.role, isActive: u.isActive });
+                    }} className={`p-1.5 ${u.isActive ? 'text-violet-500 hover:text-violet-700' : 'text-amber-500 hover:text-amber-700'}`}>
+                      <Shield size={15} />
+                    </button>
+                    <button onClick={() => setToggleTarget(u)} className="p-1.5 text-gray-400 hover:text-violet-600">
+                      {u.isActive ? <ToggleRight size={18} className="text-green-500" /> : <ToggleLeft size={18} />}
+                    </button>
+                    <button onClick={() => { setSelected(u); setShowReset(true); }} className="p-1.5 text-gray-400 hover:text-violet-600"><KeyRound size={15} /></button>
+                    <button onClick={() => setDeleteTarget(u)} className="p-1.5 text-gray-400 hover:text-red-600"><Trash2 size={15} /></button>
+                  </>
+                )}
               </div>
             </div>
           ))}
@@ -414,231 +450,222 @@ export default function UsersPage() {
         </div>
       )}
 
-      {/* ── Add User Modal ── */}
-      <Modal isOpen={showCreate} onClose={() => setShowCreate(false)} title={isAdmin ? 'Add New Manager' : 'Add New Employee'} size="lg">
-        <form onSubmit={handleCreate}>
-          {/* Tab bar */}
-          <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-5">
-            {TABS.map(tab => (
-              <button key={tab.id} type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-semibold transition-all ${
-                  activeTab === tab.id
-                    ? 'bg-white text-violet-700 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}>
-                <tab.icon size={13} />
-                <span className="hidden sm:inline">{tab.label}</span>
-              </button>
+      {/* ══════════════════════════════════════════════════════════
+          Add User — 2-step wizard modal
+      ══════════════════════════════════════════════════════════ */}
+      {canCreate && (
+        <Modal
+          isOpen={showCreate}
+          onClose={() => { setShowCreate(false); setWizardStep(1); }}
+          title={wizardStep === 1 ? 'Add New User — Step 1 of 2' : 'Add New User — Step 2 of 2'}
+          size={wizardStep === 2 ? 'lg' : 'md'}
+        >
+          {/* ── Step indicator ── */}
+          <div className="flex items-center gap-2 mb-5">
+            {[1, 2].map(s => (
+              <div key={s} className={`flex items-center gap-2 ${s < 2 ? 'flex-1' : ''}`}>
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                  wizardStep === s ? 'bg-violet-600 text-white' :
+                  wizardStep > s  ? 'bg-violet-200 text-violet-700' : 'bg-gray-100 text-gray-400'
+                }`}>{s}</div>
+                <span className={`text-xs font-medium ${wizardStep === s ? 'text-violet-700' : 'text-gray-400'}`}>
+                  {s === 1 ? 'User Details' : 'Module Access'}
+                </span>
+                {s < 2 && <div className="flex-1 h-px bg-gray-200 mx-1" />}
+              </div>
             ))}
           </div>
 
-          {/* ── Tab: Basic Info ── */}
-          {activeTab === 'basic' && (
-            <div className="space-y-4">
-              <div className="flex items-start gap-2 bg-violet-50 border border-violet-200 rounded-lg px-4 py-3 text-sm text-violet-700">
-                <Mail size={15} className="mt-0.5 flex-shrink-0" />
-                <span>An invite email will be sent to the user to set their password.</span>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+          {/* ── Step 1: User info form ── */}
+          {wizardStep === 1 && (
+            <form onSubmit={handleStep1Next} className="space-y-4">
+              {/* Row: Name + Mobile */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="label">Full Name *</label>
-                  <input required className="input-field" value={form.name} onChange={e => f('name', e.target.value)} placeholder="Jane Doe" />
+                  <input required className="input-field" value={form.name}
+                    onChange={e => setField('name', e.target.value)} placeholder="e.g. Jane Doe" />
                 </div>
                 <div>
-                  <label className="label">Work Email *</label>
-                  <input required type="email" className="input-field" value={form.email} onChange={e => f('email', e.target.value)} placeholder="jane@company.com" />
+                  <label className="label">Mobile Number *</label>
+                  <input required className="input-field" value={form.phone}
+                    onChange={e => setField('phone', e.target.value)} placeholder="10-digit number" maxLength={15} />
+                </div>
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="label">Email ID *</label>
+                <input required type="email" className="input-field" value={form.email}
+                  onChange={e => setField('email', e.target.value)} placeholder="jane@company.com" />
+              </div>
+
+              {/* Row: Designation + Role */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Designation</label>
+                  <input className="input-field" value={form.designation}
+                    onChange={e => setField('designation', e.target.value)}
+                    placeholder="e.g. Senior Engineer" />
                 </div>
                 <div>
                   <label className="label">Role *</label>
-                  {isAdmin ? (
-                    <input readOnly className="input-field bg-gray-50 text-gray-500 cursor-not-allowed" value="Manager" />
-                  ) : (
-                    <select required className="input-field" value={form.role} onChange={e => f('role', e.target.value as Role)}>
-                      {CREATABLE_ROLES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-                    </select>
-                  )}
-                </div>
-                <div>
-                  <label className="label">Department</label>
-                  <input className="input-field" value={form.department} onChange={e => f('department', e.target.value)} placeholder="e.g. Sales, Engineering…" />
-                </div>
-                <div>
-                  <label className="label">Phone</label>
-                  <input className="input-field" value={form.phone} onChange={e => f('phone', e.target.value)} placeholder="10-digit number" />
-                </div>
-                <div>
-                  <label className="label">Base Salary (₹)</label>
-                  <input type="number" min={0} className="input-field" value={form.baseSalary} onChange={e => f('baseSalary', e.target.value)} placeholder="e.g. 50000" />
-                </div>
-                <div>
-                  <label className="label">Joining Date</label>
-                  <input type="date" className="input-field" value={form.joiningDate} onChange={e => f('joiningDate', e.target.value)} />
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      {form.useCustomRole ? (
+                        <input required className="input-field" value={form.customRole}
+                          onChange={e => setField('customRole', e.target.value)}
+                          placeholder="e.g. Operations, Marketing…" />
+                      ) : (
+                        <select className="input-field" value={form.role} onChange={e => setField('role', e.target.value)}>
+                          {PRESET_ROLES.map(r => (
+                            <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                    <button type="button" onClick={() => setField('useCustomRole', !form.useCustomRole)}
+                      className="btn-secondary text-xs whitespace-nowrap">
+                      {form.useCustomRole ? 'Use preset' : '+ Custom'}
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
 
-          {/* ── Tab: Personal Details ── */}
-          {activeTab === 'personal' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              {/* Row: Status + Blood Group */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="label">Date of Birth</label>
-                  <input type="date" className="input-field" value={form.dateOfBirth} onChange={e => f('dateOfBirth', e.target.value)} />
-                </div>
-                <div>
-                  <label className="label">Gender</label>
-                  <select className="input-field" value={form.gender} onChange={e => f('gender', e.target.value)}>
-                    <option value="">Select gender</option>
-                    <option>Male</option><option>Female</option><option>Other</option>
+                  <label className="label">Account Status</label>
+                  <select className="input-field" value={form.status} onChange={e => setField('status', e.target.value as 'active' | 'inactive')}>
+                    <option value="inactive">Inactive (activate after access setup)</option>
+                    <option value="active">Active</option>
                   </select>
                 </div>
                 <div>
                   <label className="label">Blood Group</label>
-                  <select className="input-field" value={form.bloodGroup} onChange={e => f('bloodGroup', e.target.value)}>
-                    <option value="">Select blood group</option>
-                    {BLOOD_GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+                  <select className="input-field" value={form.bloodGroup} onChange={e => setField('bloodGroup', e.target.value)}>
+                    <option value="">— Select —</option>
+                    {BLOOD_GROUPS.map(bg => <option key={bg} value={bg}>{bg}</option>)}
                   </select>
                 </div>
-                <div>
-                  <label className="label">Emergency Contact Name</label>
-                  <input className="input-field" value={form.emergencyContact} onChange={e => f('emergencyContact', e.target.value)} placeholder="Contact person name" />
-                </div>
-                <div>
-                  <label className="label">Emergency Phone</label>
-                  <input className="input-field" value={form.emergencyPhone} onChange={e => f('emergencyPhone', e.target.value)} placeholder="Emergency number" />
-                </div>
-                <div>
-                  <label className="label">Aadhar Number</label>
-                  <input className="input-field" value={form.aadharNumber} onChange={e => f('aadharNumber', e.target.value)} placeholder="XXXX XXXX XXXX" maxLength={14} />
-                </div>
-                <div>
-                  <label className="label">PAN Number</label>
-                  <input className="input-field" value={form.panNumber} onChange={e => f('panNumber', e.target.value.toUpperCase())} placeholder="ABCDE1234F" maxLength={10} />
-                </div>
-                <div>
-                  <label className="label">Bank Account No.</label>
-                  <input className="input-field" value={form.bankAccount} onChange={e => f('bankAccount', e.target.value)} placeholder="Account number" />
-                </div>
-                <div>
-                  <label className="label">IFSC Code</label>
-                  <input className="input-field" value={form.ifscCode} onChange={e => f('ifscCode', e.target.value.toUpperCase())} placeholder="e.g. SBIN0001234" maxLength={11} />
-                </div>
               </div>
-              <div>
-                <label className="label">Residential Address</label>
-                <textarea rows={2} className="input-field" value={form.address} onChange={e => f('address', e.target.value)} placeholder="Full residential address" />
-              </div>
-            </div>
-          )}
 
-          {/* ── Tab: Documents ── */}
-          {activeTab === 'documents' && (
-            <div className="space-y-4">
-              <p className="text-xs text-gray-400">Upload documents now or later from the employee profile.</p>
-              <div className="flex gap-3">
-                <select className="input-field flex-1" value={docLabel} onChange={e => setDocLabel(e.target.value)}>
-                  {DOC_LABELS.map(l => <option key={l} value={l}>{l}</option>)}
-                </select>
-                <input ref={fileRef} type="file" className="hidden"
-                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) { addPendingDoc(f); e.target.value = ''; } }} />
-                <button type="button" onClick={() => fileRef.current?.click()}
-                  className="btn-secondary flex items-center gap-2 whitespace-nowrap">
-                  <Upload size={14} /> Choose File
+              <div className="flex gap-3 justify-end pt-2 border-t border-gray-100">
+                <button type="button" onClick={() => setShowCreate(false)} className="btn-secondary">Cancel</button>
+                <button type="submit" className="btn-primary flex items-center gap-2">
+                  Next: Module Access <ChevronRight size={15} />
                 </button>
               </div>
+            </form>
+          )}
 
-              {pendingDocs.length === 0 ? (
-                <div className="text-center py-10 border-2 border-dashed border-gray-200 rounded-xl text-gray-400">
-                  <Upload size={28} className="mx-auto mb-2 opacity-40" />
-                  <p className="text-sm">No documents added yet</p>
-                  <p className="text-xs mt-1">Select a type above and choose a file</p>
+          {/* ── Step 2: Module access ── */}
+          {wizardStep === 2 && (
+            <div className="space-y-5">
+              {/* User summary banner */}
+              <div className="flex items-center gap-3 bg-violet-50 border border-violet-200 rounded-xl px-4 py-3">
+                <div className="w-9 h-9 rounded-full bg-violet-100 flex items-center justify-center text-violet-700 font-bold text-sm flex-shrink-0">
+                  {form.name.charAt(0).toUpperCase()}
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  {pendingDocs.map((d, i) => (
-                    <div key={i} className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <FileText size={15} className="text-violet-500 flex-shrink-0" />
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-gray-800 truncate">{d.label}</p>
-                          <p className="text-xs text-gray-400 truncate">{d.file.name}</p>
-                        </div>
-                      </div>
-                      <button type="button" onClick={() => setPendingDocs(prev => prev.filter((_, j) => j !== i))}
-                        className="p-1 text-gray-400 hover:text-red-500 flex-shrink-0">
-                        <X size={14} />
-                      </button>
-                    </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-violet-800 truncate">{form.name}</p>
+                  <p className="text-xs text-violet-500 truncate">{form.email} · <span className="capitalize">{effectiveRole}</span></p>
+                </div>
+              </div>
+
+              {/* Module Access */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-700">Module Access</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Select which modules this user can access.</p>
+                  </div>
+                  <div className="flex gap-3">
+                    <button type="button"
+                      onClick={() => setWizardPerms(availableModules.map(m => m.key))}
+                      className="text-xs text-violet-600 hover:underline">Select All</button>
+                    <button type="button"
+                      onClick={() => { setWizardPerms([]); setWizardAssignable([]); }}
+                      className="text-xs text-gray-400 hover:underline">Clear</button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {availableModules.map(mod => (
+                    <ModuleTile
+                      key={mod.key}
+                      label={mod.label}
+                      active={wizardPerms.includes(mod.key)}
+                      onClick={() => {
+                        const active = wizardPerms.includes(mod.key);
+                        const next = active ? wizardPerms.filter(p => p !== mod.key) : [...wizardPerms, mod.key];
+                        setWizardPerms(next);
+                        if (active) setWizardAssignable(prev => prev.filter(p => p !== mod.key));
+                      }}
+                    />
                   ))}
                 </div>
-              )}
-            </div>
-          )}
+              </div>
 
-          {/* ── Tab: Module Access ── */}
-          {activeTab === 'access' && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-gray-400">Pre-filled based on role. Toggle to customise access.</p>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => setForm(p => ({ ...p, permissions: ALL_MODULES.map(m => m.key) }))}
-                    className="text-xs text-violet-600 hover:underline">All</button>
-                  <button type="button" onClick={() => setForm(p => ({ ...p, permissions: [] }))}
-                    className="text-xs text-gray-400 hover:underline">None</button>
+              {/* Allow User Creation */}
+              <div className="border border-gray-200 rounded-xl p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-700">Allow User Creation</p>
+                    <p className="text-xs text-gray-400 mt-0.5">This user can create other users in the system.</p>
+                  </div>
+                  <button type="button"
+                    onClick={() => { setWizardCanCreate(v => !v); if (wizardCanCreate) setWizardAssignable([]); }}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${wizardCanCreate ? 'bg-violet-600' : 'bg-gray-200'}`}>
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${wizardCanCreate ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
                 </div>
+
+                {wizardCanCreate && (
+                  <div className="pt-3 border-t border-gray-100 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-gray-700">Permissions they can assign to sub-users</p>
+                      <button type="button" onClick={() => setWizardAssignable(wizardPerms)}
+                        className="text-xs text-violet-600 hover:underline">Same as above</button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {wizardPerms.length === 0
+                        ? <p className="col-span-2 text-xs text-gray-400 italic">Grant module access above first.</p>
+                        : wizardPerms.map(key => {
+                            const mod = ALL_MODULES.find(m => m.key === key);
+                            if (!mod) return null;
+                            return (
+                              <ModuleTile
+                                key={key}
+                                label={mod.label}
+                                color="emerald"
+                                active={wizardAssignable.includes(key)}
+                                onClick={() => setWizardAssignable(prev =>
+                                  prev.includes(key) ? prev.filter(p => p !== key) : [...prev, key]
+                                )}
+                              />
+                            );
+                          })
+                      }
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                {ALL_MODULES.map(mod => {
-                  const active = form.permissions.includes(mod.key);
-                  return (
-                    <button key={mod.key} type="button" onClick={() => togglePerm(mod.key)}
-                      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${
-                        active
-                          ? 'bg-violet-50 border-violet-300 text-violet-800'
-                          : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300'
-                      }`}>
-                      <div className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${
-                        active ? 'bg-violet-600 border-violet-600' : 'border-gray-300 bg-white'
-                      }`}>
-                        {active && <svg viewBox="0 0 10 8" className="w-2.5 h-2.5 fill-white"><path d="M1 4l2.5 2.5L9 1" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                      </div>
-                      {mod.label}
-                    </button>
-                  );
-                })}
+
+              <div className="flex gap-3 justify-end pt-2 border-t border-gray-100">
+                <button type="button" onClick={() => setWizardStep(1)}
+                  className="btn-secondary flex items-center gap-1.5">
+                  <ChevronLeft size={15} /> Back
+                </button>
+                <button type="button" onClick={handleCreate} disabled={saving}
+                  className="btn-primary flex items-center gap-2">
+                  <Shield size={14} />
+                  {saving ? 'Creating…' : 'Create User'}
+                </button>
               </div>
             </div>
           )}
-
-          {/* Footer */}
-          <div className="flex items-center justify-between mt-6 pt-4 border-t border-gray-100">
-            <div className="flex gap-1">
-              {TABS.map((tab, i) => (
-                <div key={tab.id} className={`w-2 h-2 rounded-full transition-colors ${activeTab === tab.id ? 'bg-violet-600' : 'bg-gray-200'}`} />
-              ))}
-            </div>
-            <div className="flex gap-3">
-              <button type="button" onClick={() => setShowCreate(false)} className="btn-secondary">Cancel</button>
-              {activeTab !== 'access' ? (
-                <button type="button"
-                  onClick={() => {
-                    const order: Tab[] = ['basic', 'personal', 'documents', 'access'];
-                    const next = order[order.indexOf(activeTab) + 1];
-                    if (next) setActiveTab(next);
-                  }}
-                  className="btn-primary">Next →</button>
-              ) : (
-                <button type="submit" disabled={saving} className="btn-primary">
-                  {saving ? 'Creating…' : 'Create Employee'}
-                </button>
-              )}
-            </div>
-          </div>
-        </form>
-      </Modal>
+        </Modal>
+      )}
 
       {/* Reset Password Modal */}
       <Modal isOpen={showReset} onClose={() => setShowReset(false)} title={`Reset Password — ${selected?.name}`} size="sm">
@@ -646,8 +673,8 @@ export default function UsersPage() {
           <div>
             <label className="label">New Password *</label>
             <div className="relative">
-              <input required type={showResetPwd ? 'text' : 'password'} className="input-field pr-10" value={newPassword}
-                onChange={e => setNewPassword(e.target.value)} minLength={8} placeholder="Min 8 characters" />
+              <input required type={showResetPwd ? 'text' : 'password'} className="input-field pr-10"
+                value={newPassword} onChange={e => setNewPassword(e.target.value)} minLength={8} placeholder="Min 8 characters" />
               <button type="button" onClick={() => setShowResetPwd(v => !v)}
                 className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
                 {showResetPwd ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -670,6 +697,110 @@ export default function UsersPage() {
         title="Delete User"
         message={`Permanently delete "${deleteTarget?.name}"? This cannot be undone.`}
         confirmLabel="Delete" danger />
+
+      {/* ── Grant Access & Activate Modal (for existing inactive users) ── */}
+      <Modal isOpen={!!grantTarget} onClose={() => setGrantTarget(null)}
+        title={grantTarget?.isActive ? 'Edit Access' : 'Grant Access & Activate User'} size="lg">
+        {grantTarget && (
+          <div className="space-y-5">
+            <div className={`flex items-center gap-3 rounded-xl px-4 py-3 ${grantTarget.isActive ? 'bg-violet-50 border border-violet-200' : 'bg-amber-50 border border-amber-200'}`}>
+              <Shield size={16} className={`flex-shrink-0 ${grantTarget.isActive ? 'text-violet-600' : 'text-amber-600'}`} />
+              <div>
+                <p className={`text-sm font-semibold ${grantTarget.isActive ? 'text-violet-800' : 'text-amber-800'}`}>
+                  {grantTarget.name} <span className={`font-normal ${grantTarget.isActive ? 'text-violet-600' : 'text-amber-600'}`}>({grantTarget.email})</span>
+                </p>
+                <p className={`text-xs mt-0.5 ${grantTarget.isActive ? 'text-violet-600' : 'text-amber-600'}`}>
+                  {grantTarget.isActive
+                    ? 'Update the module access for this active user. Changes take effect on their next login.'
+                    : <>This user is <strong>inactive</strong>. Assign permissions below and click <strong>"Save & Activate"</strong>.</>}
+                </p>
+              </div>
+            </div>
+
+            {/* Module Access */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold text-gray-700">Module Access</p>
+                <div className="flex gap-2">
+                  <button type="button"
+                    onClick={() => setGrantPerms(availableModules.map(m => m.key))}
+                    className="text-xs text-violet-600 hover:underline">All</button>
+                  <button type="button" onClick={() => { setGrantPerms([]); setGrantAssignable([]); }}
+                    className="text-xs text-gray-400 hover:underline">None</button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {availableModules.map(mod => (
+                  <ModuleTile
+                    key={mod.key}
+                    label={mod.label}
+                    active={grantPerms.includes(mod.key)}
+                    onClick={() => {
+                      const active = grantPerms.includes(mod.key);
+                      const next = active ? grantPerms.filter(p => p !== mod.key) : [...grantPerms, mod.key];
+                      setGrantPerms(next);
+                      if (active) setGrantAssignable(prev => prev.filter(p => p !== mod.key));
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Can Create Users */}
+            <div className="border border-gray-200 rounded-xl p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-gray-700">Allow User Creation</p>
+                  <p className="text-xs text-gray-400 mt-0.5">This user can create other users in the system.</p>
+                </div>
+                <button type="button"
+                  onClick={() => { setGrantCanCreate(v => !v); if (grantCanCreate) setGrantAssignable([]); }}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${grantCanCreate ? 'bg-violet-600' : 'bg-gray-200'}`}>
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${grantCanCreate ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+              {grantCanCreate && (
+                <div className="pt-3 border-t border-gray-100 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-gray-700">Permissions they can assign to sub-users</p>
+                    <button type="button" onClick={() => setGrantAssignable(grantPerms)}
+                      className="text-xs text-violet-600 hover:underline">Same as above</button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {grantPerms.length === 0
+                      ? <p className="col-span-2 text-xs text-gray-400 italic">Grant module access above first.</p>
+                      : grantPerms.map(key => {
+                          const mod = ALL_MODULES.find(m => m.key === key);
+                          if (!mod) return null;
+                          return (
+                            <ModuleTile
+                              key={key}
+                              label={mod.label}
+                              color="emerald"
+                              active={grantAssignable.includes(key)}
+                              onClick={() => setGrantAssignable(prev =>
+                                prev.includes(key) ? prev.filter(p => p !== key) : [...prev, key]
+                              )}
+                            />
+                          );
+                        })
+                    }
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 justify-end pt-2 border-t border-gray-100">
+              <button type="button" onClick={() => setGrantTarget(null)} className="btn-secondary">Cancel</button>
+              <button type="button" onClick={handleActivate} disabled={activating}
+                className="btn-primary flex items-center gap-2">
+                <Shield size={14} />
+                {activating ? 'Saving…' : grantTarget?.isActive ? 'Save Changes' : 'Save & Activate'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

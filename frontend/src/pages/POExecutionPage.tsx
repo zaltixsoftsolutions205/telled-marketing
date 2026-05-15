@@ -271,35 +271,64 @@ export default function POExecutionPage() {
             <div className="mt-1 ml-2 p-4 bg-white rounded-xl border border-gray-100 space-y-3">
               <p className="text-xs text-gray-500">Notify OEM and Distributor leadership by sending them a copy of the PO.</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* OEM */}
                 <div className="flex items-center justify-between p-3 rounded-lg bg-gray-50 border">
                   <div>
                     <p className="text-sm font-medium text-gray-700">OEM Notification</p>
                     {wf.step1.oemNotifiedAt && <p className="text-xs text-gray-400">{formatDate(wf.step1.oemNotifiedAt)}</p>}
                   </div>
-                  {wf.step1.oemNotified
-                    ? <span className="badge bg-emerald-100 text-emerald-700 text-xs">Sent</span>
-                    : !readOnly && (
-                      <button disabled={busy} onClick={() => act(() => poExecutionApi.notifyOEM(wf._id), 'OEM notified!')} className="btn-primary text-xs px-3 py-1.5">
-                        <Mail size={13} className="inline mr-1" />Send
-                      </button>
-                    )
-                  }
+                  {!readOnly && (
+                    <div className="flex flex-col items-end gap-1">
+                      {wf.step1.oemNotified && <span className="badge bg-emerald-100 text-emerald-700 text-xs">Sent</span>}
+                      <div className="flex gap-1">
+                        {wf.step1.oemNotified ? (
+                          <button disabled={busy} onClick={() => act(() => poExecutionApi.notifyOEM(wf._id), 'OEM re-notified!')} className="text-xs text-violet-600 hover:underline flex items-center gap-1">
+                            <RefreshCw size={11} />Resend
+                          </button>
+                        ) : (
+                          <button disabled={busy} onClick={() => act(() => poExecutionApi.notifyOEM(wf._id), 'OEM notified!')} className="btn-primary text-xs px-3 py-1.5">
+                            <Mail size={13} className="inline mr-1" />Send
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {readOnly && wf.step1.oemNotified && <span className="badge bg-emerald-100 text-emerald-700 text-xs">Sent</span>}
                 </div>
+                {/* Distributor */}
                 <div className="flex items-center justify-between p-3 rounded-lg bg-gray-50 border">
                   <div>
                     <p className="text-sm font-medium text-gray-700">Distributor Notification</p>
                     {wf.step1.distributorNotifiedAt && <p className="text-xs text-gray-400">{formatDate(wf.step1.distributorNotifiedAt)}</p>}
                   </div>
-                  {wf.step1.distributorNotified
-                    ? <span className="badge bg-emerald-100 text-emerald-700 text-xs">Sent</span>
-                    : !readOnly && (
-                      <button disabled={busy} onClick={() => act(() => poExecutionApi.notifyDistributor(wf._id), 'Distributor notified!')} className="btn-primary text-xs px-3 py-1.5">
-                        <Mail size={13} className="inline mr-1" />Send
-                      </button>
-                    )
-                  }
+                  {!readOnly && (
+                    <div className="flex flex-col items-end gap-1">
+                      {wf.step1.distributorNotified && <span className="badge bg-emerald-100 text-emerald-700 text-xs">Sent</span>}
+                      <div className="flex gap-1">
+                        {wf.step1.distributorNotified ? (
+                          <button disabled={busy} onClick={() => act(() => poExecutionApi.notifyDistributor(wf._id), 'Distributor re-notified!')} className="text-xs text-violet-600 hover:underline flex items-center gap-1">
+                            <RefreshCw size={11} />Resend
+                          </button>
+                        ) : (
+                          <button disabled={busy} onClick={() => act(() => poExecutionApi.notifyDistributor(wf._id), 'Distributor notified!')} className="btn-primary text-xs px-3 py-1.5">
+                            <Mail size={13} className="inline mr-1" />Send
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {readOnly && wf.step1.distributorNotified && <span className="badge bg-emerald-100 text-emerald-700 text-xs">Sent</span>}
                 </div>
               </div>
+              {/* Move to next step */}
+              {!readOnly && (wf.step1.oemNotified || wf.step1.distributorNotified) && wf.currentStep === 1 && (
+                <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
+                  <span className="text-xs text-gray-400 flex-1">Notifications sent. Move to next step when ready.</span>
+                  <button disabled={busy} onClick={() => act(() => poExecutionApi.updateStep(wf._id, 'step1Completed', {}), 'Moved to Step 2!')} className="btn-primary text-xs px-3 py-1.5">
+                    Next Step →
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -340,16 +369,29 @@ export default function POExecutionPage() {
               {wf.step3.sentAt && <p className="text-xs text-gray-400">Sent on {formatDate(wf.step3.sentAt)}</p>}
               {wf.step3.completedAt && <p className="text-xs text-emerald-600">Completed on {formatDate(wf.step3.completedAt)}</p>}
               {!readOnly && (
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-2 flex-wrap items-center">
                   {wf.step3.status === 'Pending' && (
                     <button disabled={busy} onClick={() => act(() => poExecutionApi.sendCustomerForms(wf._id), 'Customer forms sent!')} className="btn-primary text-xs px-3 py-1.5">
                       <Send size={13} className="inline mr-1" />Send All Forms to Customer
                     </button>
                   )}
-                  {wf.step3.status === 'Sent' && (
-                    <button disabled={busy} onClick={() => act(() => poExecutionApi.markCustomerFormsCompleted(wf._id), 'Customer forms marked completed!')} className="btn-primary text-xs px-3 py-1.5">
-                      <CheckCircle size={13} className="inline mr-1" />Mark as Completed
-                    </button>
+                  {(wf.step3.status === 'Sent' || wf.step3.status === 'Completed') && (
+                    <>
+                      <button disabled={busy} onClick={() => act(() => poExecutionApi.sendCustomerForms(wf._id), 'Customer forms resent!')} className="text-xs text-violet-600 hover:underline flex items-center gap-1">
+                        <RefreshCw size={11} />Resend
+                      </button>
+                      {wf.step3.status === 'Sent' && (
+                        <>
+                          <span className="text-gray-300">|</span>
+                          <button disabled={busy} onClick={() => act(() => poExecutionApi.markCustomerFormsCompleted(wf._id), 'Customer forms marked completed!')} className="btn-primary text-xs px-3 py-1.5">
+                            <CheckCircle size={13} className="inline mr-1" />Mark as Completed
+                          </button>
+                          <button disabled={busy} onClick={() => { setExpandedStep(4); }} className="text-xs text-gray-500 hover:underline">
+                            Skip →
+                          </button>
+                        </>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -405,21 +447,35 @@ export default function POExecutionPage() {
                 ))}
               </div>
               {wf.step5.sharedAt && <p className="text-xs text-gray-400">Shared on {formatDate(wf.step5.sharedAt)}</p>}
-              {!readOnly && wf.step5.status !== 'Sent' && (
-                <button disabled={busy} onClick={() => act(() => poExecutionApi.shareBackToDistributor(wf._id), 'Shared with Distributor!')} className="btn-primary text-xs px-3 py-1.5">
-                  <Send size={13} className="inline mr-1" />Share to Distributor
-                </button>
+              {!readOnly && (
+                <div className="flex gap-2 flex-wrap items-center">
+                  {wf.step5.status !== 'Sent' ? (
+                    <button disabled={busy} onClick={() => act(() => poExecutionApi.shareBackToDistributor(wf._id), 'Shared with Distributor!')} className="btn-primary text-xs px-3 py-1.5">
+                      <Send size={13} className="inline mr-1" />Share to Distributor
+                    </button>
+                  ) : (
+                    <>
+                      <button disabled={busy} onClick={() => act(() => poExecutionApi.shareBackToDistributor(wf._id), 'Reshared with Distributor!')} className="text-xs text-violet-600 hover:underline flex items-center gap-1">
+                        <RefreshCw size={11} />Resend
+                      </button>
+                      <span className="text-gray-300">|</span>
+                      <button disabled={busy} onClick={() => setExpandedStep(6)} className="text-xs text-gray-500 hover:underline">
+                        Skip →
+                      </button>
+                    </>
+                  )}
+                </div>
               )}
             </div>
           )}
         </div>
 
-        {/* STEP 6 */}
+        {/* STEP 6 — License Generation → Convert to Account here */}
         <div>
           <StepHeader num={6} label="License Generation" statusNode={<StatusPill status={wf.step6.licenseStatus} />} />
           {expandedStep === 6 && (
             <div className="mt-1 ml-2 p-4 bg-white rounded-xl border border-gray-100 space-y-3">
-              <p className="text-xs text-gray-500">Generate and deliver the license to customer. Once delivered, prospect becomes Customer.</p>
+              <p className="text-xs text-gray-500">Generate and deliver the license to customer.</p>
               {wf.step6.licenseKey || wf.step6.licenseFile ? (
                 <div className="p-3 rounded-lg bg-violet-50 border border-violet-100 space-y-1">
                   {wf.step6.licenseKey && <p className="text-sm font-mono text-gray-800">Key: {wf.step6.licenseKey}</p>}
@@ -428,19 +484,46 @@ export default function POExecutionPage() {
                 </div>
               ) : null}
               {!readOnly && (
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-2 flex-wrap items-center">
                   {wf.step6.licenseStatus === 'Pending' && (
                     <button className="btn-primary text-xs px-3 py-1.5" onClick={() => setShowLicense(true)}>
                       <Key size={13} className="inline mr-1" />Generate License
                     </button>
                   )}
                   {wf.step6.licenseStatus === 'Generated' && (
-                    <button disabled={busy} onClick={() => act(() => poExecutionApi.updateLicenseStatus(wf._id, { licenseStatus: 'Delivered', deliveryDate: new Date().toISOString() }), 'License delivered! Prospect converted to Customer.')} className="btn-primary text-xs px-3 py-1.5">
-                      <CheckCircle size={13} className="inline mr-1" />Mark as Delivered
-                    </button>
+                    <>
+                      <button disabled={busy} onClick={() => act(() => poExecutionApi.updateLicenseStatus(wf._id, { licenseStatus: 'Delivered', deliveryDate: new Date().toISOString() }), 'License delivered!')} className="btn-primary text-xs px-3 py-1.5">
+                        <CheckCircle size={13} className="inline mr-1" />Mark as Delivered
+                      </button>
+                      <button disabled={busy} onClick={() => setExpandedStep(7)} className="text-xs text-gray-500 hover:underline">
+                        Skip →
+                      </button>
+                    </>
                   )}
                   {wf.step6.licenseStatus === 'Delivered' && (
-                    <span className="badge bg-emerald-100 text-emerald-700 text-xs px-3 py-1.5">License Delivered — Customer Converted</span>
+                    <div className="w-full space-y-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="badge bg-emerald-100 text-emerald-700 text-xs px-3 py-1.5">License Delivered</span>
+                        <button disabled={busy} onClick={() => act(() => poExecutionApi.updateLicenseStatus(wf._id, { licenseStatus: 'Delivered', deliveryDate: new Date().toISOString() }), 'License resent!')} className="text-xs text-violet-600 hover:underline flex items-center gap-1">
+                          <RefreshCw size={11} />Resend License
+                        </button>
+                      </div>
+                      {/* Convert to Account — triggered here on license delivery */}
+                      <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                        <Building2 size={15} className="text-emerald-600 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-emerald-800">License received — Convert to Account</p>
+                          <p className="text-xs text-emerald-600 mt-0.5">The customer has received their license. Create an account to begin support & billing.</p>
+                        </div>
+                        <button
+                          disabled={busy}
+                          onClick={() => act(() => poExecutionApi.updateStep(wf._id, 'convertedToAccount', { convertedToAccount: true }), 'Converted to Account!')}
+                          className="btn-primary text-xs px-3 py-1.5 whitespace-nowrap flex-shrink-0"
+                        >
+                          <Building2 size={12} className="inline mr-1" />Convert to Account
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
               )}
@@ -466,21 +549,32 @@ export default function POExecutionPage() {
                 </div>
               ) : null}
               {!readOnly && (
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-2 flex-wrap items-center">
                   {wf.step7.status === 'Pending' && (
                     <button className="btn-primary text-xs px-3 py-1.5" onClick={() => setShowCustInvoice(true)}>
                       <CreditCard size={13} className="inline mr-1" />Generate Customer Invoice
                     </button>
                   )}
                   {wf.step7.status === 'Generated' && (
-                    <button disabled={busy} onClick={() => act(() => poExecutionApi.sendCustomerInvoice(wf._id), 'Invoice sent to Customer!')} className="btn-primary text-xs px-3 py-1.5">
-                      <Send size={13} className="inline mr-1" />Send Invoice by Email
-                    </button>
+                    <>
+                      <button disabled={busy} onClick={() => act(() => poExecutionApi.sendCustomerInvoice(wf._id), 'Invoice sent to Customer!')} className="btn-primary text-xs px-3 py-1.5">
+                        <Send size={13} className="inline mr-1" />Send Invoice by Email
+                      </button>
+                      <button disabled={busy} onClick={() => act(() => poExecutionApi.markCustomerPaid(wf._id), 'Payment recorded!')} className="text-xs text-gray-500 hover:underline">
+                        Skip →
+                      </button>
+                    </>
                   )}
                   {wf.step7.status === 'Sent' && wf.step7.paymentStatus !== 'Paid' && (
-                    <button disabled={busy} onClick={() => act(() => poExecutionApi.markCustomerPaid(wf._id), 'Payment recorded! Workflow completed.')} className="btn-primary text-xs px-3 py-1.5">
-                      <CheckCircle size={13} className="inline mr-1" />Mark as Paid
-                    </button>
+                    <>
+                      <button disabled={busy} onClick={() => act(() => poExecutionApi.sendCustomerInvoice(wf._id), 'Invoice resent!')} className="text-xs text-violet-600 hover:underline flex items-center gap-1">
+                        <RefreshCw size={11} />Resend Invoice
+                      </button>
+                      <span className="text-gray-300">|</span>
+                      <button disabled={busy} onClick={() => act(() => poExecutionApi.markCustomerPaid(wf._id), 'Payment recorded! Workflow completed.')} className="btn-primary text-xs px-3 py-1.5">
+                        <CheckCircle size={13} className="inline mr-1" />Mark as Paid
+                      </button>
+                    </>
                   )}
                   {wf.step7.paymentStatus === 'Paid' && (
                     <span className="badge bg-emerald-100 text-emerald-700 text-xs px-3 py-1.5">Payment Received — Workflow Complete</span>

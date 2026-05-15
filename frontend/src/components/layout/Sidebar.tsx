@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useLogoStore } from '@/store/logoStore';
-import { resolveLogoUrl, DEFAULT_LOGO } from '@/api/settings';
 import { authApi } from '@/api/auth';
 import type { Role } from '@/types';
 import { cn } from '@/utils/cn';
@@ -29,70 +28,28 @@ const roleColors: Record<string, string> = {
 // Items with no `perm` are always shown for that role.
 type NavEntry = { to: string; label: string; icon: React.ElementType; perm?: string };
 
-const salesNav: NavEntry[] = [
-  { to: '/leads',                 label: 'Leads',          icon: Users,       perm: 'leads' },
-  { to: '/drfs',                  label: 'DRF Management', icon: FileBadge,   perm: 'leads' },
-  { to: '/prospects',             label: 'Prospects',      icon: Target,      perm: 'leads' },
-  { to: '/quotations',            label: 'Quotations',     icon: FileText,    perm: 'quotations' },
-  { to: '/purchases',             label: 'Purchase Orders',icon: ShoppingCart,perm: 'purchases' },
-  { to: '/accounts',              label: 'Accounts',       icon: Building2,   perm: 'accounts' },
-  { to: '/contacts',              label: 'Contacts',       icon: BookUser,    perm: 'contacts' },
-  { to: '/timesheet',             label: 'Timesheet',      icon: Timer,       perm: 'timesheet' },
-  { to: '/engineer-performance',  label: 'My Performance', icon: TrendingUp },
-  { to: '/attendance',            label: 'My Attendance',  icon: CalendarDays,perm: 'attendance' },
-  { to: '/leaves',                label: 'My Leaves',      icon: Calendar,    perm: 'leaves' },
-];
-
-const engineerNav: NavEntry[] = [
-  { to: '/prospects',            label: 'Prospects',       icon: Target,       perm: 'leads' },
-  { to: '/accounts',             label: 'Accounts',        icon: Building2,    perm: 'accounts' },
-  { to: '/support',              label: 'Support',         icon: Headphones,   perm: 'support' },
-  { to: '/visits-and-claims',    label: 'Visits & Claims', icon: CalendarCheck,perm: 'visits' },
-  { to: '/engineer-performance', label: 'My Performance',  icon: TrendingUp },
-  { to: '/attendance',           label: 'My Attendance',   icon: CalendarDays, perm: 'attendance' },
-  { to: '/leaves',               label: 'My Leaves',       icon: Calendar,     perm: 'leaves' },
-  { to: '/timesheet',            label: 'Timesheet',       icon: Timer,        perm: 'timesheet' },
-  { to: '/contacts',             label: 'Contacts',        icon: BookUser,     perm: 'contacts' },
-];
-
-const hrNav: NavEntry[] = [
-  { to: '/users',             label: 'Users & Access',   icon: UserCog },
-  { to: '/visits-and-claims', label: 'Visits & Claims',  icon: CalendarCheck, perm: 'visits' },
-  { to: '/salary',            label: 'Salary & Payroll', icon: DollarSign,    perm: 'salary' },
-  { to: '/attendance',        label: 'Attendance',       icon: CalendarDays,  perm: 'attendance' },
-  { to: '/leaves',            label: 'Leave Management', icon: Calendar,      perm: 'leaves' },
-  { to: '/timesheet',         label: 'Timesheet',        icon: Timer,         perm: 'timesheet' },
-  { to: '/accounts',          label: 'Accounts',         icon: Building2,     perm: 'accounts' },
-  { to: '/contacts',          label: 'Contacts',         icon: BookUser,      perm: 'contacts' },
-];
-
-const financeNav: NavEntry[] = [
-  { to: '/invoices',  label: 'Invoices',  icon: Receipt,   perm: 'invoices' },
-  { to: '/payments',  label: 'Payments',  icon: CreditCard,perm: 'payments' },
-  { to: '/accounts',  label: 'Accounts',  icon: Building2, perm: 'accounts' },
-  { to: '/contacts',  label: 'Contacts',  icon: BookUser,  perm: 'contacts' },
-  { to: '/timesheet', label: 'Timesheet', icon: Timer,     perm: 'timesheet' },
-];
-
-// Manager sees all modules they've been granted + user management to create employees
-const managerNav: NavEntry[] = [
-  { to: '/leads',              label: 'Leads',           icon: Users,        perm: 'leads' },
-  { to: '/drfs',               label: 'DRF Management',  icon: FileBadge,    perm: 'leads' },
-  { to: '/prospects',          label: 'Prospects',       icon: Target,       perm: 'leads' },
-  { to: '/quotations',         label: 'Quotations',      icon: FileText,     perm: 'quotations' },
-  { to: '/purchases',          label: 'Purchase Orders', icon: ShoppingCart, perm: 'purchases' },
-  { to: '/accounts',           label: 'Accounts',        icon: Building2,    perm: 'accounts' },
-  { to: '/installations',      label: 'Installations',   icon: Wrench,       perm: 'installations' },
-  { to: '/support',            label: 'Support',         icon: Headphones,   perm: 'support' },
-  { to: '/visits-and-claims',  label: 'Visits & Claims', icon: CalendarCheck,perm: 'visits' },
-  { to: '/invoices',           label: 'Invoices',        icon: Receipt,      perm: 'invoices' },
-  { to: '/payments',           label: 'Payments',        icon: CreditCard,   perm: 'payments' },
-  { to: '/salary',             label: 'Salary & Payroll',icon: DollarSign,   perm: 'salary' },
-  { to: '/attendance',         label: 'Attendance',      icon: CalendarDays, perm: 'attendance' },
-  { to: '/leaves',             label: 'Leave Management',icon: Calendar,     perm: 'leaves' },
-  { to: '/timesheet',          label: 'Timesheet',       icon: Timer,        perm: 'timesheet' },
-  { to: '/contacts',           label: 'Contacts',        icon: BookUser,     perm: 'contacts' },
-  { to: '/users',              label: 'Team Members',    icon: UserCog },
+// Master nav — ALL possible modules for non-admin users.
+// Sidebar shows only items whose perm is in user.permissions (or items with no perm).
+const allModulesNav: NavEntry[] = [
+  { to: '/leads',                label: 'Leads',            icon: Users,        perm: 'leads' },
+  { to: '/drfs',                 label: 'DRF Management',   icon: FileBadge,    perm: 'leads' },
+  { to: '/prospects',            label: 'Prospects',        icon: Target,       perm: 'prospects' },
+  { to: '/quotations',           label: 'Quotations',       icon: FileText,     perm: 'quotations' },
+  { to: '/purchases',            label: 'Purchase Orders',  icon: ShoppingCart, perm: 'purchases' },
+  { to: '/accounts',             label: 'Accounts',         icon: Building2,    perm: 'accounts' },
+  { to: '/installations',        label: 'Installations',    icon: Wrench,       perm: 'installations' },
+  { to: '/support',              label: 'Support',          icon: Headphones,   perm: 'support' },
+  { to: '/training',             label: 'Training',         icon: GraduationCap,perm: 'training' },
+  { to: '/visits-and-claims',    label: 'Visits & Claims',  icon: CalendarCheck,perm: 'visits' },
+  { to: '/invoices',             label: 'Invoices',         icon: Receipt,      perm: 'invoices' },
+  { to: '/payments',             label: 'Payments',         icon: CreditCard,   perm: 'payments' },
+  { to: '/salary',               label: 'Salary & Payroll', icon: DollarSign,   perm: 'salary' },
+  { to: '/attendance',           label: 'Attendance',       icon: CalendarDays, perm: 'attendance' },
+  { to: '/leaves',               label: 'Leave Management', icon: Calendar,     perm: 'leaves' },
+  { to: '/timesheet',            label: 'Timesheet',        icon: Timer,        perm: 'timesheet' },
+  { to: '/contacts',             label: 'Contacts',         icon: BookUser,     perm: 'contacts' },
+  { to: '/engineer-performance', label: 'My Performance',   icon: TrendingUp },
+  { to: '/users',                label: 'Users & Access',   icon: UserCog },
 ];
 
 const adminSections = [
@@ -188,15 +145,10 @@ export default function Sidebar() {
   const role = user?.role as Role;
   const logoUrl = useLogoStore((s) => s.logoUrl);
   const companyName = useLogoStore((s) => s.companyName);
-  // logoUrl from store is already a full URL from backend; use resolveLogoUrl only as fallback for null
-  const resolvedLogo = logoUrl || DEFAULT_LOGO;
-
-  // permissions: if empty array it means "no permissions set yet" → show all for that role
-  // if non-empty array, only show items whose perm is included (or item has no perm)
   const permissions: string[] = (user as any)?.permissions ?? [];
+  const canCreateUsers: boolean = (user as any)?.canCreateUsers ?? false;
   const hasPermission = (perm?: string) => {
-    if (!perm) return true;                   // no restriction on this item
-    if (permissions.length === 0) return true; // no permissions stored → show all
+    if (!perm) return true;
     return permissions.includes(perm);
   };
 
@@ -206,22 +158,24 @@ export default function Sidebar() {
     navigate('/login');
   };
 
-  const nonAdminItems: NavEntry[] =
-    role === 'manager'        ? managerNav :
-    role === 'sales'          ? salesNav :
-    role === 'engineer'       ? engineerNav :
-    role === 'hr'             ? hrNav :
-    role === 'finance'        ? financeNav :
-    role === 'platform_admin' ? [] : [];
-
-  const filteredNonAdmin = nonAdminItems.filter(item => hasPermission(item.perm));
+  // Filter master nav by permissions; hide Users & Access unless canCreateUsers
+  const filteredNonAdmin = allModulesNav.filter(item => {
+    if (item.to === '/users') return canCreateUsers;
+    return hasPermission(item.perm);
+  });
 
   return (
     <aside className="w-60 min-h-screen bg-white border-r border-gray-100 flex flex-col">
       {/* Logo */}
       <div className="py-4 px-4 border-b border-gray-100">
         <div className="flex flex-col items-center text-center gap-2">
-          <img src={resolvedLogo} alt="ZIEOS" className="h-10 w-auto object-contain" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_LOGO; }} />
+          {logoUrl ? (
+            <img src={logoUrl} alt="Logo" className="h-10 w-auto object-contain" />
+          ) : (
+            <div className="h-10 flex items-center justify-center px-2 border border-dashed border-violet-300 rounded-lg bg-violet-50 cursor-pointer" onClick={() => window.location.href = '/zieos/settings'}>
+              <span className="text-[10px] text-violet-500 font-medium leading-tight">Add your logo here</span>
+            </div>
+          )}
           <div>
             <p className="font-semibold text-gray-900 text-xs leading-tight">{companyName || 'ZIEOS'}</p>
             <p className="text-[10px] text-gray-400 mt-0.5">CRM & Operations</p>

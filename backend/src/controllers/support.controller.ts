@@ -200,6 +200,8 @@ export const resolveTicket = async (req: AuthRequest, res: Response): Promise<vo
     ticket.status = 'Resolved';
     ticket.resolvedAt = new Date();
     ticket.resolvedBy = req.body.resolvedBy?.trim() || req.user?.name || '';
+    // store the query type (free-text) if provided
+    if (req.body.queryType !== undefined) ticket.queryType = req.body.queryType?.trim() || '';
     ticket.lastResponseAt = new Date();
     // Generate a unique token for the public feedback form link
     ticket.feedbackToken = crypto.randomBytes(32).toString('hex');

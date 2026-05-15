@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
-import { Upload, Trash2, Image } from 'lucide-react';
-import { settingsApi, DEFAULT_LOGO } from '@/api/settings';
+import { Upload, Trash2 } from 'lucide-react';
+import { settingsApi } from '@/api/settings';
 import { useLogoStore } from '@/store/logoStore';
 
 export default function SettingsPage() {
@@ -73,53 +73,24 @@ export default function SettingsPage() {
         <h2 className="text-base font-semibold text-gray-800 mb-1">Company Logo</h2>
         <p className="text-sm text-gray-500 mb-5">This logo appears in the sidebar and on generated documents (PDFs, emails).</p>
 
-        {/* Current logo */}
-        <div className="flex items-center gap-5 mb-6">
-          <div className="w-24 h-24 rounded-2xl border-2 border-dashed border-gray-200 flex items-center justify-center bg-gray-50 overflow-hidden flex-shrink-0">
-            {logoUrl ? (
-              <img
-                src={logoUrl}
-                alt="Logo"
-                className="w-full h-full object-contain p-2"
-                onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_LOGO; }}
-              />
-            ) : preview ? (
-              <img src={preview} alt="Preview" className="w-full h-full object-contain p-2" />
-            ) : (
-              <div className="flex flex-col items-center gap-1">
-                <Image size={28} className="text-gray-300" />
-                <span className="text-xs text-gray-400">No logo</span>
-              </div>
-            )}
-          </div>
-          <div className="flex-1">
-            <p className="text-sm text-gray-600 mb-3">
-              {logoUrl ? 'Logo is currently set.' : 'No logo uploaded yet. Upload a PNG, JPG, SVG, or WebP image.'}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {logoUrl && (
-                <button
-                  onClick={handleRemove}
-                  disabled={removing}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-red-50 text-red-600 hover:bg-red-100 transition-colors disabled:opacity-50"
-                >
-                  <Trash2 size={14} /> {removing ? 'Removing…' : 'Remove Logo'}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Upload area */}
+        {/* Current logo / placeholder */}
         <div
-          className="border-2 border-dashed border-violet-200 rounded-xl p-6 text-center hover:border-violet-400 transition-colors cursor-pointer bg-violet-50/40"
+          className="border-2 border-dashed border-violet-200 rounded-xl p-6 text-center hover:border-violet-400 transition-colors cursor-pointer bg-violet-50/40 mb-4"
           onClick={() => fileRef.current?.click()}
         >
-          <Upload size={24} className="mx-auto text-violet-400 mb-2" />
-          <p className="text-sm font-medium text-violet-700">Click to choose a logo image</p>
-          <p className="text-xs text-gray-400 mt-1">PNG, JPG, SVG, WebP — max 10 MB</p>
-          {preview && (
-            <p className="text-xs text-emerald-600 mt-2 font-medium">Image selected — click Upload to save</p>
+          {logoUrl ? (
+            <img src={logoUrl} alt="Logo" className="h-20 w-auto object-contain mx-auto" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          ) : preview ? (
+            <img src={preview} alt="Preview" className="h-20 w-auto object-contain mx-auto" />
+          ) : (
+            <div className="flex flex-col items-center gap-2">
+              <Upload size={28} className="text-violet-400" />
+              <p className="text-sm font-semibold text-violet-700">Add your logo here</p>
+              <p className="text-xs text-gray-400">Click to upload PNG, JPG, SVG, or WebP — max 10 MB</p>
+            </div>
+          )}
+          {(logoUrl || preview) && (
+            <p className="text-xs text-violet-500 mt-3">{preview ? 'Image selected — click Upload to save' : 'Click to replace logo'}</p>
           )}
         </div>
 
@@ -131,21 +102,26 @@ export default function SettingsPage() {
           onChange={handleFileChange}
         />
 
-        {preview && (
-          <div className="flex items-center gap-3 mt-4">
-            <img src={preview} alt="Preview" className="h-16 w-16 object-contain rounded-xl border border-gray-200 bg-gray-50 p-1" />
-            <div className="flex-1">
-              <p className="text-sm text-gray-600 mb-2">Preview — ready to upload</p>
-              <button
-                onClick={handleUpload}
-                disabled={uploading}
-                className="btn-primary flex items-center gap-2"
-              >
-                <Upload size={14} /> {uploading ? 'Uploading…' : 'Upload Logo'}
-              </button>
-            </div>
-          </div>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {preview && (
+            <button
+              onClick={handleUpload}
+              disabled={uploading}
+              className="btn-primary flex items-center gap-2"
+            >
+              <Upload size={14} /> {uploading ? 'Uploading…' : 'Upload Logo'}
+            </button>
+          )}
+          {logoUrl && (
+            <button
+              onClick={handleRemove}
+              disabled={removing}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-red-50 text-red-600 hover:bg-red-100 transition-colors disabled:opacity-50"
+            >
+              <Trash2 size={14} /> {removing ? 'Removing…' : 'Remove Logo'}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

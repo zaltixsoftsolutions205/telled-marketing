@@ -238,22 +238,23 @@ export default function DRFPage() {
         quotationSent: d.quotationSent || leadIdsWithQuotation.has(d.leadId?._id || d.leadId),
         poReceived: leadIdsWithPO.has(d.leadId?._id || d.leadId),
       }));
-      setDRFs(drfsWithFlag);
-      setTotal(drfRes.pagination?.total ?? 0);
-
-      // Auto-resend rejected DRFs whose 30-day cooldown has passed (non-admin only)
-      if (!isAdmin) {
-        const eligible = drfsWithFlag.filter((d: any) => {
-          if (d.status !== 'Rejected' || !d.rejectedDate) return false;
-          const daysSince = Math.floor((Date.now() - new Date(d.rejectedDate).getTime()) / (1000 * 60 * 60 * 24));
-          return daysSince >= 30;
-        });
-        for (const drf of eligible) {
-          drfApi.resend(drf._id)
-            .then(() => notify('DRF Auto-Resent', `DRF for "${drf.leadId?.companyName || 'lead'}" auto-resent after 30-day cooldown.`, 'drf', '/drfs'))
-            .catch(() => {});
+      // Hide rejected DRFs that have passed 30 days with no action (auto-archive)
+      const filtered = drfsWithFlag.filter((d: any) => {
+        if (d.status !== 'Rejected' || !d.rejectedDate) return true;
+        const daysSince = Math.floor((Date.now() - new Date(d.rejectedDate).getTime()) / (1000 * 60 * 60 * 24));
+        return daysSince < 30;
+      });
+      // Sort rejected DRFs by days remaining ascending (fewest days = most urgent = top)
+      const sorted = [...filtered].sort((a: any, b: any) => {
+        if (a.status === 'Rejected' && b.status === 'Rejected') {
+          return getDaysUntilResend(a) - getDaysUntilResend(b);
         }
-      }
+        if (a.status === 'Rejected') return -1;
+        if (b.status === 'Rejected') return 1;
+        return 0;
+      });
+      setDRFs(sorted);
+      setTotal(drfRes.pagination?.total ?? 0);
     } catch (err) {
       console.error('DRFPage load:', err);
       setAnalytics({});
@@ -743,14 +744,20 @@ export default function DRFPage() {
                             const daysLeft = getDaysUntilResend(drf);
                             return (
                               <>
-                                <button
-                                  onClick={() => { setResendTarget(drf); setResendError(''); }}
-                                  title={daysLeft > 0 ? `Auto-resend in ${daysLeft}d — or click to resend now` : 'Resend DRF email to OEM'}
-                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 cursor-pointer rounded-md transition-colors"
-                                >
-                                  <RefreshCw size={12} />
-                                  {daysLeft > 0 ? `Resend (${daysLeft}d left)` : 'Resend'}
-                                </button>
+                                <div className="flex flex-col items-start gap-0.5">
+                                  <button
+                                    onClick={() => { setResendTarget(drf); setResendError(''); }}
+                                    title="Click to resend DRF email to OEM"
+                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 cursor-pointer rounded-md transition-colors"
+                                  >
+                                    <RefreshCw size={12} /> Resend
+                                  </button>
+                                  {daysLeft > 0 && (
+                                    <span className="text-[10px] text-red-500 font-medium px-1">
+                                      {daysLeft}d left — archived if no action
+                                    </span>
+                                  )}
+                                </div>
                                 {isAdmin && (
                                   <button
                                     onClick={() => { setQuickAction({ drf, type: 'reset' }); setQuickReason(''); setQuickError(''); }}
@@ -864,12 +871,20 @@ export default function DRFPage() {
                     <CheckCircle2 size={11} /> PO Received
                   </span>
                 )}
-                {drf.status === 'Rejected' && (
-                  <button onClick={() => { setResendTarget(drf); setResendError(''); }}
-                    className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-md hover:bg-blue-100">
-                    <RefreshCw size={12} /> Resend
-                  </button>
-                )}
+                {drf.status === 'Rejected' && (() => {
+                  const daysLeft = getDaysUntilResend(drf);
+                  return (
+                    <div className="flex flex-col items-start gap-0.5">
+                      <button onClick={() => { setResendTarget(drf); setResendError(''); }}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-md hover:bg-blue-100">
+                        <RefreshCw size={12} /> Resend
+                      </button>
+                      {daysLeft > 0 && (
+                        <span className="text-[10px] text-red-500 font-medium px-1">{daysLeft}d left</span>
+                      )}
+                    </div>
+                  );
+                })()}
                 {isAdmin && drf.status === 'Pending' && (
                   <>
                     <button onClick={() => { setQuickAction({ drf, type: 'approve' }); setQuickReason(''); setQuickError(''); }}
@@ -914,18 +929,43 @@ export default function DRFPage() {
         size="sm"
       >
         <div className="space-y-4">
+          {/* DRF info */}
+          <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl">
+            <p className="text-xs text-gray-500 mb-0.5">DRF</p>
+            <p className="text-sm font-semibold text-gray-800">{resendTarget?.drfNumber}</p>
+            <p className="text-xs text-gray-500">{resendTarget?.leadId?.companyName}</p>
+          </div>
+
+          {/* Days remaining warning */}
+          {resendTarget && (() => {
+            const daysLeft = getDaysUntilResend(resendTarget);
+            return daysLeft > 0 ? (
+              <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5">
+                <AlertTriangle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-red-700">
+                  <strong>{daysLeft} day{daysLeft !== 1 ? 's' : ''} remaining</strong> — this record will be automatically archived after 30 days with no action.
+                </p>
+              </div>
+            ) : null;
+          })()}
+
           <p className="text-sm text-gray-600">
             The OEM approval request email will be resent for{' '}
-            <strong>{resendTarget?.leadId?.companyName}</strong>.
+            <strong>{resendTarget?.leadId?.companyName}</strong>. The DRF status will reset to <strong>Pending</strong>.
           </p>
-          <p className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-lg p-3">
-            The DRF status will reset to <strong>Pending</strong> while awaiting the new response.
-          </p>
+
           {resendError && (
             <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">{resendError}</p>
           )}
-          <div className="flex gap-3 justify-end">
-            <button onClick={() => { setResendTarget(null); setResendError(''); }} className="btn-secondary">Cancel</button>
+
+          <div className="flex gap-3 justify-end pt-1 border-t border-gray-100">
+            <button
+              onClick={() => { setResendTarget(null); setResendError(''); }}
+              className="btn-secondary"
+              title="Skip — do nothing for now"
+            >
+              Skip
+            </button>
             <button onClick={handleResend} disabled={resending} className="btn-primary flex items-center gap-2">
               <RefreshCw size={14} className={resending ? 'animate-spin' : ''} />
               {resending ? 'Sending…' : 'Resend Email'}

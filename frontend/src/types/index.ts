@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'manager' | 'sales' | 'engineer' | 'hr' | 'finance' | 'platform_admin';
+export type Role = 'admin' | 'manager' | 'sales' | 'engineer' | 'hr' | 'finance' | 'platform_admin' | string;
 export type LeadStatus = 'New' | 'Contacted' | 'Qualified' | 'Not Qualified';
 export type QuotationStatus = 'Draft' | 'Sent' | 'Accepted' | 'Rejected' | 'Final';
 
@@ -51,8 +51,11 @@ export interface User {
   isActive: boolean;
   organizationId: string;
   createdAt: string;
-  // permissions
+  // access control
   permissions?: string[];
+  canCreateUsers?: boolean;
+  assignablePermissions?: string[];
+  createdBy?: string;
   // personal details
   bloodGroup?: string;
   dateOfBirth?: string;
@@ -139,14 +142,17 @@ export interface DRF {
 
 export interface Account {
   _id: string;
+  accountNumber?: string;  // Add this new field
   leadId: Lead;
   accountName: string;
   assignedEngineer?: User;
   assignedSales?: User;
   status: 'Active' | 'Inactive';
   salesStatus?: SalesStatus;
+  asc?: string;
+  licenseProductDetails?: string;
   licenseVersion?: string;
-  licenseDate?: string;
+  licenseStartDate?: string;
   licenseExpiryDate?: string;
   notes?: string;
   createdAt: string;

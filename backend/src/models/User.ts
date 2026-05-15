@@ -5,13 +5,16 @@ export interface IUser extends Document {
   name: string;
   email: string;
   password: string;
-  role: 'admin' | 'manager' | 'sales' | 'engineer' | 'hr' | 'finance' | 'platform_admin';
+  role: string;  // free-form: admin | manager | sales | engineer | hr | finance | custom...
   department?: string;
   phone?: string;
   baseSalary: number;
   isActive: boolean;
   mustSetPassword: boolean;
-  permissions?: string[];     // per-user module access list (set by HR/admin at creation)
+  permissions?: string[];           // module access granted to this user
+  canCreateUsers?: boolean;         // whether this user can create other users
+  assignablePermissions?: string[]; // ceiling of permissions this user can grant to sub-users
+  createdBy?: mongoose.Types.ObjectId; // who created this user
   organizationId: mongoose.Types.ObjectId;
   refreshToken?: string;
   // Per-user outbound SMTP (used when sending DRFs / customer emails)
@@ -23,6 +26,8 @@ export interface IUser extends Document {
   useGraphApi?: boolean;  // true for M365 custom domain users where SMTP AUTH is disabled
   msRefreshToken?: string; // encrypted OAuth2 refresh token for personal Outlook/Hotmail users
   trustedDevices?: string[];
+  designation?: string;
+  bloodGroup?: string;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -33,8 +38,11 @@ const UserSchema = new Schema<IUser>(
     name:            { type: String, required: true, trim: true },
     email:           { type: String, required: true, unique: true, lowercase: true, trim: true },
     password:        { type: String, required: true, minlength: 6 },
-    role:            { type: String, enum: ['admin', 'manager', 'sales', 'engineer', 'hr', 'finance', 'platform_admin'], required: true },
-    permissions:     { type: [String], default: [] },
+    role:                   { type: String, required: true },
+    permissions:            { type: [String], default: [] },
+    canCreateUsers:         { type: Boolean, default: false },
+    assignablePermissions:  { type: [String], default: [] },
+    createdBy:              { type: Schema.Types.ObjectId, ref: 'User' },
     department:      { type: String, trim: true },
     phone:           { type: String, trim: true },
     baseSalary:      { type: Number, default: 0, min: 0 },
@@ -50,6 +58,8 @@ const UserSchema = new Schema<IUser>(
     useGraphApi:      { type: Boolean, default: false },
     msRefreshToken:   { type: String },
     trustedDevices:   { type: [String], default: [] },
+    designation:      { type: String, trim: true },
+    bloodGroup:       { type: String, trim: true },
   },
   { timestamps: true }
 );

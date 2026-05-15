@@ -8,30 +8,38 @@ import { Building2, Users, TrendingUp, CheckCircle2, FileText } from 'lucide-rea
 
 export const PROSPECT_DEAL_STATUSES = [
   'DRF Approved',
-  'Meeting Scheduled',
-  'Technical Demo Done',
-  'Proposal Submitted',
-  'Negotiation in Progress',
-  'PO Expected',
-  'PO Received',
-  'Deal Closed - Won',
-  'Deal Closed - Lost',
-  'On Hold',
+  'Sales meeting follow-up',
+  'Sales meeting done requested technical demo',
+  'Under technical Demo',
+  'Technical demo done',
+  'Under Proposal submission Process',
+  'Under PO-Followup',
+  'Under payment follow-up',
+  'Closed, and now a Customer',
+  'Rejected, at Sales discussion stage',
+  'Rejected, at Tech Demo Stage',
+  'Rejected, at PO follow-up stage',
+  'Rejected, at Payment follow-up stage',
+  'Rejected, at license generation stage',
 ] as const;
 
 export type ProspectDealStatus = typeof PROSPECT_DEAL_STATUSES[number];
 
 const DEAL_STATUS_STYLE: Record<string, string> = {
-  'DRF Approved':             'bg-emerald-100 text-emerald-700 border-emerald-200',
-  'Meeting Scheduled':        'bg-blue-100 text-blue-700 border-blue-200',
-  'Technical Demo Done':      'bg-violet-100 text-violet-700 border-violet-200',
-  'Proposal Submitted':       'bg-indigo-100 text-indigo-700 border-indigo-200',
-  'Negotiation in Progress':  'bg-amber-100 text-amber-700 border-amber-200',
-  'PO Expected':              'bg-orange-100 text-orange-700 border-orange-200',
-  'PO Received':              'bg-teal-100 text-teal-700 border-teal-200',
-  'Deal Closed - Won':        'bg-green-100 text-green-700 border-green-200',
-  'Deal Closed - Lost':       'bg-red-100 text-red-700 border-red-200',
-  'On Hold':                  'bg-gray-100 text-gray-600 border-gray-200',
+  'DRF Approved':                        'bg-gray-100 text-gray-700 border-gray-200',
+  'Sales meeting follow-up':             'bg-blue-100 text-blue-700 border-blue-200',
+  'Sales meeting done requested technical demo': 'bg-sky-100 text-sky-700 border-sky-200',
+  'Technical demo done':                 'bg-cyan-100 text-cyan-700 border-cyan-200',
+  'Under technical Demo':                'bg-violet-100 text-violet-700 border-violet-200',
+  'Under Proposal submission Process':   'bg-indigo-100 text-indigo-700 border-indigo-200',
+  'Under PO-Followup':                   'bg-orange-100 text-orange-700 border-orange-200',
+  'Under payment follow-up':             'bg-amber-100 text-amber-700 border-amber-200',
+  'Closed, and now a Customer':          'bg-emerald-100 text-emerald-700 border-emerald-200',
+  'Rejected, at Sales discussion stage': 'bg-red-100 text-red-700 border-red-200',
+  'Rejected, at Tech Demo Stage':        'bg-red-100 text-red-700 border-red-200',
+  'Rejected, at PO follow-up stage':     'bg-red-100 text-red-700 border-red-200',
+  'Rejected, at Payment follow-up stage':'bg-red-100 text-red-700 border-red-200',
+  'Rejected, at license generation stage':'bg-red-100 text-red-700 border-red-200',
 };
 
 function StatCard({ title, value, icon: Icon, color, bg }: {

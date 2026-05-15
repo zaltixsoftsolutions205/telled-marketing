@@ -62,7 +62,9 @@ function isImapSocketError(e: any): boolean {
   const msg = (e?.message || '').toLowerCase();
   return msg.includes('socket') || msg.includes('econnreset') || msg.includes('closed')
     || msg.includes('etimedout') || msg.includes('econnrefused') || msg.includes('imap')
-    || msg.includes('greeting') || msg.includes('tls') || msg.includes('connect');
+    || msg.includes('greeting') || msg.includes('tls') || msg.includes('connect')
+    || msg.includes('command failed') || msg.includes('authentication') || msg.includes('login failed')
+    || msg.includes('invalid credentials') || msg.includes('auth');
 }
 
 // Providers that use IMAP differently or block automated access
@@ -123,11 +125,7 @@ async function syncSupportEmailsJob() {
         }
         synced++;
       } catch (e: any) {
-        if (isImapSocketError(e)) {
-          logger.warn(`Support IMAP connection issue for ${u.email} (server closed idle connection)`);
-        } else {
-          logger.error(`Support sync failed for ${u.email}:`, e);
-        }
+        logger.warn(`Support IMAP sync skipped for ${u.email}: ${e?.message || e}`);
       }
     }
 

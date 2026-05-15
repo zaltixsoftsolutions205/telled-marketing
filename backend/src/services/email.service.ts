@@ -5,7 +5,7 @@ import nodemailer from 'nodemailer';
 import axios from 'axios';
 
 const appUrl = () => (process.env.APP_URL || (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim()).replace(/\/$/, '');
-const loginUrl = () => `${appUrl()}/zieos/login`;
+const loginUrl = () => 'https://zaltixsoftsolutions.com/zieos/login';
 
 // ── Microsoft Graph API sender (for Outlook/M365 users) ──────────────────────
 const GRAPH_CLIENT_ID     = process.env.GRAPH_CLIENT_ID     || '';
@@ -233,6 +233,54 @@ td{padding:8px;border:1px solid #eee}
 <div class="b">${content}</div>
 <div class="f">© ${new Date().getFullYear()} ZIEOS</div>
 </div></body></html>`;
+
+const escapeHtml = (value: string): string =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+export const textToHtmlEmail = (
+  text: string,
+  title: string,
+  meta?: {
+    orgName?: string;
+    customerName?: string;
+    engineerName?: string;
+    engineerEmail?: string;
+    engineerPhone?: string;
+    loginUrl?: string;
+  },
+): string => {
+  const safeTitle = escapeHtml(title);
+  const safeOrgName = escapeHtml(meta?.orgName || 'ZIEOS');
+  const content = escapeHtml(text)
+    .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" style="color:#4f2d7f;text-decoration:none">$1</a>')
+    .replace(/\r?\n/g, '<br>');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f4f4;padding:24px 0">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.08)">
+        <tr><td height="5" style="background:linear-gradient(90deg,#4f2d7f,#6b46c1);font-size:0;line-height:0">&nbsp;</td></tr>
+        <tr><td style="padding:28px 40px 20px;border-bottom:1px solid #f0f0f0">
+          <p style="margin:0;font-size:22px;font-weight:700;color:#4f2d7f">${safeOrgName}</p>
+          <p style="margin:6px 0 0;font-size:14px;color:#6b7280">${safeTitle}</p>
+        </td></tr>
+        <tr><td style="padding:30px 40px;font-size:14px;color:#374151;line-height:1.8">${content}</td></tr>
+        <tr><td style="background:#f9fafb;padding:16px 40px;border-top:1px solid #f0f0f0;text-align:center">
+          <p style="margin:0;font-size:11px;color:#9ca3af">&copy; ${new Date().getFullYear()} ${safeOrgName}. All rights reserved.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+};
 
 const send = async (
   to: string,

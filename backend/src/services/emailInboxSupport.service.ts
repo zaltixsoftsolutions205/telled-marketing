@@ -352,12 +352,19 @@ export async function syncSupportEmails(creds?: ImapCredentials): Promise<Suppor
     console.log(`   Errors: ${result.errors.length}`);
 
   } catch (err: any) {
-    // Suppress noisy socket errors from Hostinger IMAP dropping idle connections
-    if (err?.message && (err.message.includes('socket') || err.message.includes('ECONNRESET') || err.message.includes('closed'))) {
-      console.warn('⚠️ IMAP socket closed (harmless, connection dropped by server)');
+    const msg: string = err?.message || String(err);
+    const isSocketNoise = msg.includes('socket') || msg.includes('ECONNRESET') || msg.includes('closed') || msg.includes('EPIPE');
+    const isAuthError   = msg.toLowerCase().includes('command failed') || msg.toLowerCase().includes('authentication') || msg.toLowerCase().includes('login failed') || msg.toLowerCase().includes('invalid credentials');
+
+    if (isSocketNoise) {
+      // Harmless — IMAP server closes idle connections between sync intervals
+    } else if (isAuthError) {
+      // Credentials wrong or IMAP not enabled — log once, don't crash
+      logger.warn(`IMAP auth failed for ${imapUser}: ${msg}. Check IMAP credentials or enable IMAP in your email provider settings.`);
+      result.errors.push(`Auth failed: ${msg}`);
     } else {
-      console.error('❌ IMAP connection error:', err?.message || err);
-      result.errors.push(`Connection error: ${err?.message}`);
+      logger.warn(`IMAP sync error for ${imapUser}: ${msg}`);
+      result.errors.push(`Connection error: ${msg}`);
     }
     try { client.close(); } catch (_) {}
   } finally {

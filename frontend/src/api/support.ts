@@ -25,8 +25,8 @@ export const supportApi = {
     const { data } = await api.post(`/support/${id}/notes`, { note });
     return data.data;
   },
-  resolve: async (id: string, note?: string, resolvedBy?: string) => {
-    const { data } = await api.post(`/support/${id}/resolve`, { note, resolvedBy });
+  resolve: async (id: string, note?: string, resolvedBy?: string, queryType?: string) => {
+    const { data } = await api.post(`/support/${id}/resolve`, { note, resolvedBy, queryType });
     return data.data;
   },
   submitFeedback: async (id: string, feedback: string) => {

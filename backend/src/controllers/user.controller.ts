@@ -11,16 +11,29 @@ import Notification from '../models/Notification';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { sendSuccess, sendError, sendPaginated } from '../utils/response';
 import { getPaginationParams, sanitizeQuery } from '../utils/helpers';
-import { sendEmailWithUserSmtp, UserSmtpConfig } from '../services/email.service';
+import { sendEmailWithUserSmtp } from '../services/email.service';
 import sendEmail from '../services/email.service';
 import { detectSmtp, encryptText } from '../utils/crypto';
-import { getUserSmtp, getUserSmtpWithFallback } from '../utils/getUserSmtp';
+import { getUserSmtp } from '../utils/getUserSmtp';
 
 export const getUsers = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { page, limit, skip } = getPaginationParams(req);
     const { role, search, isActive } = req.query;
+    const requesterRole = req.user!.role;
+    const requesterId   = req.user!.id;
+
     const filter: Record<string, unknown> = { organizationId: req.user!.organizationId };
+
+    // Admin sees all users except platform_admin; others see only users they created (and never see admin)
+    if (requesterRole === 'admin') {
+      filter.role = { $ne: 'platform_admin' };
+    } else {
+      // Non-admins: only see users they directly created; never see admin accounts
+      filter.createdBy = requesterId;
+      filter.role = { $nin: ['admin', 'platform_admin'] };
+    }
+
     if (role) filter.role = role;
     if (isActive !== undefined) filter.isActive = isActive === 'true';
     if (search) {
@@ -37,7 +50,7 @@ export const getUsers = async (req: AuthRequest, res: Response): Promise<void> =
 
 export const createUser = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { name, email, role, department, phone, baseSalary } = req.body;
+    const { name, email, role, department, phone, baseSalary, permissions, canCreateUsers, assignablePermissions, designation, bloodGroup } = req.body;
 
     if (!name || !email || !role) {
       sendError(res, 'Name, email, role required', 400);
@@ -45,26 +58,43 @@ export const createUser = async (req: AuthRequest, res: Response): Promise<void>
     }
 
     const requesterRole = req.user!.role;
-    // HR cannot create admin/manager/platform_admin accounts
-    if (requesterRole === 'hr' && (role === 'admin' || role === 'manager' || role === 'platform_admin')) {
-      sendError(res, 'HR cannot create Admin or Manager accounts', 403);
-      return;
+    const requesterId   = req.user!.id;
+
+    // Nobody can create platform_admin or another admin (except platform_admin itself)
+    if (role === 'platform_admin') {
+      sendError(res, 'Cannot create platform_admin accounts', 403); return;
     }
-    // Manager cannot create admin/manager/platform_admin accounts
-    if (requesterRole === 'manager' && (role === 'admin' || role === 'manager' || role === 'platform_admin')) {
-      sendError(res, 'Manager cannot create Admin accounts', 403);
-      return;
+    if (role === 'admin' && requesterRole !== 'platform_admin') {
+      sendError(res, 'Only platform admin can create admin accounts', 403); return;
+    }
+
+    // Non-admin users must have canCreateUsers flag set by admin
+    if (requesterRole !== 'admin' && requesterRole !== 'platform_admin') {
+      const requester = await User.findById(requesterId).select('canCreateUsers assignablePermissions').lean();
+      if (!requester?.canCreateUsers) {
+        sendError(res, 'You do not have permission to create users', 403); return;
+      }
+
+      // Enforce permission ceiling: new user can only get permissions the creator was allowed to assign
+      const ceiling: string[] = (requester as any).assignablePermissions ?? [];
+      const requestedPerms: string[] = Array.isArray(permissions) ? permissions : [];
+      const clamped = requestedPerms.filter((p: string) => ceiling.includes(p));
+
+      // Also clamp assignablePermissions they want to grant further
+      const requestedAssignable: string[] = Array.isArray(assignablePermissions) ? assignablePermissions : [];
+      const clampedAssignable = requestedAssignable.filter((p: string) => ceiling.includes(p));
+
+      req.body.permissions = clamped;
+      req.body.assignablePermissions = clampedAssignable;
     }
 
     const normalizedEmail = email.toLowerCase();
-
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
-      sendError(res, 'User already exists', 409);
-      return;
+      sendError(res, 'User already exists', 409); return;
     }
 
-    // Create user with pending password — user will set their own password on first login
+    // Create user as INACTIVE — admin must explicitly grant permissions to activate
     const user = await new User({
       name,
       email: normalizedEmail,
@@ -73,30 +103,61 @@ export const createUser = async (req: AuthRequest, res: Response): Promise<void>
       department,
       phone,
       baseSalary,
+      designation,
+      bloodGroup,
       organizationId: req.user!.organizationId,
-      isActive: true,
+      isActive: false,
       mustSetPassword: true,
+      permissions: req.body.permissions ?? (permissions ?? []),
+      canCreateUsers: canCreateUsers === true,
+      assignablePermissions: req.body.assignablePermissions ?? (assignablePermissions ?? []),
+      createdBy: requesterId,
     }).save();
 
-    // Fetch org name
+    sendSuccess(res, {
+      _id: user._id,
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      isActive: false,
+    }, 'User created. Grant permissions to activate their account.', 201);
+
+  } catch (e) {
+    console.error(e);
+    sendError(res, 'Failed to create user', 500);
+  }
+};
+
+export const activateUser = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { permissions, canCreateUsers, assignablePermissions } = req.body;
+    const user = await User.findOne({ _id: req.params.id, organizationId: req.user!.organizationId });
+    if (!user) { sendError(res, 'User not found', 404); return; }
+
+    const wasAlreadyActive = user.isActive;
+    user.permissions = Array.isArray(permissions) ? permissions : user.permissions;
+    user.canCreateUsers = canCreateUsers === true;
+    user.assignablePermissions = Array.isArray(assignablePermissions) ? assignablePermissions : user.assignablePermissions ?? [];
+    user.isActive = true;
+    await user.save();
+
+    // If user was already active, just update permissions — no welcome email
+    if (wasAlreadyActive) {
+      sendSuccess(res, { isActive: true, emailSent: null }, 'Access updated successfully');
+      return;
+    }
+
+    // Send welcome email now that the account is active
     const Organization = (await import('../models/Organization')).default;
     const org = await Organization.findById(req.user!.organizationId).select('name').lean();
     const orgName = org?.name || '';
-    const baseUrl = (process.env.APP_URL || (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim()).replace(/\/$/, '');
-    const loginUrl = `${baseUrl}/zieos/login`;
-
-    // Load the logged-in user's SMTP config — welcome email falls back to system SMTP if needed
+    const loginUrl = 'https://zaltixsoftsolutions.com/zieos/login';
     const senderSmtp = await getUserSmtp(req.user!.id);
+    const displayRole = user.role.charAt(0).toUpperCase() + user.role.slice(1);
 
-    const roleLabel: Record<string, string> = {
-      admin: 'Admin', manager: 'Manager', sales: 'Sales', engineer: 'Engineer', hr: 'HR', finance: 'Finance',
-    };
-    const displayRole = roleLabel[role] || role;
-
-    // Welcome email — no generated password, user logs in with their own email password
     const html = `<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"/></head>
+<html><head><meta charset="UTF-8"/></head>
 <body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif">
   <div style="max-width:560px;margin:30px auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.1)">
     <div style="background:linear-gradient(135deg,#4f2d7f,#6b46c1);color:#fff;padding:28px;text-align:center">
@@ -104,76 +165,44 @@ export const createUser = async (req: AuthRequest, res: Response): Promise<void>
       <p style="margin:6px 0 0;opacity:.85;font-size:13px">${orgName}</p>
     </div>
     <div style="padding:28px">
-      <p style="color:#374151;margin-top:0">Hi <strong>${name}</strong>,</p>
-      <p style="color:#374151">You have been added to <strong>${orgName}</strong> as <strong>${displayRole}</strong>.</p>
-
+      <p style="color:#374151;margin-top:0">Hi <strong>${user.name}</strong>,</p>
+      <p style="color:#374151">Your account has been activated. You have been added to <strong>${orgName}</strong> as <strong>${displayRole}</strong>.</p>
       <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:20px;margin:20px 0">
         <table style="width:100%;border-collapse:collapse;font-size:14px">
-          <tr>
-            <td style="padding:8px 0;color:#6b7280;font-weight:600;width:40%">Login URL</td>
-            <td style="padding:8px 0"><a href="${loginUrl}" style="color:#7c3aed">${loginUrl}</a></td>
-          </tr>
-          <tr>
-            <td style="padding:8px 0;color:#6b7280;font-weight:600;border-top:1px solid #ede9fe">Your Email</td>
-            <td style="padding:8px 0;border-top:1px solid #ede9fe"><strong>${normalizedEmail}</strong></td>
-          </tr>
-          <tr>
-            <td style="padding:8px 0;color:#6b7280;font-weight:600;border-top:1px solid #ede9fe">Password</td>
-            <td style="padding:8px 0;border-top:1px solid #ede9fe;color:#374151">Use your own email account password</td>
-          </tr>
-          <tr>
-            <td style="padding:8px 0;color:#6b7280;font-weight:600;border-top:1px solid #ede9fe">Role</td>
-            <td style="padding:8px 0;border-top:1px solid #ede9fe">${displayRole}</td>
-          </tr>
+          <tr><td style="padding:8px 0;color:#6b7280;font-weight:600;width:40%">Login URL</td><td style="padding:8px 0"><a href="${loginUrl}" style="color:#7c3aed">${loginUrl}</a></td></tr>
+          <tr><td style="padding:8px 0;color:#6b7280;font-weight:600;border-top:1px solid #ede9fe">Your Email</td><td style="padding:8px 0;border-top:1px solid #ede9fe"><strong>${user.email}</strong></td></tr>
+          <tr><td style="padding:8px 0;color:#6b7280;font-weight:600;border-top:1px solid #ede9fe">Password</td><td style="padding:8px 0;border-top:1px solid #ede9fe;color:#374151">Use your own email account password</td></tr>
+          <tr><td style="padding:8px 0;color:#6b7280;font-weight:600;border-top:1px solid #ede9fe">Role</td><td style="padding:8px 0;border-top:1px solid #ede9fe">${displayRole}</td></tr>
         </table>
       </div>
-
       <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px;font-size:13px;color:#15803d;margin-bottom:20px">
-        <strong>How to login:</strong> Go to the login page, enter your email address (<strong>${normalizedEmail}</strong>), and use your own email account password (the password you use to access your email inbox).
+        <strong>How to login:</strong> Go to the login page, enter your email address (<strong>${user.email}</strong>), and use your own email account password.
       </div>
-
       <div style="text-align:center;margin-bottom:20px">
         <a href="${loginUrl}" style="display:inline-block;background:#7c3aed;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;font-size:14px">Login Now →</a>
       </div>
     </div>
-    <div style="background:#f8f8f8;padding:14px;text-align:center;font-size:11px;color:#9ca3af">
-      © ${new Date().getFullYear()} ZIEOS
-    </div>
+    <div style="background:#f8f8f8;padding:14px;text-align:center;font-size:11px;color:#9ca3af">© ${new Date().getFullYear()} ZIEOS</div>
   </div>
-</body>
-</html>`;
+</body></html>`;
 
-    const subject = `Welcome to ZIEOS — You've been added to ${orgName}`;
-
-    // Welcome email — send from admin's own email; system SMTP is the final fallback
-    // so new users always receive their welcome regardless of admin email config
+    const subject = `Welcome to ZIEOS — Your account is now active`;
     let emailSent = true;
     try {
       if (senderSmtp) {
-        await sendEmailWithUserSmtp(normalizedEmail, subject, html, senderSmtp);
+        await sendEmailWithUserSmtp(user.email, subject, html, senderSmtp);
       } else {
-        await sendEmail(normalizedEmail, subject, html);
+        await sendEmail(user.email, subject, html);
       }
     } catch {
-      try {
-        await sendEmail(normalizedEmail, subject, html);
-      } catch (finalErr: any) {
-        emailSent = false;
-        console.error('[createUser] Welcome email failed:', finalErr?.message);
-      }
+      try { await sendEmail(user.email, subject, html); } catch { emailSent = false; }
     }
 
-    sendSuccess(res, {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      emailSent,
-    }, emailSent ? 'User created — welcome email sent' : 'User created — welcome email could not be sent', 201);
-
+    sendSuccess(res, { isActive: true, emailSent },
+      emailSent ? 'User activated — welcome email sent' : 'User activated — welcome email could not be sent');
   } catch (e) {
     console.error(e);
-    sendError(res, 'Failed to create user', 500);
+    sendError(res, 'Failed to activate user', 500);
   }
 };
 

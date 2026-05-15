@@ -17,6 +17,16 @@ export interface UserEmailRecord {
   smtpPass?: string;
 }
 
+const looksEncrypted = (value: string): boolean => {
+  const [ivHex, encHex, ...rest] = value.split(':');
+  return (
+    rest.length === 0 &&
+    /^[0-9a-f]{32}$/i.test(ivHex || '') &&
+    /^[0-9a-f]+$/i.test(encHex || '') &&
+    (encHex || '').length % 2 === 0
+  );
+};
+
 /**
  * Auto-detects the correct email provider for a user.
  * Priority:
@@ -29,7 +39,7 @@ export function createEmailProvider(user: UserEmailRecord): EmailProvider {
   // For M365: requires SMTP AUTH enabled by tenant admin (2-click setup in admin.microsoft.com).
   // For Gmail: use app password. For Hostinger/Zoho/Yahoo: use email password.
   if (user.smtpUser && user.smtpPass) {
-    const smtpPass = decryptText(user.smtpPass);
+    const smtpPass = looksEncrypted(user.smtpPass) ? decryptText(user.smtpPass) : user.smtpPass;
     const detected = detectSmtp(user.smtpUser);
     return new SmtpProvider({
       host:   user.smtpHost   || detected.host,

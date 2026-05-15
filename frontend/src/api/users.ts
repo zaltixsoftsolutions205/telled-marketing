@@ -17,6 +17,10 @@ export const usersApi = {
     const { data } = await api.put(`/users/${id}`, body);
     return data.data;
   },
+  activate: async (id: string, body: { permissions: string[]; canCreateUsers: boolean; assignablePermissions: string[] }) => {
+    const { data } = await api.patch(`/users/${id}/activate`, body);
+    return data.data;
+  },
   toggleStatus: async (id: string) => {
     const { data } = await api.patch(`/users/${id}/toggle-status`);
     return data.data;

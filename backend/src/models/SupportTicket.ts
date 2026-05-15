@@ -16,6 +16,7 @@ export interface ISupportTicket extends Document {
   lastResponseAt: Date;
   resolvedAt?: Date;
   resolvedBy?: string;
+  queryType?: string;
   closedAt?: Date;
   closedBy?: mongoose.Types.ObjectId;
   autoClosedAt?: Date;
@@ -51,6 +52,7 @@ const SupportTicketSchema = new Schema<ISupportTicket>(
     lastResponseAt: { type: Date, default: Date.now },
     resolvedAt: { type: Date },
     resolvedBy: { type: String, trim: true },
+    queryType: { type: String, trim: true },
     closedAt: { type: Date },
     closedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     autoClosedAt: { type: Date },

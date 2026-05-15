@@ -24,6 +24,82 @@ const MODE_STYLE: Record<string, string> = {
   Hybrid:  'bg-violet-100 text-violet-700',
 };
 
+function AscInput({ acc }: { acc: Account }) {
+  const [value, setValue] = useState(acc.asc || '');
+  const [savedValue, setSavedValue] = useState(acc.asc || '');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setValue(acc.asc || '');
+    setSavedValue(acc.asc || '');
+  }, [acc._id, acc.asc]);
+
+  useEffect(() => {
+    if (value === savedValue) return;
+
+    const timer = window.setTimeout(async () => {
+      setSaving(true);
+      try {
+        await accountsApi.update(acc._id, { asc: value });
+        setSavedValue(value);
+      } catch (err) {
+        console.error('save ASC:', err);
+      } finally {
+        setSaving(false);
+      }
+    }, 700);
+
+    return () => window.clearTimeout(timer);
+  }, [acc._id, value, savedValue]);
+
+  return (
+    <div className="min-w-[120px]">
+      <input
+        className="input-field h-8 text-xs"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="ASC"
+      />
+      {saving && <p className="text-[10px] text-gray-400 mt-0.5">Saving...</p>}
+    </div>
+  );
+}
+
+function AccountStatusInput({ acc }: { acc: Account }) {
+  const [value, setValue] = useState<'Active' | 'Inactive'>(acc.status === 'Active' ? 'Active' : 'Inactive');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setValue(acc.status === 'Active' ? 'Active' : 'Inactive');
+  }, [acc._id, acc.status]);
+
+  const handleChange = async (newStatus: 'Active' | 'Inactive') => {
+    setValue(newStatus);
+    setSaving(true);
+    try {
+      await accountsApi.update(acc._id, { status: newStatus });
+    } catch (err) {
+      console.error('save account status:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="w-full max-w-[180px] sm:max-w-none">
+      <select
+        className="input-field h-9 text-xs w-full"
+        value={value}
+        onChange={(e) => handleChange(e.target.value as 'Active' | 'Inactive')}
+      >
+        <option value="Active">Active</option>
+        <option value="Inactive">Inactive</option>
+      </select>
+      {saving && <p className="text-[10px] text-gray-400 mt-0.5">Saving...</p>}
+    </div>
+  );
+}
+
 // ─── Expanded panel content (shared between desktop row + mobile card) ────────
 function EngineerSubPanelContent({
   accountId,
@@ -269,6 +345,7 @@ function EngineerExpandRow({ acc, currentUserId, colSpan }: { acc: Account; curr
   return (
     <>
       <tr className="hover:bg-violet-50/20 transition-colors">
+        <td className="table-cell text-gray-500">{acc.accountNumber ? `#${acc.accountNumber}` : '—'}</td>
         <td className="table-cell font-medium text-violet-700">
           <Link to={`/accounts/${acc._id}`} className="hover:underline">{acc.accountName}</Link>
         </td>
@@ -281,8 +358,11 @@ function EngineerExpandRow({ acc, currentUserId, colSpan }: { acc: Account; curr
         <td className="table-cell">
           {(acc.assignedSales as User)?.name || <span className="text-gray-300">—</span>}
         </td>
-        <td className="table-cell"><StatusBadge status={acc.status} /></td>
+        <td className="table-cell"><AccountStatusInput acc={acc} /></td>
         <td className="table-cell text-gray-400">{formatDate(acc.createdAt)}</td>
+        <td className="table-cell">
+          <AscInput acc={acc} />
+        </td>
         <td className="table-cell">
           <div className="flex items-center gap-1">
             <button
@@ -475,12 +555,14 @@ export default function AccountsPage() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
+                  <th className="table-header">Account Number</th>
                   <th className="table-header">Account Name</th>
                   <th className="table-header">Company</th>
                   <th className="table-header">Engineer</th>
                   <th className="table-header">Sales</th>
                   <th className="table-header">Status</th>
                   <th className="table-header">Created</th>
+                  <th className="table-header">ASC</th>
                   <th className="table-header"></th>
                 </tr>
               </thead>
@@ -491,10 +573,11 @@ export default function AccountsPage() {
                       key={acc._id}
                       acc={acc}
                       currentUserId={currentUser?._id || ''}
-                      colSpan={7}
+                      colSpan={9}
                     />
                   ) : (
                     <tr key={acc._id} className="hover:bg-violet-50/20 transition-colors">
+                      <td className="table-cell text-gray-500">{acc.accountNumber ? `#${acc.accountNumber}` : '—'}</td>
                       <td className="table-cell font-medium text-violet-700">
                         <Link to={`/accounts/${acc._id}`} className="hover:underline">{acc.accountName}</Link>
                       </td>
@@ -507,8 +590,11 @@ export default function AccountsPage() {
                       <td className="table-cell">
                         {(acc.assignedSales as User)?.name || <span className="text-gray-300">—</span>}
                       </td>
-                      <td className="table-cell"><StatusBadge status={acc.status} /></td>
+                      <td className="table-cell"><AccountStatusInput acc={acc} /></td>
                       <td className="table-cell text-gray-400">{formatDate(acc.createdAt)}</td>
+                      <td className="table-cell">
+                        <AscInput acc={acc} />
+                      </td>
                       <td className="table-cell">
                         <div className="flex items-center gap-1">
                           <Link to={`/accounts/${acc._id}`} className="p-1 hover:text-violet-600 text-gray-400 inline-block">
@@ -626,6 +712,7 @@ function MobileAccountCard({
       <div className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
+            <p className="text-[11px] text-gray-500 truncate"><span className="font-semibold text-gray-700">Account Number:</span> {acc.accountNumber ? `#${acc.accountNumber}` : '—'}</p>
             <Link to={`/accounts/${acc._id}`} className="font-semibold text-violet-700 hover:underline text-sm block truncate">
               {acc.accountName}
             </Link>
@@ -633,7 +720,7 @@ function MobileAccountCard({
               {(acc.leadId as Lead)?.companyName || acc.accountName}
             </p>
           </div>
-          <StatusBadge status={acc.status} />
+          <AccountStatusInput acc={acc} />
         </div>
         <div className="text-xs text-gray-500 space-y-1">
           {(acc.assignedEngineer as User)?.name && (
@@ -643,6 +730,10 @@ function MobileAccountCard({
             <p><span className="text-gray-400">Sales:</span> {(acc.assignedSales as User).name}</p>
           )}
           <p><span className="text-gray-400">Created:</span> {formatDate(acc.createdAt)}</p>
+          <div>
+            <p className="text-gray-400 mb-1">ASC:</p>
+            <AscInput acc={acc} />
+          </div>
         </div>
         <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
           <Link to={`/accounts/${acc._id}`} className="p-1.5 rounded-md hover:bg-violet-100 hover:text-violet-600 text-gray-400">
