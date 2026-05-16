@@ -76,6 +76,8 @@ export interface ISalary extends Document {
   specialAllowance: number;
   
   // Variable Components
+  visitChargesTotal: number;
+  claimsTotal: number;
   incentives: number;
   overtimePay: number;
   bonuses: number;
@@ -144,6 +146,8 @@ const SalarySchema = new Schema<ISalary>(
     specialAllowance: { type: Number, default: 0 },
     
     // Variable
+    visitChargesTotal: { type: Number, default: 0 },
+    claimsTotal: { type: Number, default: 0 },
     incentives: { type: Number, default: 0 },
     overtimePay: { type: Number, default: 0 },
     bonuses: { type: Number, default: 0 },
@@ -210,6 +214,8 @@ SalarySchema.pre('save', function (this: ISalary, next) {
     this.hra + 
     this.lta + 
     this.specialAllowance + 
+    this.visitChargesTotal +
+    this.claimsTotal +
     this.incentives + 
     this.overtimePay + 
     this.bonuses + 
@@ -237,10 +243,6 @@ SalarySchema.pre('save', function (this: ISalary, next) {
 // Virtual for status (frontend compatibility)
 SalarySchema.virtual('status').get(function (this: ISalary) { 
   return this.isPaid ? 'Paid' : 'Calculated'; 
-});
-
-SalarySchema.virtual('claimsTotal').get(function (this: ISalary) {
-  return (this as any)._claimsTotal || 0;
 });
 
 SalarySchema.set('toJSON', { virtuals: true });
