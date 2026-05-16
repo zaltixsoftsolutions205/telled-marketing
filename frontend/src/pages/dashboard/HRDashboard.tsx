@@ -10,6 +10,16 @@ import {
   Receipt, CalendarCheck, Activity,
 } from 'lucide-react';
 
+const compactNumber = (value: number) => {
+  const n = Number(value) || 0;
+  if (Math.abs(n) >= 10000000) return `${(n / 10000000).toFixed(n % 10000000 ? 1 : 0)}Cr`;
+  if (Math.abs(n) >= 100000) return `${(n / 100000).toFixed(n % 100000 ? 1 : 0)}L`;
+  if (Math.abs(n) >= 1000) return `${(n / 1000).toFixed(n % 1000 ? 1 : 0)}k`;
+  return n.toLocaleString();
+};
+
+const compactCurrency = (value: number) => `₹${compactNumber(value)}`;
+
 function useCountUp(target: number, duration = 1000, started = false) {
   const [value, setValue] = useState(0);
   useEffect(() => {
@@ -38,7 +48,7 @@ function StatCard({
 
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl border border-white/60 p-4 transition-all duration-500 hover:shadow-lg hover:-translate-y-0.5 cursor-default
+      className={`relative overflow-hidden rounded-lg border border-white/60 p-4 transition-all duration-500 hover:shadow-md cursor-default
         ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'}`}
       style={{
         background: 'rgba(255,255,255,0.55)',
@@ -48,7 +58,6 @@ function StatCard({
         transitionDelay: `${delay}ms`,
       }}
     >
-      <div className={`absolute -top-4 -right-4 w-20 h-20 rounded-full opacity-20 blur-2xl ${gradient}`} />
       <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{title}</p>
@@ -57,7 +66,7 @@ function StatCard({
           </p>
           {sub && <p className="text-[11px] text-gray-400 mt-1 leading-snug">{sub}</p>}
         </div>
-        <div className={`w-9 h-9 rounded-xl ${gradient} flex items-center justify-center flex-shrink-0 shadow-sm`}>
+        <div className={`w-9 h-9 rounded-lg ${gradient} flex items-center justify-center flex-shrink-0 shadow-sm`}>
           <Icon size={16} className="text-white" />
         </div>
       </div>
@@ -72,7 +81,7 @@ function GlassCard({ children, className = '', delay = 0 }: { children: React.Re
 
   return (
     <div
-      className={`rounded-2xl border border-white/60 p-4 sm:p-5 transition-all duration-500 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'} ${className}`}
+      className={`rounded-lg border border-white/60 p-4 transition-all duration-500 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'} ${className}`}
       style={{
         background: 'rgba(255,255,255,0.6)',
         backdropFilter: 'blur(12px)',
@@ -86,36 +95,41 @@ function GlassCard({ children, className = '', delay = 0 }: { children: React.Re
   );
 }
 
-function BarChart({ data, color, label, visible }: {
+function BarChart({ data, color, label, visible, currency = false }: {
   data: { label: string; value: number }[];
-  color: string; label: string; visible: boolean;
+  color: string; label: string; visible: boolean; currency?: boolean;
 }) {
   const [animated, setAnimated] = useState(false);
   useEffect(() => { if (visible) { const t = setTimeout(() => setAnimated(true), 300); return () => clearTimeout(t); } }, [visible]);
 
   const max = Math.max(...data.map(d => d.value), 1);
-  const H = 110; const barW = 28; const gap = 14;
+  const H = 72; const barW = 24; const gap = 16;
   const svgW = data.length * (barW + gap) - gap;
+  const formatValue = currency ? compactCurrency : compactNumber;
 
   return (
     <div>
-      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">{label}</p>
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{label}</p>
+        <span className="text-[11px] font-semibold text-gray-400 tabular-nums">Peak {formatValue(max)}</span>
+      </div>
       {max === 0 || data.every(d => d.value === 0) ? (
-        <div className="flex items-center justify-center h-28 text-gray-300 text-xs">No data yet</div>
+        <div className="flex items-center justify-center h-20 text-gray-300 text-xs">No data yet</div>
       ) : (
-        <svg viewBox={`0 0 ${svgW} ${H + 20}`} className="w-full overflow-visible">
+        <svg viewBox={`0 0 ${svgW} ${H + 22}`} className="w-full h-[120px] overflow-visible">
           {data.map((d, i) => {
             const barH = animated ? Math.max(4, (d.value / max) * H) : 4;
             const x = i * (barW + gap);
             return (
               <g key={i}>
+                <rect x={x} y={0} width={barW} height={H} rx={6} fill="#f3f4f6" />
                 <rect
                   x={x} y={H - barH} width={barW} height={barH} rx={6} className={color}
                   style={{ transition: `height 0.7s cubic-bezier(.22,1,.36,1) ${i * 80}ms, y 0.7s cubic-bezier(.22,1,.36,1) ${i * 80}ms` }}
                 />
                 {d.value > 0 && (
-                  <text x={x + barW / 2} y={H - barH - 5} textAnchor="middle" fontSize="9" fill="#6b7280" fontWeight="600">
-                    {d.value > 999 ? `${(d.value / 1000).toFixed(0)}k` : d.value}
+                  <text x={x + barW / 2} y={Math.max(10, H - barH - 5)} textAnchor="middle" fontSize="8" fill="#6b7280" fontWeight="700">
+                    {formatValue(d.value)}
                   </text>
                 )}
                 <text x={x + barW / 2} y={H + 14} textAnchor="middle" fontSize="9" fill="#9ca3af">{d.label}</text>
@@ -136,7 +150,7 @@ function DonutChart({ segments, label, centerText, visible }: {
   useEffect(() => { if (visible) { const t = setTimeout(() => setAnimated(true), 400); return () => clearTimeout(t); } }, [visible]);
 
   const total = segments.reduce((s, d) => s + d.value, 0);
-  const R = 48; const cx = 60; const cy = 60; const stroke = 18;
+  const R = 34; const cx = 44; const cy = 44; const stroke = 12;
   const circumference = 2 * Math.PI * R;
 
   let angle = -Math.PI / 2;
@@ -151,10 +165,10 @@ function DonutChart({ segments, label, centerText, visible }: {
     <div>
       <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">{label}</p>
       {total === 0 ? (
-        <div className="flex items-center justify-center h-28 text-gray-300 text-xs">No data yet</div>
+        <div className="flex items-center justify-center h-20 text-gray-300 text-xs">No data yet</div>
       ) : (
-        <div className="flex items-center gap-4">
-          <svg viewBox="0 0 120 120" className="w-24 h-24 flex-shrink-0">
+        <div className="flex items-center gap-3 min-h-[118px]">
+          <svg viewBox="0 0 88 88" className="w-16 h-16 flex-shrink-0">
             <circle cx={cx} cy={cy} r={R} fill="none" stroke="#f3f4f6" strokeWidth={stroke} />
             {(() => {
               let a = -Math.PI / 2;
@@ -180,8 +194,8 @@ function DonutChart({ segments, label, centerText, visible }: {
                 );
               });
             })()}
-            <text x={cx} y={cy - 5} textAnchor="middle" fontSize="16" fontWeight="800" fill="#111827">{centerText}</text>
-            <text x={cx} y={cy + 10} textAnchor="middle" fontSize="8" fill="#9ca3af">total</text>
+            <text x={cx} y={cy - 4} textAnchor="middle" fontSize="13" fontWeight="800" fill="#111827">{centerText}</text>
+            <text x={cx} y={cy + 9} textAnchor="middle" fontSize="7" fill="#9ca3af">total</text>
           </svg>
           <div className="space-y-1.5 flex-1">
             {segments.map(seg => (
@@ -261,13 +275,13 @@ export default function HRDashboard() {
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">
             {isHR ? 'HR Dashboard' : 'Finance Dashboard'}
           </p>
-          <h1 className="text-lg sm:text-xl font-extrabold text-gray-900">{greeting}, {user?.name?.split(' ')[0]} 👋</h1>
+          <h1 className="text-lg sm:text-xl font-extrabold text-gray-900">{greeting}, {user?.name?.split(' ')[0]}</h1>
           <p className="text-xs text-gray-400 mt-0.5">
             {isHR ? 'People, payroll and attendance overview' : 'Revenue, invoices and payments overview'}
           </p>
         </div>
         <div
-          className="flex items-center gap-1.5 self-start sm:self-auto rounded-xl px-3 py-1.5 border border-violet-200/70"
+          className="flex items-center gap-1.5 self-start sm:self-auto rounded-lg px-3 py-1.5 border border-violet-200/70"
           style={{ background: 'rgba(237,233,254,0.5)', backdropFilter: 'blur(8px)' }}
         >
           <span className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse" />
@@ -278,7 +292,7 @@ export default function HRDashboard() {
 
       {/* Stat Cards — HR */}
       {isHR && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 min-[420px]:grid-cols-2 xl:grid-cols-4 gap-3">
           <StatCard title="Total Employees" rawValue={stats.employees?.total ?? 0}
             sub={`${stats.employees?.active ?? 0} active · ${stats.employees?.inactive ?? 0} inactive`}
             icon={Users} gradient="bg-gradient-to-br from-violet-500 to-violet-700"
@@ -301,7 +315,7 @@ export default function HRDashboard() {
 
       {/* Stat Cards — Finance */}
       {!isHR && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 min-[420px]:grid-cols-2 xl:grid-cols-4 gap-3">
           <StatCard title="Revenue Collected" rawValue={stats.invoices?.totalRevenue ?? 0}
             displayValue={formatCurrency(stats.invoices?.totalRevenue ?? 0)}
             sub={`out of ${stats.invoices?.total ?? 0} invoices`}
@@ -324,16 +338,16 @@ export default function HRDashboard() {
 
       {/* Charts Row — HR only */}
       {isHR && (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
-          <GlassCard className="md:col-span-2" delay={250}>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
+          <GlassCard className="!p-4" delay={250}>
             <BarChart data={payrollTrendData} color="fill-violet-400"
-              label="Payroll Trend — Last 6 Months (₹)" visible={visible} />
+              label="Payroll Trend - Last 6 Months" visible={visible} currency />
           </GlassCard>
-          <GlassCard delay={300}>
+          <GlassCard className="!p-4" delay={300}>
             <DonutChart segments={visitClaimSegments} label="Visit Claims Breakdown"
               centerText={String(stats.visitClaims?.total ?? 0)} visible={visible} />
           </GlassCard>
-          <GlassCard delay={350}>
+          <GlassCard className="!p-4" delay={350}>
             <DonutChart segments={roleSegments} label="Team by Role"
               centerText={String(stats.employees?.total ?? 0)} visible={visible} />
           </GlassCard>
@@ -341,9 +355,9 @@ export default function HRDashboard() {
       )}
 
       {isHR && (
-        <GlassCard delay={400}>
+        <GlassCard className="!p-4" delay={400}>
           <BarChart data={visitTrendData} color="fill-blue-400"
-            label="Visit Claims Submitted — Last 6 Months" visible={visible} />
+            label="Visit Claims Submitted - Last 6 Months" visible={visible} />
         </GlassCard>
       )}
 
@@ -367,7 +381,7 @@ export default function HRDashboard() {
               <p className="text-xs text-gray-400">No pending visits</p>
             </div>
           ) : (
-            <div className="divide-y divide-white/60">
+            <div className="divide-y divide-white/60 max-h-[300px] overflow-y-auto">
               {stats.pendingVisitsList.map((visit: any) => (
                 <div key={visit._id} className="px-4 py-3 hover:bg-violet-50/20 transition-colors">
                   <div className="flex items-start justify-between gap-2">
