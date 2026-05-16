@@ -306,16 +306,27 @@ export const updateEmailConfig = async (req: AuthRequest, res: Response): Promis
 export const updateMyProfile = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const targetId = req.params.id;
-    // Non-admins can only update themselves
-    if (req.user!.role !== 'admin' && targetId !== req.user!.id) {
+    const isSelf = targetId === req.user!.id;
+    const isAdmin = req.user!.role === 'admin';
+    const canManageUsers = isAdmin || req.user!.canCreateUsers === true;
+
+    if (!isSelf && !canManageUsers) {
       sendError(res, 'Forbidden', 403); return;
     }
-    const allowed = ['name', 'phone', 'department'];
+
+    const allowed = isSelf
+      ? ['name', 'phone', 'department']
+      : ['name', 'phone', 'department', 'designation', 'role', 'email', 'permissions', 'canCreateUsers', 'assignablePermissions', 'isActive'];
+
     const update: Record<string, unknown> = {};
     for (const key of allowed) {
       if (key in req.body) update[key] = req.body[key];
     }
-    const user = await User.findByIdAndUpdate(targetId, update, { new: true, runValidators: true })
+
+    const filter: Record<string, unknown> = { _id: targetId, organizationId: req.user!.organizationId };
+    if (!isAdmin && !isSelf) filter.createdBy = req.user!.id;
+
+    const user = await User.findOneAndUpdate(filter, update, { new: true, runValidators: true })
       .select('-password -refreshToken -smtpPass');
     if (!user) { sendError(res, 'User not found', 404); return; }
     sendSuccess(res, user, 'Profile updated');

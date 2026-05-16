@@ -1,6 +1,6 @@
-import { useRef, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
-  Camera, Lock, LogOut, Save, Eye, EyeOff,
+  LogOut, Save, Eye, EyeOff,
   User, Heart, FileText, Shield, Phone, CreditCard,
   Download, Mail, CheckCircle2,
 } from 'lucide-react';
@@ -77,10 +77,9 @@ export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState<Tab>('profile');
   const [documents, setDocuments] = useState<any[]>([]);
 
-  const [avatar, setAvatar] = useState<string | null>(
+  const [avatar] = useState<string | null>(
     user ? localStorage.getItem(AVATAR_KEY(user._id)) : null
   );
-  const fileRef = useRef<HTMLInputElement>(null);
 
   // Basic editable fields
   const [name, setName] = useState(user?.name || '');
@@ -88,15 +87,6 @@ export default function ProfilePage() {
   const [department, setDepartment] = useState(user?.department || '');
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
-
-  // Password
-  const [oldPwd, setOldPwd] = useState('');
-  const [newPwd, setNewPwd] = useState('');
-  const [showOld, setShowOld] = useState(false);
-  const [showNew, setShowNew] = useState(false);
-  const [pwdMsg, setPwdMsg] = useState('');
-  const [pwdErr, setPwdErr] = useState('');
-  const [pwdSaving, setPwdSaving] = useState(false);
 
   // Email config state
   const [emailAppPwd, setEmailAppPwd]     = useState('');
@@ -148,18 +138,6 @@ export default function ProfilePage() {
     }
   }, [user?._id]);
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !user) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = reader.result as string;
-      localStorage.setItem(AVATAR_KEY(user._id), base64);
-      setAvatar(base64);
-    };
-    reader.readAsDataURL(file);
-  };
-
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
@@ -171,23 +149,6 @@ export default function ProfilePage() {
       setTimeout(() => setSaveMsg(''), 3000);
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handlePasswordChange = async () => {
-    if (!user) return;
-    if (!oldPwd || !newPwd) { setPwdErr('Fill both fields'); return; }
-    if (newPwd.length < 6) { setPwdErr('New password must be at least 6 characters'); return; }
-    if (!mockUsers.verifyPassword(user.email, oldPwd)) { setPwdErr('Current password is incorrect'); return; }
-    setPwdErr('');
-    setPwdSaving(true);
-    try {
-      await mockUsers.resetPassword(user._id, newPwd);
-      setPwdMsg('Password updated! Use your new password next time you log in.');
-      setOldPwd(''); setNewPwd('');
-      setTimeout(() => setPwdMsg(''), 4000);
-    } finally {
-      setPwdSaving(false);
     }
   };
 
@@ -227,12 +188,6 @@ export default function ProfilePage() {
               <span className="text-white font-bold text-3xl">{initials}</span>
             </div>
           )}
-          <button onClick={() => fileRef.current?.click()}
-            className="absolute -bottom-2 -right-2 w-8 h-8 bg-violet-600 hover:bg-violet-700 rounded-full flex items-center justify-center shadow text-white transition-colors"
-            title="Change photo">
-            <Camera size={14} />
-          </button>
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
         </div>
         <div className="text-center">
           <p className="font-bold text-gray-900 text-lg">{user?.name}</p>
@@ -425,36 +380,6 @@ export default function ProfilePage() {
           )}
         </div>
       )}
-
-      {/* Change Password */}
-      <div className="card space-y-4">
-        <h3 className="font-semibold text-gray-800 text-sm flex items-center gap-2"><Lock size={14} /> Change Password</h3>
-        <div>
-          <label className={labelCls}>Current Password</label>
-          <div className="relative">
-            <input className={inputCls + ' pr-9'} type={showOld ? 'text' : 'password'} value={oldPwd}
-              onChange={e => setOldPwd(e.target.value)} placeholder="Current password" />
-            <button type="button" onClick={() => setShowOld(v => !v)} className="absolute right-2.5 top-2 text-gray-400 hover:text-gray-600">
-              {showOld ? <EyeOff size={15} /> : <Eye size={15} />}
-            </button>
-          </div>
-        </div>
-        <div>
-          <label className={labelCls}>New Password</label>
-          <div className="relative">
-            <input className={inputCls + ' pr-9'} type={showNew ? 'text' : 'password'} value={newPwd}
-              onChange={e => setNewPwd(e.target.value)} placeholder="New password" />
-            <button type="button" onClick={() => setShowNew(v => !v)} className="absolute right-2.5 top-2 text-gray-400 hover:text-gray-600">
-              {showNew ? <EyeOff size={15} /> : <Eye size={15} />}
-            </button>
-          </div>
-        </div>
-        {pwdErr && <p className="text-xs text-red-500">{pwdErr}</p>}
-        {pwdMsg && <p className="text-xs text-green-600 font-medium">{pwdMsg}</p>}
-        <button onClick={handlePasswordChange} disabled={pwdSaving} className="btn-primary flex items-center gap-2 px-4 py-2 text-sm">
-          <Lock size={14} /> {pwdSaving ? 'Updating…' : 'Update Password'}
-        </button>
-      </div>
 
       {/* Email Configuration — for sending quotations & DRFs */}
       <div className="card space-y-4">

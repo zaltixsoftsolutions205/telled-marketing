@@ -122,7 +122,7 @@ interface PreviewProps {
   color: string;
   logo: string;
   seller: { company: string; address: string; email: string; phone: string; gst: string };
-  toCompany: string; toContact: string; toAddress: string;
+  toCompany: string; customerId?: string; toContact: string; toAddress: string;
   validUntil: string;
   salesName: string; salesPhone: string; salesEmail: string; deliveryWeeks: string;
   oemName: string;
@@ -243,6 +243,7 @@ function QuotationPreview(p: PreviewProps) {
               ['Date', today()],
               ['Quotation No.', 'QT-PREVIEW'],
               ['Quote Validity', p.validUntil || '15 Days'],
+              ['Customer ID', p.customerId || '—'],
               ['Prepared By', p.salesName || 'Sales Rep'],
               // Custom fields appended after fixed rows
               ...p.customFields.filter(f => f.label).map(f => [f.label, f.value]),
@@ -351,6 +352,7 @@ export default function QuotationModal({ drf, onClose, onSuccess }: QuotationMod
 
   // Seller
   const [sellerCompany, setSellerCompany] = useState('');
+  const [salesPersonName, setSalesPersonName] = useState('');
   const [sellerAddress, setSellerAddress] = useState('');
   const [sellerEmail, setSellerEmail]     = useState('');
   const [sellerPhone, setSellerPhone]     = useState('');
@@ -365,6 +367,7 @@ export default function QuotationModal({ drf, onClose, onSuccess }: QuotationMod
 
   // Customer
   const [toCompany, setToCompany] = useState(drf?.leadId?.companyName || '');
+  const [customerId, setCustomerId] = useState('');
   const [toContact, setToContact] = useState(drf?.leadId?.contactPersonName || drf?.leadId?.contactName || '');
   const [toAddress, setToAddress] = useState('');
   const [validUntil, setValidUntil] = useState('');
@@ -489,10 +492,12 @@ export default function QuotationModal({ drf, onClose, onSuccess }: QuotationMod
         if (secondLogoFile) fd.append('secondLogo', secondLogoFile);
         fd.append('secondLogoLabel', secondLogoLabel);
         fd.append('fromCompany', sellerCompany);
+        fd.append('salesPersonName', salesPersonName);
         fd.append('fromAddress', sellerAddress);
         fd.append('fromEmail', sellerEmail);
         fd.append('fromPhone', sellerPhone);
         fd.append('fromGST', sellerGST);
+        fd.append('customerId', customerId);
         fd.append('toCompany', toCompany);
         fd.append('toContact', toContact);
         fd.append('toAddress', toAddress);
@@ -649,8 +654,8 @@ export default function QuotationModal({ drf, onClose, onSuccess }: QuotationMod
   const previewProps: PreviewProps = {
     layout, color, logo: logoPreview,
     seller: { company: sellerCompany, address: sellerAddress, email: sellerEmail, phone: sellerPhone, gst: sellerGST },
-    toCompany, toContact, toAddress, validUntil,
-    salesName: sellerCompany || '', salesPhone: sellerPhone, salesEmail: sellerEmail, deliveryWeeks,
+    toCompany, customerId, toContact, toAddress, validUntil,
+    salesName: salesPersonName || sellerCompany || '', salesPhone: sellerPhone, salesEmail: sellerEmail, deliveryWeeks,
     oemName: drf.leadId?.oemName || '',
     items, gstApplicable, taxRate: Number(taxRate),
     subtotal, taxAmt, grandTotal,
@@ -800,9 +805,10 @@ export default function QuotationModal({ drf, onClose, onSuccess }: QuotationMod
                 <p className="text-xs font-bold text-gray-600 uppercase tracking-wider">Bill To (Customer)</p>
                 <div className="grid grid-cols-2 gap-2">
                   <input className="input-field text-xs" placeholder="Company name" value={toCompany} onChange={e => setToCompany(e.target.value)} />
+                  <input className="input-field text-xs" placeholder="Customer ID" value={customerId} onChange={e => setCustomerId(e.target.value)} />
                   <input className="input-field text-xs" placeholder="Contact person" value={toContact} onChange={e => setToContact(e.target.value)} />
-                  <textarea rows={2} className="input-field text-xs col-span-2" placeholder="Address" value={toAddress} onChange={e => setToAddress(e.target.value)} />
                   <div><label className="text-[10px] text-gray-400">Valid Until</label><input type="date" className="input-field text-xs mt-0.5" value={validUntil} onChange={e => setValidUntil(e.target.value)} /></div>
+                  <textarea rows={2} className="input-field text-xs col-span-2" placeholder="Address" value={toAddress} onChange={e => setToAddress(e.target.value)} />
                 </div>
 
                 {/* Custom fields builder */}

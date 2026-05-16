@@ -239,6 +239,7 @@ export default function PurchasesPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [rowStepSelection, setRowStepSelection] = useState<Record<string, number>>({});
 
   // Detail modal
   const [selected, setSelected] = useState<PurchaseOrder | null>(null);
@@ -553,6 +554,129 @@ export default function PurchasesPage() {
     }
   }
 
+  // ── Row step dropdown for list view ──────────────────────────────────────
+  function RowStepDropdown({ po, selectedStep, onChange, compact }: { po: PurchaseOrder; selectedStep: number; onChange: (step: number) => void; compact?: boolean }) {
+    const currentStep = selectedStep;
+    const completedFor = (s: number) => {
+      if (po.workflowStatus === 'Completed') return true;
+      switch (s) {
+        case 1: return (po.currentStep || 1) > 1;
+        case 2: return !!po.step2ForwardedToArk;
+        case 3: return !!po.step3PriceClearanceReceived;
+        case 4: return !!po.step4DocsSentToCustomer;
+        case 5: return !!po.step5InvoiceToArk;
+        case 6: return !!po.step6DocsSentToArk;
+        case 7: return !!po.step7LicenseMailReceived;
+        case 8: return !!po.step8FinalInvoiceSent;
+        default: return false;
+      }
+    };
+
+    return (
+      <div className={cn('flex items-center gap-2', compact ? 'text-xs' : '')} onClick={e => e.stopPropagation()}>
+        <select value={String(currentStep)} onChange={e => onChange(Number(e.target.value))} className="input-field py-1 text-sm">
+          {STEPS.map(s => (
+            <option key={s.num} value={s.num}>{`${s.num}. ${s.label}${completedFor(s.num) ? ' ✓' : ''}`}</option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
+  function isStepDone(po: PurchaseOrder, step: number) {
+    if (po.workflowStatus === 'Completed') return true;
+    switch (step) {
+      case 1: return (po.currentStep || 1) > 1;
+      case 2: return !!po.step2ForwardedToArk;
+      case 3: return !!po.step3PriceClearanceReceived;
+      case 4: return !!po.step4DocsSentToCustomer;
+      case 5: return !!po.step5InvoiceToArk;
+      case 6: return !!po.step6DocsSentToArk;
+      case 7: return !!po.step7LicenseMailReceived;
+      case 8: return !!po.step8FinalInvoiceSent;
+      default: return false;
+    }
+  }
+
+  function getStepAction(step: number) {
+    switch (step) {
+      case 1:
+      case 2:
+        return { label: 'Forward to ARK', icon: <Send size={12} /> };
+      case 3:
+        return { label: 'Mark Clearance', icon: <Mail size={12} /> };
+      case 4:
+        return { label: 'Send Docs', icon: <FileText size={12} /> };
+      case 5:
+        return { label: 'Invoice to ARK', icon: <Receipt size={12} /> };
+      case 6:
+        return { label: 'Docs to ARK', icon: <Upload size={12} /> };
+      case 7:
+        return { label: 'Mark License', icon: <Key size={12} /> };
+      case 8:
+        return { label: 'Final Invoice', icon: <Receipt size={12} /> };
+      default:
+        return { label: 'Send', icon: <Send size={12} /> };
+    }
+  }
+
+  function openStepModal(po: PurchaseOrder, step: number) {
+    switch (step) {
+      case 1:
+      case 2:
+        setStep2Target(po);
+        setStep2Form({ arkEmail: po.vendorEmail || '', arkName: po.vendorName || '', docName: '' });
+        setStep2File(null);
+        break;
+      case 3:
+        setStep3Target(po); setStep3Files([]); setStep3DocNames('');
+        break;
+      case 4:
+        setStep4Target(po); setStep4Email((po.leadId as Lead)?.email || ''); setStep4Files([]);
+        break;
+      case 5:
+        setStep5Target(po); setStep5Form({ arkEmail: po.vendorEmail || '', docName: '' }); setStep5File(null);
+        break;
+      case 6:
+        setStep6Target(po); setStep6Email(po.vendorEmail || ''); setStep6Files([]);
+        break;
+      case 7:
+        setStep7Target(po);
+        break;
+      case 8:
+        setStep8Target(po);
+        setStep8Form({ customerEmail: (po.leadId as Lead)?.email || '', amount: String(po.amount), convertToAccount: false, accountName: (po.leadId as Lead)?.companyName || '' });
+        setStep8File(null);
+        break;
+      default:
+        break;
+    }
+    setExpandedStep(step);
+  }
+
+  async function skipStep(po: PurchaseOrder, step: number) {
+    if (!confirm(`Skip step ${step} for PO ${po.poNumber}?`)) return;
+    await act(() => purchasesApi.update(po._id, { currentStep: (po.currentStep || 1) >= step ? step + 1 : step + 1 }), `Step ${step} skipped`);
+  }
+
+  function RowActionButtons({ po, selectedStep }: { po: PurchaseOrder; selectedStep: number }) {
+    if (!canEdit) return null;
+    const done = isStepDone(po, selectedStep);
+    const stepAction = getStepAction(selectedStep);
+    return done ? (
+      <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+        <button onClick={(e) => { e.stopPropagation(); openStepModal(po, selectedStep); }} className="text-violet-600 hover:text-violet-800 text-xs flex items-center gap-1">
+          <RefreshCw size={14} /> Resend
+        </button>
+        <button onClick={(e) => { e.stopPropagation(); skipStep(po, selectedStep); }} className="text-gray-500 hover:text-red-600 text-xs">Skip</button>
+      </div>
+    ) : (
+      <button onClick={(e) => { e.stopPropagation(); openStepModal(po, selectedStep); }} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1 whitespace-nowrap">
+        {stepAction.icon} {stepAction.label}
+      </button>
+    );
+  }
+
   // ── Step detail panel inside modal ────────────────────────────────────────
   function StepDetail({ po }: { po: PurchaseOrder }) {
     const step = po.currentStep || 1;
@@ -560,6 +684,49 @@ export default function PurchasesPage() {
 
     function StepRow({ num, label, done, active, extra }: { num: number; label: string; done: boolean; active: boolean; extra?: React.ReactNode }) {
       const open = expandedStep === num;
+      const handleSkip = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!po) return;
+        if (!confirm(`Skip step ${num} for PO ${po.poNumber}? This will advance the workflow.`)) return;
+        await act(
+          () => purchasesApi.update(po._id, { currentStep: (po.currentStep || 1) >= num ? (num + 1) : num + 1 }),
+          `Step ${num} skipped`
+        );
+      };
+
+      const handleSendHeader = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        // open the same modals used by the extra buttons
+        switch (num) {
+          case 1:
+          case 2:
+            setStep2Target(po);
+            setStep2Form({ arkEmail: po.vendorEmail || '', arkName: po.vendorName || '', docName: '' });
+            setStep2File(null);
+            break;
+          case 3:
+            setStep3Target(po); setStep3Files([]); setStep3DocNames('');
+            break;
+          case 4:
+            setStep4Target(po); setStep4Email((po.leadId as Lead)?.email || ''); setStep4Files([]);
+            break;
+          case 5:
+            setStep5Target(po); setStep5Form({ arkEmail: po.vendorEmail || '', docName: '' }); setStep5File(null);
+            break;
+          case 6:
+            setStep6Target(po); setStep6Email(po.vendorEmail || ''); setStep6Files([]);
+            break;
+          case 7:
+            setStep7Target(po);
+            break;
+          case 8:
+            setStep8Target(po); setStep8Form({ customerEmail: (po.leadId as Lead)?.email || '', amount: String(po.amount), convertToAccount: false, accountName: (po.leadId as Lead)?.companyName || '' }); setStep8File(null);
+            break;
+          default:
+            break;
+        }
+        setExpandedStep(num);
+      };
       return (
         <div>
           <button
@@ -581,7 +748,22 @@ export default function PurchasesPage() {
               {done && <span className="badge bg-emerald-100 text-emerald-700 text-xs">Done</span>}
               {active && !done && <span className="badge bg-violet-100 text-violet-700 text-xs">Active</span>}
             </div>
-            {open ? <ChevronUp size={15} className="text-gray-400" /> : <ChevronDown size={15} className="text-gray-400" />}
+            <div className="flex items-center gap-2">
+              {canEdit && !done && (
+                <button onClick={handleSendHeader} className="btn-primary text-[11px] px-2 py-1 rounded-md flex items-center gap-1 mr-1" title={`Send / perform step ${num}`}>
+                  <Send size={12} />
+                </button>
+              )}
+              {canEdit && done && (
+                <>
+                  <button onClick={(e) => { e.stopPropagation(); handleSendHeader(e as any); }} className="text-violet-600 hover:text-violet-800 text-xs mr-1" title="Resend">
+                    <RefreshCw size={14} />
+                  </button>
+                  <button onClick={handleSkip} className="text-gray-500 hover:text-red-600 text-xs mr-2" title="Skip step">Skip</button>
+                </>
+              )}
+              {open ? <ChevronUp size={15} className="text-gray-400" /> : <ChevronDown size={15} className="text-gray-400" />}
+            </div>
           </button>
           {open && extra && (
             <div className="mt-1 ml-2 p-4 bg-white border border-gray-100 rounded-xl space-y-2">
@@ -929,15 +1111,14 @@ export default function PurchasesPage() {
                         <td className="table-cell font-semibold text-green-700">{formatCurrency(po.amount)}</td>
                         <td className="table-cell text-gray-400 text-xs">{formatDate(po.receivedDate)}</td>
                         <td className="table-cell">
-                          <div className="space-y-1">
-                            <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold', completed ? 'bg-emerald-100 text-emerald-700' : STEP_COLORS[step])}>
-                              {completed ? '✓ Complete' : `Step ${step}`}
-                            </span>
-                            <div><MiniStepper step={step} completed={completed} /></div>
-                          </div>
+                          <RowStepDropdown
+                            po={po}
+                            selectedStep={rowStepSelection[po._id] || step}
+                            onChange={value => setRowStepSelection(prev => ({ ...prev, [po._id]: value }))}
+                          />
                         </td>
                         <td className="table-cell" onClick={e => e.stopPropagation()}>
-                          <StepActionButton po={po} />
+                          <RowActionButtons po={po} selectedStep={rowStepSelection[po._id] || step} />
                         </td>
                         <td className="table-cell" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1">
@@ -986,9 +1167,14 @@ export default function PurchasesPage() {
                       <p className="font-mono font-semibold text-violet-700 text-sm">{po.poNumber}</p>
                       <p className="text-sm font-medium text-gray-800 mt-0.5">{(po.leadId as Lead)?.companyName || '—'}</p>
                     </div>
-                    <span className={cn('badge text-xs', completed ? 'bg-emerald-100 text-emerald-700' : STEP_COLORS[step])}>
-                      {completed ? '✓ Complete' : `Step ${step}`}
-                    </span>
+                    <div className="flex-shrink-0">
+                      <RowStepDropdown
+                        po={po}
+                        selectedStep={rowStepSelection[po._id] || step}
+                        onChange={value => setRowStepSelection(prev => ({ ...prev, [po._id]: value }))}
+                        compact
+                      />
+                    </div>
                   </div>
                   <div className="text-xs space-y-0.5">
                     <ProductsList po={po} />
@@ -999,7 +1185,7 @@ export default function PurchasesPage() {
                     <div><span className="text-gray-400">Received:</span> <span className="text-gray-600">{formatDate(po.receivedDate)}</span></div>
                   </div>
                   <div className="flex items-center gap-2 pt-1 border-t border-gray-100" onClick={e => e.stopPropagation()}>
-                    <StepActionButton po={po} />
+                    <RowActionButtons po={po} selectedStep={rowStepSelection[po._id] || step} />
                     <div className="flex items-center gap-1 ml-auto">
                       {canEdit && <button title="Edit" onClick={() => openEdit(po)} className="p-1.5 rounded-lg bg-gray-50 text-gray-500 hover:bg-gray-100"><Edit size={13} /></button>}
                       {canEdit && <button title="Delete" onClick={() => setDeleteTarget(po)} className="p-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100"><Trash2 size={13} /></button>}

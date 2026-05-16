@@ -218,6 +218,7 @@ export const generateQuotationPDF = (data: {
   oemName?: string; salesPersonName?: string; salesPersonEmail?: string; salesPersonPhone?: string;
   items: Array<{ description: string; quantity: number; listPrice?: number; discount?: number; unitPrice: number; total: number }>;
   subtotal: number; taxRate: number; taxAmount: number; total: number; gstApplicable?: boolean;
+  customerId?: string;
   discountApplicable?: boolean; discountType?: 'percent' | 'flat'; discountValue?: number; discountAmount?: number;
   validUntil?: Date; notes?: string; terms?: string; logoPath?: string;
   sellerCompany?: string; sellerAddress?: string; sellerEmail?: string; sellerPhone?: string; sellerGST?: string;
@@ -314,6 +315,7 @@ export const generateQuotationPDF = (data: {
       ['Date',          fmtDate(new Date())],
       ['Quotation No.', data.quotationNumber || ''],
       ['Quote Validity',data.validUntil ? fmtDate(data.validUntil) : '15 Days'],
+      ['Customer ID',   data.customerId || '—'],
       ['Prepared By',   data.salesPersonName || 'ZIEOS'],
       ...(data.customFields || []).filter(f => f.label).map(f => [f.label, f.value] as [string, string]),
     ];

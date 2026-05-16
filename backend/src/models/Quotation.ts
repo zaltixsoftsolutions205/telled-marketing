@@ -40,6 +40,8 @@ export interface IQuotation extends Document {
   sellerPhone?: string;
   sellerGST?: string;
   sellerLogoPath?: string;
+  salesPersonName?: string;
+  customerId?: string;
   // Bank details
   bankName?: string;
   bankAccount?: string;
@@ -120,6 +122,8 @@ const QuotationSchema = new Schema<IQuotation>(
     sellerPhone:      { type: String },
     sellerGST:        { type: String },
     sellerLogoPath:   { type: String },
+    salesPersonName:  { type: String },
+    customerId:       { type: String },
     bankName:         { type: String },
     bankAccount:      { type: String },
     bankIFSC:         { type: String },
